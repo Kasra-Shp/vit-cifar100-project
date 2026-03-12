@@ -1,0 +1,6 @@
+{
+  "model_checkpoint": "google/vit-base-patch16-224",
+  "num_classes": 100,
+  "num_steps": 5,
+  "classes_per_step": 20
+}

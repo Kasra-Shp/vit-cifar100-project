@@ -1,0 +1,5 @@
+{
+  "experiment": "step2_lora",
+  "eval_loss": 0.10953670740127563,
+  "eval_accuracy": 0.977
+}

@@ -1,0 +1,7 @@
+Experiment summary
+==================
+
+step1_pretrained | method=full_finetune | step=1 | eval_accuracy=0.9780 | eval_loss=0.1229
+step2_lora | method=lora | step=2 | eval_accuracy=0.9770 | eval_loss=0.1095
+step2_full_finetune | method=full_finetune | step=2 | eval_accuracy=0.9775 | eval_loss=0.1157
+joint_full | method=joint_upper_bound | step=0 | eval_accuracy=0.9210 | eval_loss=0.4873

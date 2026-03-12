@@ -1,0 +1,5 @@
+{
+  "experiment": "step2_full_finetune",
+  "eval_loss": 0.11573126167058945,
+  "eval_accuracy": 0.9775
+}

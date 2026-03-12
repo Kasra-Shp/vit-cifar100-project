@@ -1,0 +1,5 @@
+{
+  "experiment": "step1_pretrained",
+  "eval_loss": 0.12291126698255539,
+  "eval_accuracy": 0.978
+}

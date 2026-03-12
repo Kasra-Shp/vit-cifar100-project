@@ -1,0 +1,5 @@
+experiment,method,step,eval_accuracy,eval_loss
+step1_pretrained,full_finetune,1,0.978,0.12291126698255539
+step2_lora,lora,2,0.977,0.10953670740127563
+step2_full_finetune,full_finetune,2,0.9775,0.11573126167058945
+joint_full,joint_upper_bound,0,0.921,0.4872998893260956

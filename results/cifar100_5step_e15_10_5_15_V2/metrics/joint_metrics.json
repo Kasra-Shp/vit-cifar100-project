@@ -1,5 +1,5 @@
 {
   "experiment": "joint_full",
-  "eval_loss": 1.9208831787109375,
-  "eval_accuracy": 0.5234
+  "eval_loss": 1.9121109247207642,
+  "eval_accuracy": 0.525
 }

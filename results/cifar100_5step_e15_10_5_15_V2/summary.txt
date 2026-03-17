@@ -1,21 +1,21 @@
 Experiment summary
 ==================
 
-step1_scratch | method=full_finetune | step=1 | eval_accuracy=0.5855 | eval_loss=1.3857
-step2_lora | method=lora | step=2 | eval_accuracy=0.5595 | eval_loss=1.4709
-step3_lora | method=lora | step=3 | eval_accuracy=0.5720 | eval_loss=1.3756
-step4_lora | method=lora | step=4 | eval_accuracy=0.5385 | eval_loss=1.4028
-step5_lora | method=lora | step=5 | eval_accuracy=0.5860 | eval_loss=1.3316
-step2_full_finetune | method=full_finetune | step=2 | eval_accuracy=0.6070 | eval_loss=1.3444
-step3_full_finetune | method=full_finetune | step=3 | eval_accuracy=0.6480 | eval_loss=1.1580
-step4_full_finetune | method=full_finetune | step=4 | eval_accuracy=0.6060 | eval_loss=1.2202
-step5_full_finetune | method=full_finetune | step=5 | eval_accuracy=0.6825 | eval_loss=1.0094
-lora_final | method=lora | step=5 | eval_accuracy=nan | eval_loss=nan
-lora_final | method=lora | step=5 | eval_accuracy=nan | eval_loss=nan
-lora_final | method=lora | step=5 | eval_accuracy=0.5860 | eval_loss=1.3316
-ft_final | method=full_finetune | step=5 | eval_accuracy=nan | eval_loss=nan
-ft_final | method=full_finetune | step=5 | eval_accuracy=nan | eval_loss=nan
-ft_final | method=full_finetune | step=5 | eval_accuracy=0.6825 | eval_loss=1.0094
-joint_final | method=joint_upper_bound | step=0 | eval_accuracy=0.5065 | eval_loss=1.9650
-joint_final | method=joint_upper_bound | step=0 | eval_accuracy=0.5276 | eval_loss=1.9098
-joint_final | method=joint_upper_bound | step=0 | eval_accuracy=0.5234 | eval_loss=1.9209
+step1_scratch | method=full_finetune | step=1 | eval_type=current_step | eval_accuracy=0.5825 | eval_loss=1.3972
+step2_lora | method=lora | step=2 | eval_type=current_step | eval_accuracy=0.5780 | eval_loss=1.3906
+step3_lora | method=lora | step=3 | eval_type=current_step | eval_accuracy=0.5990 | eval_loss=1.2723
+step4_lora | method=lora | step=4 | eval_type=current_step | eval_accuracy=0.5750 | eval_loss=1.3404
+step5_lora | method=lora | step=5 | eval_type=current_step | eval_accuracy=0.6360 | eval_loss=1.2037
+step2_full_finetune | method=full_finetune | step=2 | eval_type=current_step | eval_accuracy=0.6210 | eval_loss=1.2628
+step3_full_finetune | method=full_finetune | step=3 | eval_type=current_step | eval_accuracy=0.6465 | eval_loss=1.1134
+step4_full_finetune | method=full_finetune | step=4 | eval_type=current_step | eval_accuracy=0.6385 | eval_loss=1.1647
+step5_full_finetune | method=full_finetune | step=5 | eval_type=current_step | eval_accuracy=0.6965 | eval_loss=0.9943
+lora_final | method=lora | step=5 | eval_type=first_step | eval_accuracy=0.0080 | eval_loss=4.7586
+lora_final | method=lora | step=5 | eval_type=later_steps | eval_accuracy=0.0168 | eval_loss=4.7264
+lora_final | method=lora | step=5 | eval_type=all_seen | eval_accuracy=0.0150 | eval_loss=4.7329
+ft_final | method=full_finetune | step=5 | eval_type=first_step | eval_accuracy=0.0000 | eval_loss=9.3589
+ft_final | method=full_finetune | step=5 | eval_type=later_steps | eval_accuracy=0.1754 | eval_loss=6.2146
+ft_final | method=full_finetune | step=5 | eval_type=all_seen | eval_accuracy=0.1403 | eval_loss=6.8434
+joint_final | method=joint_upper_bound | step=5 | eval_type=first_step | eval_accuracy=0.5120 | eval_loss=1.9332
+joint_final | method=joint_upper_bound | step=5 | eval_type=later_steps | eval_accuracy=0.5282 | eval_loss=1.9068
+joint_final | method=joint_upper_bound | step=5 | eval_type=all_classes | eval_accuracy=0.5250 | eval_loss=1.9121

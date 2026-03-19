@@ -1,0 +1,19 @@
+method,step,eval_stage,eval_set,accuracy,loss
+Full FT,1,step,current_step,0.5825,1.3972439765930176
+LoRA,2,step,current_step,0.5725,1.5236940383911133
+LoRA,3,step,current_step,0.584,1.3646221160888672
+LoRA,4,step,current_step,0.5425,1.4894474744796753
+LoRA,5,step,current_step,0.601,1.3219224214553833
+Full FT,2,step,current_step,0.621,1.2628291845321655
+Full FT,3,step,current_step,0.6465,1.1133540868759155
+Full FT,4,step,current_step,0.6385,1.164720892906189
+Full FT,5,step,current_step,0.6965,0.9942861795425415
+LoRA,5,final,first_step,0.008,4.7585577964782715
+LoRA,5,final,later_steps,0.01675,4.726431846618652
+LoRA,5,final,all_seen,0.015,4.7328572273254395
+Full FT,5,final,first_step,0.0,9.358898162841797
+Full FT,5,final,later_steps,0.175375,6.214567184448242
+Full FT,5,final,all_seen,0.1403,6.843432903289795
+Joint,5,final,first_step,0.512,1.9331622123718262
+Joint,5,final,later_steps,0.52825,1.906847357749939
+Joint,5,final,all_classes,0.525,1.9121109247207642

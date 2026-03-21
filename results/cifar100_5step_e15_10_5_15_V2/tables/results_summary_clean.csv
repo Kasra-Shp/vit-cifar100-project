@@ -1,19 +1,43 @@
 method,step,eval_stage,eval_set,accuracy,loss
-Full FT,1,step,current_step,0.5825,1.3972439765930176
-LoRA,2,step,current_step,0.5725,1.5236940383911133
-LoRA,3,step,current_step,0.584,1.3646221160888672
-LoRA,4,step,current_step,0.5425,1.4894474744796753
-LoRA,5,step,current_step,0.601,1.3219224214553833
-Full FT,2,step,current_step,0.621,1.2628291845321655
-Full FT,3,step,current_step,0.6465,1.1133540868759155
-Full FT,4,step,current_step,0.6385,1.164720892906189
-Full FT,5,step,current_step,0.6965,0.9942861795425415
-LoRA,5,final,first_step,0.008,4.7585577964782715
-LoRA,5,final,later_steps,0.01675,4.726431846618652
-LoRA,5,final,all_seen,0.015,4.7328572273254395
-Full FT,5,final,first_step,0.0,9.358898162841797
-Full FT,5,final,later_steps,0.175375,6.214567184448242
-Full FT,5,final,all_seen,0.1403,6.843432903289795
+Full FT,1,step,current_step,0.606,1.358936071395874
+LoRA,2,step,current_step,0.5865,1.3743181228637695
+LoRA,2,step,first_step,0.0,8.974738121032715
+LoRA,2,step,later_steps_seen_so_far,0.5865,1.3742778301239014
+LoRA,2,step,all_seen,0.29325,5.17451286315918
+LoRA,3,step,current_step,0.587,1.2953462600708008
+LoRA,3,step,first_step,0.0,10.784455299377441
+LoRA,3,step,later_steps_seen_so_far,0.2935,5.2828240394592285
+LoRA,3,step,all_seen,0.19566666666666666,7.116701602935791
+LoRA,4,step,current_step,0.5925,1.309402585029602
+LoRA,4,step,first_step,0.0,11.789935111999512
+LoRA,4,step,later_steps_seen_so_far,0.1975,7.149178981781006
+LoRA,4,step,all_seen,0.148125,8.309370994567871
+LoRA,5,step,current_step,0.6405,1.1565165519714355
+LoRA,5,step,first_step,0.0,11.515861511230469
+LoRA,5,step,later_steps_seen_so_far,0.160125,8.076147079467773
+LoRA,5,step,all_seen,0.1281,8.764093399047852
+Full FT,2,step,current_step,0.6225,1.2468410730361938
+Full FT,2,step,first_step,0.002,8.154943466186523
+Full FT,2,step,later_steps_seen_so_far,0.6225,1.2468410730361938
+Full FT,2,step,all_seen,0.31225,4.700890064239502
+Full FT,3,step,current_step,0.66,1.1058242321014404
+Full FT,3,step,first_step,0.0,9.101762771606445
+Full FT,3,step,later_steps_seen_so_far,0.33,4.2909932136535645
+Full FT,3,step,all_seen,0.22,5.894583225250244
+Full FT,4,step,current_step,0.633,1.1734728813171387
+Full FT,4,step,first_step,0.0,8.8798246383667
+Full FT,4,step,later_steps_seen_so_far,0.21116666666666667,5.42684268951416
+Full FT,4,step,all_seen,0.158375,6.290088653564453
+Full FT,5,step,current_step,0.7005,0.9631871581077576
+Full FT,5,step,first_step,0.0,9.22945499420166
+Full FT,5,step,later_steps_seen_so_far,0.176,6.267494201660156
+Full FT,5,step,all_seen,0.1408,6.859886169433594
+LoRA,5,final,first_step,0.0,11.515861511230469
+LoRA,5,final,later_steps,0.160125,8.076147079467773
+LoRA,5,final,all_seen,0.1281,8.764093399047852
+Full FT,5,final,first_step,0.0,9.22945499420166
+Full FT,5,final,later_steps,0.176,6.267494201660156
+Full FT,5,final,all_seen,0.1408,6.859886169433594
 Joint,5,final,first_step,0.512,1.9331622123718262
 Joint,5,final,later_steps,0.52825,1.906847357749939
-Joint,5,final,all_classes,0.525,1.9121109247207642
+Joint,5,final,all_seen,0.525,1.9121109247207642

@@ -1,21 +1,21 @@
 method,step,eval_stage,eval_set,accuracy,loss
 Full FT,1,step,current_step,0.606,1.358936071395874
-LoRA,2,step,current_step,0.5865,1.3743181228637695
-LoRA,2,step,first_step,0.0,8.974738121032715
-LoRA,2,step,later_steps_seen_so_far,0.5865,1.3742778301239014
-LoRA,2,step,all_seen,0.29325,5.17451286315918
-LoRA,3,step,current_step,0.587,1.2953462600708008
-LoRA,3,step,first_step,0.0,10.784455299377441
-LoRA,3,step,later_steps_seen_so_far,0.2935,5.2828240394592285
-LoRA,3,step,all_seen,0.19566666666666666,7.116701602935791
-LoRA,4,step,current_step,0.5925,1.309402585029602
-LoRA,4,step,first_step,0.0,11.789935111999512
-LoRA,4,step,later_steps_seen_so_far,0.1975,7.149178981781006
-LoRA,4,step,all_seen,0.148125,8.309370994567871
-LoRA,5,step,current_step,0.6405,1.1565165519714355
-LoRA,5,step,first_step,0.0,11.515861511230469
-LoRA,5,step,later_steps_seen_so_far,0.160125,8.076147079467773
-LoRA,5,step,all_seen,0.1281,8.764093399047852
+lora_separate,2,step,current_step,0.5865,1.3743181228637695
+lora_separate,2,step,first_step,,
+lora_separate,2,step,later_steps_seen_so_far,,
+lora_separate,2,step,all_seen,,
+lora_separate,3,step,current_step,0.5885,1.2924518585205078
+lora_separate,3,step,first_step,,
+lora_separate,3,step,later_steps_seen_so_far,,
+lora_separate,3,step,all_seen,,
+lora_separate,4,step,current_step,0.564,1.3545783758163452
+lora_separate,4,step,first_step,,
+lora_separate,4,step,later_steps_seen_so_far,,
+lora_separate,4,step,all_seen,,
+lora_separate,5,step,current_step,0.619,1.2038389444351196
+lora_separate,5,step,first_step,,
+lora_separate,5,step,later_steps_seen_so_far,,
+lora_separate,5,step,all_seen,,
 Full FT,2,step,current_step,0.6225,1.2468410730361938
 Full FT,2,step,first_step,0.002,8.154943466186523
 Full FT,2,step,later_steps_seen_so_far,0.6225,1.2468410730361938
@@ -32,9 +32,9 @@ Full FT,5,step,current_step,0.7005,0.9631871581077576
 Full FT,5,step,first_step,0.0,9.22945499420166
 Full FT,5,step,later_steps_seen_so_far,0.176,6.267494201660156
 Full FT,5,step,all_seen,0.1408,6.859886169433594
-LoRA,5,final,first_step,0.0,11.515861511230469
-LoRA,5,final,later_steps,0.160125,8.076147079467773
-LoRA,5,final,all_seen,0.1281,8.764093399047852
+LoRA,5,final,first_step,0.006,6.818296909332275
+LoRA,5,final,later_steps,0.189375,3.1593713760375977
+LoRA,5,final,all_seen,0.1527,3.891155481338501
 Full FT,5,final,first_step,0.0,9.22945499420166
 Full FT,5,final,later_steps,0.176,6.267494201660156
 Full FT,5,final,all_seen,0.1408,6.859886169433594

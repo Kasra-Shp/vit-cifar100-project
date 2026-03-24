@@ -11,6 +11,6 @@
   "joint_epochs": 1,
   "lr_scratch": 5e-05,
   "lr_lora": 0.0001,
-  "lr_ft": 3e-06,
+  "lr_ft": 3e-05,
   "lr_joint": 5e-05
 }

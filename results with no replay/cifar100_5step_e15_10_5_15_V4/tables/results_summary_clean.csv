@@ -1,0 +1,43 @@
+method,adapter_name,step,eval_stage,eval_set,accuracy,loss
+Full FT,,1,step,current_step,0.612,1.4265713691711426
+LoRA separate,L1,2,step,current_step,0.6195,1.2755815982818604
+LoRA separate,L1,2,step,first_step,,
+LoRA separate,L1,2,step,later_steps_seen_so_far,,
+LoRA separate,L1,2,step,all_seen,,
+LoRA separate,L2,3,step,current_step,0.621,1.22723388671875
+LoRA separate,L2,3,step,first_step,,
+LoRA separate,L2,3,step,later_steps_seen_so_far,,
+LoRA separate,L2,3,step,all_seen,,
+LoRA separate,L3,4,step,current_step,0.6055,1.290845513343811
+LoRA separate,L3,4,step,first_step,,
+LoRA separate,L3,4,step,later_steps_seen_so_far,,
+LoRA separate,L3,4,step,all_seen,,
+LoRA separate,L4,5,step,current_step,0.66,1.1057322025299072
+LoRA separate,L4,5,step,first_step,,
+LoRA separate,L4,5,step,later_steps_seen_so_far,,
+LoRA separate,L4,5,step,all_seen,,
+Full FT,,2,step,current_step,0.647,1.1887661218643188
+Full FT,,2,step,first_step,0.0035,8.46678352355957
+Full FT,,2,step,later_steps_seen_so_far,0.647,1.1887661218643188
+Full FT,,2,step,all_seen,0.32525,4.8277692794799805
+Full FT,,3,step,current_step,0.6855,1.0565739870071411
+Full FT,,3,step,first_step,0.0,9.018773078918457
+Full FT,,3,step,later_steps_seen_so_far,0.34325,4.052771091461182
+Full FT,,3,step,all_seen,0.22883333333333333,5.708102226257324
+Full FT,,4,step,current_step,0.6685,1.1046916246414185
+Full FT,,4,step,first_step,0.0,9.387336730957031
+Full FT,,4,step,later_steps_seen_so_far,0.2235,5.333021640777588
+Full FT,,4,step,all_seen,0.167625,6.34660005569458
+Full FT,,5,step,current_step,0.726,0.9104177355766296
+Full FT,,5,step,first_step,0.0,9.561864852905273
+Full FT,,5,step,later_steps_seen_so_far,0.184125,6.273196697235107
+Full FT,,5,step,all_seen,0.1473,6.930932998657227
+Merged LoRA,L1234_avg,5,final,first_step,0.1355,4.56417179107666
+Merged LoRA,L1234_avg,5,final,later_steps,0.095875,6.834637641906738
+Merged LoRA,L1234_avg,5,final,all_seen,0.1038,6.380544662475586
+Full FT,,5,final,first_step,0.0,9.561864852905273
+Full FT,,5,final,later_steps,0.184125,6.273196697235107
+Full FT,,5,final,all_seen,0.1473,6.930932998657227
+Joint,,5,final,first_step,0.501,2.349308967590332
+Joint,,5,final,later_steps,0.52825,2.2076728343963623
+Joint,,5,final,all_seen,0.5228,2.2360000610351562

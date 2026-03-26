@@ -1,0 +1,55 @@
+method,adapter_name,step,eval_stage,eval_set,accuracy,loss
+Full FT,,1,step,current_step,0.3065,2.2833120822906494
+LoRA + Replay,L1,2,step,current_step,0.2135,3.0172696113586426
+LoRA + Replay,L1,2,step,first_step,0.12,3.7919740676879883
+LoRA + Replay,L1,2,step,later_steps_seen_so_far,0.2135,3.0172696113586426
+LoRA + Replay,L1,2,step,all_seen,0.16675,3.404621124267578
+LoRA + Replay,L2,3,step,current_step,0.2645,3.0411040782928467
+LoRA + Replay,L2,3,step,first_step,0.066,3.9370102882385254
+LoRA + Replay,L2,3,step,later_steps_seen_so_far,0.13225,3.697709798812866
+LoRA + Replay,L2,3,step,all_seen,0.11016666666666666,3.7774763107299805
+LoRA + Replay,L3,4,step,current_step,0.229,3.110704183578491
+LoRA + Replay,L3,4,step,first_step,0.078,4.057360649108887
+LoRA + Replay,L3,4,step,later_steps_seen_so_far,0.0765,3.995912790298462
+LoRA + Replay,L3,4,step,all_seen,0.076875,4.011275291442871
+LoRA + Replay,L4,5,step,current_step,0.2815,3.1512935161590576
+LoRA + Replay,L4,5,step,first_step,0.059,4.236680030822754
+LoRA + Replay,L4,5,step,later_steps_seen_so_far,0.070375,4.148555278778076
+LoRA + Replay,L4,5,step,all_seen,0.0681,4.166180610656738
+FT + Replay,,2,step,current_step,0.2635,2.6607582569122314
+FT + Replay,,2,step,first_step,0.091,3.6219892501831055
+FT + Replay,,2,step,later_steps_seen_so_far,0.2635,2.6607582569122314
+FT + Replay,,2,step,all_seen,0.17725,3.1413750648498535
+FT + Replay,,3,step,current_step,0.332,2.5811376571655273
+FT + Replay,,3,step,first_step,0.069,3.762099266052246
+FT + Replay,,3,step,later_steps_seen_so_far,0.1985,3.227649450302124
+FT + Replay,,3,step,all_seen,0.15533333333333332,3.405799150466919
+FT + Replay,,4,step,current_step,0.3175,2.642679214477539
+FT + Replay,,4,step,first_step,0.1005,3.8741769790649414
+FT + Replay,,4,step,later_steps_seen_so_far,0.15916666666666668,3.4317286014556885
+FT + Replay,,4,step,all_seen,0.1445,3.542340040206909
+FT + Replay,,5,step,current_step,0.3775,2.692382335662842
+FT + Replay,,5,step,first_step,0.0705,4.012862682342529
+FT + Replay,,5,step,later_steps_seen_so_far,0.158375,3.5501747131347656
+FT + Replay,,5,step,all_seen,0.1408,3.642713785171509
+Merged LoRA,L1234_avg,5,final,first_step,0.313,2.6684188842773438
+Merged LoRA,L1234_avg,5,final,later_steps,0.0,5.363307476043701
+Merged LoRA,L1234_avg,5,final,all_seen,0.0626,4.824329853057861
+Weighted Merged LoRA,L1234_weighted_newer,5,final,first_step,0.313,2.9504950046539307
+Weighted Merged LoRA,L1234_weighted_newer,5,final,later_steps,0.0,4.740824222564697
+Weighted Merged LoRA,L1234_weighted_newer,5,final,all_seen,0.0626,4.382758617401123
+Weighted Balanced Merged LoRA,L1234_weighted_balanced,5,final,first_step,0.3115,2.7434356212615967
+Weighted Balanced Merged LoRA,L1234_weighted_balanced,5,final,later_steps,0.0,5.098139762878418
+Weighted Balanced Merged LoRA,L1234_weighted_balanced,5,final,all_seen,0.0623,4.627199172973633
+Old-Friendly Merged LoRA,L1234_weighted_old_friendly,5,final,first_step,0.3105,2.592081308364868
+Old-Friendly Merged LoRA,L1234_weighted_old_friendly,5,final,later_steps,0.0,5.734532356262207
+Old-Friendly Merged LoRA,L1234_weighted_old_friendly,5,final,all_seen,0.0621,5.106042385101318
+Pairwise Merged LoRA,M1234_pairwise,5,final,first_step,0.313,2.6684188842773438
+Pairwise Merged LoRA,M1234_pairwise,5,final,later_steps,0.0,5.363307476043701
+Pairwise Merged LoRA,M1234_pairwise,5,final,all_seen,0.0626,4.824329853057861
+Full FT,,5,final,first_step,0.0705,4.012862682342529
+Full FT,,5,final,later_steps,0.158375,3.5501747131347656
+Full FT,,5,final,all_seen,0.1408,3.642713785171509
+Joint,,5,final,first_step,0.142,3.5487496852874756
+Joint,,5,final,later_steps,0.203,3.2775661945343018
+Joint,,5,final,all_seen,0.1908,3.331803798675537

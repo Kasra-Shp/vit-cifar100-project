@@ -1,57 +1,57 @@
 Experiment summary
 ==================
 
-method=Full FT | adapter_name=nan | step=1 | eval_stage=step | eval_set=current_step | accuracy=0.3065 | loss=2.2833
-method=LoRA + Replay | adapter_name=L1 | step=2 | eval_stage=step | eval_set=current_step | accuracy=0.2135 | loss=3.0173
-method=LoRA + Replay | adapter_name=L1 | step=2 | eval_stage=step | eval_set=first_step | accuracy=0.1200 | loss=3.7920
-method=LoRA + Replay | adapter_name=L1 | step=2 | eval_stage=step | eval_set=later_steps_seen_so_far | accuracy=0.2135 | loss=3.0173
-method=LoRA + Replay | adapter_name=L1 | step=2 | eval_stage=step | eval_set=all_seen | accuracy=0.1668 | loss=3.4046
-method=LoRA + Replay | adapter_name=L2 | step=3 | eval_stage=step | eval_set=current_step | accuracy=0.2645 | loss=3.0411
-method=LoRA + Replay | adapter_name=L2 | step=3 | eval_stage=step | eval_set=first_step | accuracy=0.0660 | loss=3.9370
-method=LoRA + Replay | adapter_name=L2 | step=3 | eval_stage=step | eval_set=later_steps_seen_so_far | accuracy=0.1323 | loss=3.6977
-method=LoRA + Replay | adapter_name=L2 | step=3 | eval_stage=step | eval_set=all_seen | accuracy=0.1102 | loss=3.7775
-method=LoRA + Replay | adapter_name=L3 | step=4 | eval_stage=step | eval_set=current_step | accuracy=0.2290 | loss=3.1107
-method=LoRA + Replay | adapter_name=L3 | step=4 | eval_stage=step | eval_set=first_step | accuracy=0.0780 | loss=4.0574
-method=LoRA + Replay | adapter_name=L3 | step=4 | eval_stage=step | eval_set=later_steps_seen_so_far | accuracy=0.0765 | loss=3.9959
-method=LoRA + Replay | adapter_name=L3 | step=4 | eval_stage=step | eval_set=all_seen | accuracy=0.0769 | loss=4.0113
-method=LoRA + Replay | adapter_name=L4 | step=5 | eval_stage=step | eval_set=current_step | accuracy=0.2815 | loss=3.1513
-method=LoRA + Replay | adapter_name=L4 | step=5 | eval_stage=step | eval_set=first_step | accuracy=0.0590 | loss=4.2367
-method=LoRA + Replay | adapter_name=L4 | step=5 | eval_stage=step | eval_set=later_steps_seen_so_far | accuracy=0.0704 | loss=4.1486
-method=LoRA + Replay | adapter_name=L4 | step=5 | eval_stage=step | eval_set=all_seen | accuracy=0.0681 | loss=4.1662
-method=FT + Replay | adapter_name=nan | step=2 | eval_stage=step | eval_set=current_step | accuracy=0.2635 | loss=2.6608
-method=FT + Replay | adapter_name=nan | step=2 | eval_stage=step | eval_set=first_step | accuracy=0.0910 | loss=3.6220
-method=FT + Replay | adapter_name=nan | step=2 | eval_stage=step | eval_set=later_steps_seen_so_far | accuracy=0.2635 | loss=2.6608
-method=FT + Replay | adapter_name=nan | step=2 | eval_stage=step | eval_set=all_seen | accuracy=0.1772 | loss=3.1414
-method=FT + Replay | adapter_name=nan | step=3 | eval_stage=step | eval_set=current_step | accuracy=0.3320 | loss=2.5811
-method=FT + Replay | adapter_name=nan | step=3 | eval_stage=step | eval_set=first_step | accuracy=0.0690 | loss=3.7621
-method=FT + Replay | adapter_name=nan | step=3 | eval_stage=step | eval_set=later_steps_seen_so_far | accuracy=0.1985 | loss=3.2276
-method=FT + Replay | adapter_name=nan | step=3 | eval_stage=step | eval_set=all_seen | accuracy=0.1553 | loss=3.4058
-method=FT + Replay | adapter_name=nan | step=4 | eval_stage=step | eval_set=current_step | accuracy=0.3175 | loss=2.6427
-method=FT + Replay | adapter_name=nan | step=4 | eval_stage=step | eval_set=first_step | accuracy=0.1005 | loss=3.8742
-method=FT + Replay | adapter_name=nan | step=4 | eval_stage=step | eval_set=later_steps_seen_so_far | accuracy=0.1592 | loss=3.4317
-method=FT + Replay | adapter_name=nan | step=4 | eval_stage=step | eval_set=all_seen | accuracy=0.1445 | loss=3.5423
-method=FT + Replay | adapter_name=nan | step=5 | eval_stage=step | eval_set=current_step | accuracy=0.3775 | loss=2.6924
-method=FT + Replay | adapter_name=nan | step=5 | eval_stage=step | eval_set=first_step | accuracy=0.0705 | loss=4.0129
-method=FT + Replay | adapter_name=nan | step=5 | eval_stage=step | eval_set=later_steps_seen_so_far | accuracy=0.1584 | loss=3.5502
-method=FT + Replay | adapter_name=nan | step=5 | eval_stage=step | eval_set=all_seen | accuracy=0.1408 | loss=3.6427
-method=Merged LoRA | adapter_name=L1234_avg | step=5 | eval_stage=final | eval_set=first_step | accuracy=0.3130 | loss=2.6684
-method=Merged LoRA | adapter_name=L1234_avg | step=5 | eval_stage=final | eval_set=later_steps | accuracy=0.0000 | loss=5.3633
-method=Merged LoRA | adapter_name=L1234_avg | step=5 | eval_stage=final | eval_set=all_seen | accuracy=0.0626 | loss=4.8243
-method=Weighted Merged LoRA | adapter_name=L1234_weighted_newer | step=5 | eval_stage=final | eval_set=first_step | accuracy=0.3130 | loss=2.9505
-method=Weighted Merged LoRA | adapter_name=L1234_weighted_newer | step=5 | eval_stage=final | eval_set=later_steps | accuracy=0.0000 | loss=4.7408
-method=Weighted Merged LoRA | adapter_name=L1234_weighted_newer | step=5 | eval_stage=final | eval_set=all_seen | accuracy=0.0626 | loss=4.3828
-method=Weighted Balanced Merged LoRA | adapter_name=L1234_weighted_balanced | step=5 | eval_stage=final | eval_set=first_step | accuracy=0.3115 | loss=2.7434
-method=Weighted Balanced Merged LoRA | adapter_name=L1234_weighted_balanced | step=5 | eval_stage=final | eval_set=later_steps | accuracy=0.0000 | loss=5.0981
-method=Weighted Balanced Merged LoRA | adapter_name=L1234_weighted_balanced | step=5 | eval_stage=final | eval_set=all_seen | accuracy=0.0623 | loss=4.6272
-method=Old-Friendly Merged LoRA | adapter_name=L1234_weighted_old_friendly | step=5 | eval_stage=final | eval_set=first_step | accuracy=0.3105 | loss=2.5921
-method=Old-Friendly Merged LoRA | adapter_name=L1234_weighted_old_friendly | step=5 | eval_stage=final | eval_set=later_steps | accuracy=0.0000 | loss=5.7345
-method=Old-Friendly Merged LoRA | adapter_name=L1234_weighted_old_friendly | step=5 | eval_stage=final | eval_set=all_seen | accuracy=0.0621 | loss=5.1060
-method=Pairwise Merged LoRA | adapter_name=M1234_pairwise | step=5 | eval_stage=final | eval_set=first_step | accuracy=0.3130 | loss=2.6684
-method=Pairwise Merged LoRA | adapter_name=M1234_pairwise | step=5 | eval_stage=final | eval_set=later_steps | accuracy=0.0000 | loss=5.3633
-method=Pairwise Merged LoRA | adapter_name=M1234_pairwise | step=5 | eval_stage=final | eval_set=all_seen | accuracy=0.0626 | loss=4.8243
-method=Full FT | adapter_name=nan | step=5 | eval_stage=final | eval_set=first_step | accuracy=0.0705 | loss=4.0129
-method=Full FT | adapter_name=nan | step=5 | eval_stage=final | eval_set=later_steps | accuracy=0.1584 | loss=3.5502
-method=Full FT | adapter_name=nan | step=5 | eval_stage=final | eval_set=all_seen | accuracy=0.1408 | loss=3.6427
-method=Joint | adapter_name=nan | step=5 | eval_stage=final | eval_set=first_step | accuracy=0.1420 | loss=3.5487
-method=Joint | adapter_name=nan | step=5 | eval_stage=final | eval_set=later_steps | accuracy=0.2030 | loss=3.2776
-method=Joint | adapter_name=nan | step=5 | eval_stage=final | eval_set=all_seen | accuracy=0.1908 | loss=3.3318
+method=Full FT | adapter_name=nan | step=1 | eval_stage=step | eval_set=current_step | accuracy=0.5925 | loss=1.3983
+method=LoRA + Replay | adapter_name=L1 | step=2 | eval_stage=step | eval_set=current_step | accuracy=0.4925 | loss=2.0786
+method=LoRA + Replay | adapter_name=L1 | step=2 | eval_stage=step | eval_set=first_step | accuracy=0.3555 | loss=2.7422
+method=LoRA + Replay | adapter_name=L1 | step=2 | eval_stage=step | eval_set=later_steps_seen_so_far | accuracy=0.4925 | loss=2.0786
+method=LoRA + Replay | adapter_name=L1 | step=2 | eval_stage=step | eval_set=all_seen | accuracy=0.4240 | loss=2.4104
+method=LoRA + Replay | adapter_name=L2 | step=3 | eval_stage=step | eval_set=current_step | accuracy=0.5015 | loss=2.0594
+method=LoRA + Replay | adapter_name=L2 | step=3 | eval_stage=step | eval_set=first_step | accuracy=0.3425 | loss=2.8877
+method=LoRA + Replay | adapter_name=L2 | step=3 | eval_stage=step | eval_set=later_steps_seen_so_far | accuracy=0.3508 | loss=2.6210
+method=LoRA + Replay | adapter_name=L2 | step=3 | eval_stage=step | eval_set=all_seen | accuracy=0.3480 | loss=2.7099
+method=LoRA + Replay | adapter_name=L3 | step=4 | eval_stage=step | eval_set=current_step | accuracy=0.4815 | loss=2.1569
+method=LoRA + Replay | adapter_name=L3 | step=4 | eval_stage=step | eval_set=first_step | accuracy=0.3345 | loss=3.0201
+method=LoRA + Replay | adapter_name=L3 | step=4 | eval_stage=step | eval_set=later_steps_seen_so_far | accuracy=0.2868 | loss=2.8914
+method=LoRA + Replay | adapter_name=L3 | step=4 | eval_stage=step | eval_set=all_seen | accuracy=0.2988 | loss=2.9236
+method=LoRA + Replay | adapter_name=L4 | step=5 | eval_stage=step | eval_set=current_step | accuracy=0.5195 | loss=2.2050
+method=LoRA + Replay | adapter_name=L4 | step=5 | eval_stage=step | eval_set=first_step | accuracy=0.3040 | loss=3.1723
+method=LoRA + Replay | adapter_name=L4 | step=5 | eval_stage=step | eval_set=later_steps_seen_so_far | accuracy=0.2600 | loss=3.0355
+method=LoRA + Replay | adapter_name=L4 | step=5 | eval_stage=step | eval_set=all_seen | accuracy=0.2688 | loss=3.0628
+method=FT + Replay | adapter_name=nan | step=2 | eval_stage=step | eval_set=current_step | accuracy=0.4625 | loss=1.8810
+method=FT + Replay | adapter_name=nan | step=2 | eval_stage=step | eval_set=first_step | accuracy=0.3530 | loss=2.6077
+method=FT + Replay | adapter_name=nan | step=2 | eval_stage=step | eval_set=later_steps_seen_so_far | accuracy=0.4625 | loss=1.8810
+method=FT + Replay | adapter_name=nan | step=2 | eval_stage=step | eval_set=all_seen | accuracy=0.4078 | loss=2.2443
+method=FT + Replay | adapter_name=nan | step=3 | eval_stage=step | eval_set=current_step | accuracy=0.4805 | loss=1.8502
+method=FT + Replay | adapter_name=nan | step=3 | eval_stage=step | eval_set=first_step | accuracy=0.3400 | loss=2.7135
+method=FT + Replay | adapter_name=nan | step=3 | eval_stage=step | eval_set=later_steps_seen_so_far | accuracy=0.3600 | loss=2.3592
+method=FT + Replay | adapter_name=nan | step=3 | eval_stage=step | eval_set=all_seen | accuracy=0.3533 | loss=2.4773
+method=FT + Replay | adapter_name=nan | step=4 | eval_stage=step | eval_set=current_step | accuracy=0.4620 | loss=1.9491
+method=FT + Replay | adapter_name=nan | step=4 | eval_stage=step | eval_set=first_step | accuracy=0.3335 | loss=2.8437
+method=FT + Replay | adapter_name=nan | step=4 | eval_stage=step | eval_set=later_steps_seen_so_far | accuracy=0.3095 | loss=2.5940
+method=FT + Replay | adapter_name=nan | step=4 | eval_stage=step | eval_set=all_seen | accuracy=0.3155 | loss=2.6565
+method=FT + Replay | adapter_name=nan | step=5 | eval_stage=step | eval_set=current_step | accuracy=0.5150 | loss=1.9659
+method=FT + Replay | adapter_name=nan | step=5 | eval_stage=step | eval_set=first_step | accuracy=0.3395 | loss=2.8398
+method=FT + Replay | adapter_name=nan | step=5 | eval_stage=step | eval_set=later_steps_seen_so_far | accuracy=0.3060 | loss=2.6899
+method=FT + Replay | adapter_name=nan | step=5 | eval_stage=step | eval_set=all_seen | accuracy=0.3127 | loss=2.7199
+method=Merged LoRA | adapter_name=L1234_avg | step=5 | eval_stage=final | eval_set=first_step | accuracy=0.5655 | loss=1.8354
+method=Merged LoRA | adapter_name=L1234_avg | step=5 | eval_stage=final | eval_set=later_steps | accuracy=0.0634 | loss=4.3274
+method=Merged LoRA | adapter_name=L1234_avg | step=5 | eval_stage=final | eval_set=all_seen | accuracy=0.1638 | loss=3.8290
+method=Weighted Merged LoRA | adapter_name=L1234_weighted_newer | step=5 | eval_stage=final | eval_set=first_step | accuracy=0.5060 | loss=2.2304
+method=Weighted Merged LoRA | adapter_name=L1234_weighted_newer | step=5 | eval_stage=final | eval_set=later_steps | accuracy=0.1449 | loss=3.4574
+method=Weighted Merged LoRA | adapter_name=L1234_weighted_newer | step=5 | eval_stage=final | eval_set=all_seen | accuracy=0.2171 | loss=3.2120
+method=Weighted Balanced Merged LoRA | adapter_name=L1234_weighted_balanced | step=5 | eval_stage=final | eval_set=first_step | accuracy=0.5530 | loss=1.9565
+method=Weighted Balanced Merged LoRA | adapter_name=L1234_weighted_balanced | step=5 | eval_stage=final | eval_set=later_steps | accuracy=0.0834 | loss=3.8991
+method=Weighted Balanced Merged LoRA | adapter_name=L1234_weighted_balanced | step=5 | eval_stage=final | eval_set=all_seen | accuracy=0.1773 | loss=3.5106
+method=Old-Friendly Merged LoRA | adapter_name=L1234_weighted_old_friendly | step=5 | eval_stage=final | eval_set=first_step | accuracy=0.5775 | loss=1.6915
+method=Old-Friendly Merged LoRA | adapter_name=L1234_weighted_old_friendly | step=5 | eval_stage=final | eval_set=later_steps | accuracy=0.0356 | loss=5.0359
+method=Old-Friendly Merged LoRA | adapter_name=L1234_weighted_old_friendly | step=5 | eval_stage=final | eval_set=all_seen | accuracy=0.1440 | loss=4.3671
+method=Pairwise Merged LoRA | adapter_name=M1234_pairwise | step=5 | eval_stage=final | eval_set=first_step | accuracy=0.5655 | loss=1.8354
+method=Pairwise Merged LoRA | adapter_name=M1234_pairwise | step=5 | eval_stage=final | eval_set=later_steps | accuracy=0.0634 | loss=4.3274
+method=Pairwise Merged LoRA | adapter_name=M1234_pairwise | step=5 | eval_stage=final | eval_set=all_seen | accuracy=0.1638 | loss=3.8290
+method=Full FT | adapter_name=nan | step=5 | eval_stage=final | eval_set=first_step | accuracy=0.3395 | loss=2.8398
+method=Full FT | adapter_name=nan | step=5 | eval_stage=final | eval_set=later_steps | accuracy=0.3060 | loss=2.6899
+method=Full FT | adapter_name=nan | step=5 | eval_stage=final | eval_set=all_seen | accuracy=0.3127 | loss=2.7199
+method=Joint | adapter_name=nan | step=5 | eval_stage=final | eval_set=first_step | accuracy=0.5090 | loss=1.9623
+method=Joint | adapter_name=nan | step=5 | eval_stage=final | eval_set=later_steps | accuracy=0.5256 | loss=1.8941
+method=Joint | adapter_name=nan | step=5 | eval_stage=final | eval_set=all_seen | accuracy=0.5223 | loss=1.9077

@@ -1,0 +1,52 @@
+method,adapter_name,step,eval_stage,eval_set,accuracy,loss
+Full FT,,1,step,current_step,0.3115,2.276371479034424
+LoRA separate,L1,2,step,current_step,0.239,2.513071298599243
+LoRA separate,L1,2,step,first_step,0.0075,6.964385509490967
+LoRA separate,L1,2,step,later_steps_seen_so_far,0.239,2.513071298599243
+LoRA separate,L1,2,step,all_seen,0.12325,4.7387285232543945
+LoRA separate,L2,3,step,current_step,0.279,2.3291332721710205
+LoRA separate,L2,3,step,first_step,0.0,6.75627326965332
+LoRA separate,L2,3,step,later_steps_seen_so_far,0.1395,6.642080783843994
+LoRA separate,L2,3,step,all_seen,0.093,6.680147171020508
+LoRA separate,L3,4,step,current_step,0.264,2.2845849990844727
+LoRA separate,L3,4,step,first_step,0.0,6.960719585418701
+LoRA separate,L3,4,step,later_steps_seen_so_far,0.088,8.087666511535645
+LoRA separate,L3,4,step,all_seen,0.066,7.805931568145752
+LoRA separate,L4,5,step,current_step,0.314,2.233781576156616
+LoRA separate,L4,5,step,first_step,0.0005,6.532442092895508
+LoRA separate,L4,5,step,later_steps_seen_so_far,0.0785,8.487034797668457
+LoRA separate,L4,5,step,all_seen,0.0629,8.09611701965332
+Full FT,,2,step,current_step,0.3325,2.171586513519287
+Full FT,,2,step,first_step,0.0,7.767442226409912
+Full FT,,2,step,later_steps_seen_so_far,0.3325,2.171586513519287
+Full FT,,2,step,all_seen,0.16625,4.969511985778809
+Full FT,,3,step,current_step,0.3945,1.9162348508834839
+Full FT,,3,step,first_step,0.0,9.57431411743164
+Full FT,,3,step,later_steps_seen_so_far,0.19725,4.742314338684082
+Full FT,,3,step,all_seen,0.1315,6.3529791831970215
+Full FT,,4,step,current_step,0.394,1.8781307935714722
+Full FT,,4,step,first_step,0.0,8.604669570922852
+Full FT,,4,step,later_steps_seen_so_far,0.13133333333333333,6.102734565734863
+Full FT,,4,step,all_seen,0.0985,6.728221893310547
+Full FT,,5,step,current_step,0.4475,1.7860442399978638
+Full FT,,5,step,first_step,0.0,8.396825790405273
+Full FT,,5,step,later_steps_seen_so_far,0.111875,6.418971538543701
+Full FT,,5,step,all_seen,0.0895,6.814542293548584
+Raw AVG,L1234_raw_avg,5,final,first_step,0.3115,2.2921411991119385
+Raw AVG,L1234_raw_avg,5,final,later_steps,0.0,8.10785961151123
+Raw AVG,L1234_raw_avg,5,final,all_seen,0.0623,6.94471549987793
+Fixed AVG,L1234_fixed_avg,5,final,first_step,0.2045,3.935520887374878
+Fixed AVG,L1234_fixed_avg,5,final,later_steps,0.009875,4.635272979736328
+Fixed AVG,L1234_fixed_avg,5,final,all_seen,0.0488,4.4953227043151855
+Fixed Weighted,L1234_fixed_weighted,5,final,first_step,0.169,4.213618278503418
+Fixed Weighted,L1234_fixed_weighted,5,final,later_steps,0.018125,4.577969551086426
+Fixed Weighted,L1234_fixed_weighted,5,final,all_seen,0.0483,4.505099296569824
+Iterative,L1234_iterative,5,final,first_step,0.1195,4.517259120941162
+Iterative,L1234_iterative,5,final,later_steps,0.041125,4.621973991394043
+Iterative,L1234_iterative,5,final,all_seen,0.0568,4.60103178024292
+Full FT,,5,final,first_step,0.0,8.396825790405273
+Full FT,,5,final,later_steps,0.111875,6.418971538543701
+Full FT,,5,final,all_seen,0.0895,6.814542293548584
+Joint,,5,final,first_step,0.146,3.5317819118499756
+Joint,,5,final,later_steps,0.206,3.278542995452881
+Joint,,5,final,all_seen,0.194,3.329190254211426

@@ -1,0 +1,42 @@
+method,adapter_name,step,eval_stage,eval_set,accuracy,loss
+Rank-Extension LoRA,RankExt_s2,2,step,current_step,0.266,2.393707513809204
+Rank-Extension LoRA,RankExt_s2,2,step,first_step,0.0005,9.639521598815918
+Rank-Extension LoRA,RankExt_s2,2,step,later_steps_seen_so_far,0.266,2.393707513809204
+Rank-Extension LoRA,RankExt_s2,2,step,all_seen,0.13325,6.016611099243164
+Rank-Extension LoRA,RankExt_s3,3,step,current_step,0.3005,2.235714912414551
+Rank-Extension LoRA,RankExt_s3,3,step,first_step,0.0,14.572668075561523
+Rank-Extension LoRA,RankExt_s3,3,step,later_steps_seen_so_far,0.15025,7.081155300140381
+Rank-Extension LoRA,RankExt_s3,3,step,all_seen,0.10016666666666667,9.578329086303711
+Rank-Extension LoRA,RankExt_s4,4,step,current_step,0.291,2.2039239406585693
+Rank-Extension LoRA,RankExt_s4,4,step,first_step,0.0,12.44007396697998
+Rank-Extension LoRA,RankExt_s4,4,step,later_steps_seen_so_far,0.09716666666666667,8.302438735961914
+Rank-Extension LoRA,RankExt_s4,4,step,all_seen,0.072875,9.336845397949219
+Rank-Extension LoRA,RankExt_s5,5,step,current_step,0.347,2.136484146118164
+Rank-Extension LoRA,RankExt_s5,5,step,first_step,0.0,12.545753479003906
+Rank-Extension LoRA,RankExt_s5,5,step,later_steps_seen_so_far,0.08675,9.591215133666992
+Rank-Extension LoRA,RankExt_s5,5,step,all_seen,0.0694,10.182123184204102
+Full FT,,2,step,current_step,0.1875,2.737057685852051
+Full FT,,2,step,first_step,0.0,8.462272644042969
+Full FT,,2,step,later_steps_seen_so_far,0.1875,2.737057685852051
+Full FT,,2,step,all_seen,0.09375,5.599659442901611
+Full FT,,3,step,current_step,0.2245,2.525160312652588
+Full FT,,3,step,first_step,0.0,8.972501754760742
+Full FT,,3,step,later_steps_seen_so_far,0.11225,4.747361183166504
+Full FT,,3,step,all_seen,0.07483333333333334,6.155740261077881
+Full FT,,4,step,current_step,0.2295,2.4570863246917725
+Full FT,,4,step,first_step,0.0,8.2120361328125
+Full FT,,4,step,later_steps_seen_so_far,0.0765,5.908288478851318
+Full FT,,4,step,all_seen,0.057375,6.48422384262085
+Full FT,,5,step,current_step,0.2935,2.3412911891937256
+Full FT,,5,step,first_step,0.0,7.974279403686523
+Full FT,,5,step,later_steps_seen_so_far,0.073375,6.152320384979248
+Full FT,,5,step,all_seen,0.0587,6.516712665557861
+Rank-Extension LoRA,RankExt_final,5,final,first_step,0.0,12.545753479003906
+Rank-Extension LoRA,RankExt_final,5,final,later_steps,0.08675,9.591215133666992
+Rank-Extension LoRA,RankExt_final,5,final,all_seen,0.0694,10.182123184204102
+Full FT,,5,final,first_step,0.0,7.974279403686523
+Full FT,,5,final,later_steps,0.073375,6.152320384979248
+Full FT,,5,final,all_seen,0.0587,6.516712665557861
+Joint,,5,final,first_step,0.087,3.8303775787353516
+Joint,,5,final,later_steps,0.150625,3.567692756652832
+Joint,,5,final,all_seen,0.1379,3.620229721069336

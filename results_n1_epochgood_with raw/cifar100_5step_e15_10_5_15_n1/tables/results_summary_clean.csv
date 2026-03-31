@@ -32,6 +32,9 @@ Full FT,,5,step,current_step,0.7005,0.9631871581077576
 Full FT,,5,step,first_step,0.0,9.22945499420166
 Full FT,,5,step,later_steps_seen_so_far,0.176,6.267494201660156
 Full FT,,5,step,all_seen,0.1408,6.859886169433594
+Raw AVG,L1234_raw_avg,5,final,first_step,0.606,1.3615792989730835
+Raw AVG,L1234_raw_avg,5,final,later_steps,0.0,10.680173873901367
+Raw AVG,L1234_raw_avg,5,final,all_seen,0.1212,8.816455841064453
 Fixed AVG,L1234_fixed_avg,5,final,first_step,0.0195,6.563418865203857
 Fixed AVG,L1234_fixed_avg,5,final,later_steps,0.193875,3.1585066318511963
 Fixed AVG,L1234_fixed_avg,5,final,all_seen,0.159,3.839488983154297

@@ -1,44 +1,44 @@
 Experiment summary
 ==================
 
-method=Rank-Extension LoRA | adapter_name=RankExt_s2 | step=2 | eval_stage=step | eval_set=current_step | accuracy=0.2590 | loss=2.3906
-method=Rank-Extension LoRA | adapter_name=RankExt_s2 | step=2 | eval_stage=step | eval_set=first_step | accuracy=0.0010 | loss=12.9540
-method=Rank-Extension LoRA | adapter_name=RankExt_s2 | step=2 | eval_stage=step | eval_set=later_steps_seen_so_far | accuracy=0.2590 | loss=2.3906
-method=Rank-Extension LoRA | adapter_name=RankExt_s2 | step=2 | eval_stage=step | eval_set=all_seen | accuracy=0.1300 | loss=7.6723
-method=Rank-Extension LoRA | adapter_name=RankExt_s3 | step=3 | eval_stage=step | eval_set=current_step | accuracy=0.3030 | loss=2.2532
-method=Rank-Extension LoRA | adapter_name=RankExt_s3 | step=3 | eval_stage=step | eval_set=first_step | accuracy=0.0000 | loss=14.5494
-method=Rank-Extension LoRA | adapter_name=RankExt_s3 | step=3 | eval_stage=step | eval_set=later_steps_seen_so_far | accuracy=0.1515 | loss=6.5094
-method=Rank-Extension LoRA | adapter_name=RankExt_s3 | step=3 | eval_stage=step | eval_set=all_seen | accuracy=0.1010 | loss=9.1894
-method=Rank-Extension LoRA | adapter_name=RankExt_s4 | step=4 | eval_stage=step | eval_set=current_step | accuracy=0.2755 | loss=2.2225
-method=Rank-Extension LoRA | adapter_name=RankExt_s4 | step=4 | eval_stage=step | eval_set=first_step | accuracy=0.0000 | loss=14.4111
-method=Rank-Extension LoRA | adapter_name=RankExt_s4 | step=4 | eval_stage=step | eval_set=later_steps_seen_so_far | accuracy=0.0918 | loss=9.4002
-method=Rank-Extension LoRA | adapter_name=RankExt_s4 | step=4 | eval_stage=step | eval_set=all_seen | accuracy=0.0689 | loss=10.6529
-method=Rank-Extension LoRA | adapter_name=RankExt_s5 | step=5 | eval_stage=step | eval_set=current_step | accuracy=0.3245 | loss=2.1632
-method=Rank-Extension LoRA | adapter_name=RankExt_s5 | step=5 | eval_stage=step | eval_set=first_step | accuracy=0.0000 | loss=16.4611
-method=Rank-Extension LoRA | adapter_name=RankExt_s5 | step=5 | eval_stage=step | eval_set=later_steps_seen_so_far | accuracy=0.0811 | loss=10.6196
-method=Rank-Extension LoRA | adapter_name=RankExt_s5 | step=5 | eval_stage=step | eval_set=all_seen | accuracy=0.0649 | loss=11.7879
-method=Full FT | adapter_name=nan | step=2 | eval_stage=step | eval_set=current_step | accuracy=0.2675 | loss=2.3672
-method=Full FT | adapter_name=nan | step=2 | eval_stage=step | eval_set=first_step | accuracy=0.0020 | loss=11.7958
-method=Full FT | adapter_name=nan | step=2 | eval_stage=step | eval_set=later_steps_seen_so_far | accuracy=0.2675 | loss=2.3672
-method=Full FT | adapter_name=nan | step=2 | eval_stage=step | eval_set=all_seen | accuracy=0.1348 | loss=7.0815
-method=Full FT | adapter_name=nan | step=3 | eval_stage=step | eval_set=current_step | accuracy=0.3230 | loss=2.1873
-method=Full FT | adapter_name=nan | step=3 | eval_stage=step | eval_set=first_step | accuracy=0.0000 | loss=11.9606
-method=Full FT | adapter_name=nan | step=3 | eval_stage=step | eval_set=later_steps_seen_so_far | accuracy=0.1618 | loss=5.3421
-method=Full FT | adapter_name=nan | step=3 | eval_stage=step | eval_set=all_seen | accuracy=0.1078 | loss=7.5483
-method=Full FT | adapter_name=nan | step=4 | eval_stage=step | eval_set=current_step | accuracy=0.3075 | loss=2.1752
-method=Full FT | adapter_name=nan | step=4 | eval_stage=step | eval_set=first_step | accuracy=0.0010 | loss=11.6773
-method=Full FT | adapter_name=nan | step=4 | eval_stage=step | eval_set=later_steps_seen_so_far | accuracy=0.1027 | loss=7.2456
-method=Full FT | adapter_name=nan | step=4 | eval_stage=step | eval_set=all_seen | accuracy=0.0772 | loss=8.3536
-method=Full FT | adapter_name=nan | step=5 | eval_stage=step | eval_set=current_step | accuracy=0.3610 | loss=2.0442
-method=Full FT | adapter_name=nan | step=5 | eval_stage=step | eval_set=first_step | accuracy=0.0000 | loss=12.0273
-method=Full FT | adapter_name=nan | step=5 | eval_stage=step | eval_set=later_steps_seen_so_far | accuracy=0.0902 | loss=7.7404
-method=Full FT | adapter_name=nan | step=5 | eval_stage=step | eval_set=all_seen | accuracy=0.0722 | loss=8.5978
-method=Rank-Extension LoRA | adapter_name=RankExt_final | step=5 | eval_stage=final | eval_set=first_step | accuracy=0.0000 | loss=16.4611
-method=Rank-Extension LoRA | adapter_name=RankExt_final | step=5 | eval_stage=final | eval_set=later_steps | accuracy=0.0811 | loss=10.6196
-method=Rank-Extension LoRA | adapter_name=RankExt_final | step=5 | eval_stage=final | eval_set=all_seen | accuracy=0.0649 | loss=11.7879
-method=Full FT | adapter_name=nan | step=5 | eval_stage=final | eval_set=first_step | accuracy=0.0000 | loss=12.0273
-method=Full FT | adapter_name=nan | step=5 | eval_stage=final | eval_set=later_steps | accuracy=0.0902 | loss=7.7404
-method=Full FT | adapter_name=nan | step=5 | eval_stage=final | eval_set=all_seen | accuracy=0.0722 | loss=8.5978
-method=Joint | adapter_name=nan | step=5 | eval_stage=final | eval_set=first_step | accuracy=0.2040 | loss=3.3010
-method=Joint | adapter_name=nan | step=5 | eval_stage=final | eval_set=later_steps | accuracy=0.2366 | loss=3.1549
-method=Joint | adapter_name=nan | step=5 | eval_stage=final | eval_set=all_seen | accuracy=0.2301 | loss=3.1841
+method=Rank-Extension LoRA | adapter_name=RankExt_s2 | step=2 | eval_stage=step | eval_set=current_step | accuracy=0.3990 | loss=2.3210
+method=Rank-Extension LoRA | adapter_name=RankExt_s2 | step=2 | eval_stage=step | eval_set=first_step | accuracy=0.0145 | loss=6.1056
+method=Rank-Extension LoRA | adapter_name=RankExt_s2 | step=2 | eval_stage=step | eval_set=later_steps_seen_so_far | accuracy=0.3990 | loss=2.3210
+method=Rank-Extension LoRA | adapter_name=RankExt_s2 | step=2 | eval_stage=step | eval_set=all_seen | accuracy=0.2067 | loss=4.2133
+method=Rank-Extension LoRA | adapter_name=RankExt_s3 | step=3 | eval_stage=step | eval_set=current_step | accuracy=0.4215 | loss=2.1743
+method=Rank-Extension LoRA | adapter_name=RankExt_s3 | step=3 | eval_stage=step | eval_set=first_step | accuracy=0.0000 | loss=6.6112
+method=Rank-Extension LoRA | adapter_name=RankExt_s3 | step=3 | eval_stage=step | eval_set=later_steps_seen_so_far | accuracy=0.2112 | loss=3.9262
+method=Rank-Extension LoRA | adapter_name=RankExt_s3 | step=3 | eval_stage=step | eval_set=all_seen | accuracy=0.1408 | loss=4.8212
+method=Rank-Extension LoRA | adapter_name=RankExt_s4 | step=4 | eval_stage=step | eval_set=current_step | accuracy=0.3955 | loss=2.2335
+method=Rank-Extension LoRA | adapter_name=RankExt_s4 | step=4 | eval_stage=step | eval_set=first_step | accuracy=0.0005 | loss=6.6563
+method=Rank-Extension LoRA | adapter_name=RankExt_s4 | step=4 | eval_stage=step | eval_set=later_steps_seen_so_far | accuracy=0.1325 | loss=4.8150
+method=Rank-Extension LoRA | adapter_name=RankExt_s4 | step=4 | eval_stage=step | eval_set=all_seen | accuracy=0.0995 | loss=5.2753
+method=Rank-Extension LoRA | adapter_name=RankExt_s5 | step=5 | eval_stage=step | eval_set=current_step | accuracy=0.4295 | loss=2.1769
+method=Rank-Extension LoRA | adapter_name=RankExt_s5 | step=5 | eval_stage=step | eval_set=first_step | accuracy=0.0010 | loss=7.1476
+method=Rank-Extension LoRA | adapter_name=RankExt_s5 | step=5 | eval_stage=step | eval_set=later_steps_seen_so_far | accuracy=0.1094 | loss=5.2391
+method=Rank-Extension LoRA | adapter_name=RankExt_s5 | step=5 | eval_stage=step | eval_set=all_seen | accuracy=0.0877 | loss=5.6208
+method=Full FT | adapter_name=nan | step=2 | eval_stage=step | eval_set=current_step | accuracy=0.4235 | loss=1.9463
+method=Full FT | adapter_name=nan | step=2 | eval_stage=step | eval_set=first_step | accuracy=0.0050 | loss=7.3639
+method=Full FT | adapter_name=nan | step=2 | eval_stage=step | eval_set=later_steps_seen_so_far | accuracy=0.4235 | loss=1.9463
+method=Full FT | adapter_name=nan | step=2 | eval_stage=step | eval_set=all_seen | accuracy=0.2142 | loss=4.6551
+method=Full FT | adapter_name=nan | step=3 | eval_stage=step | eval_set=current_step | accuracy=0.4260 | loss=1.8083
+method=Full FT | adapter_name=nan | step=3 | eval_stage=step | eval_set=first_step | accuracy=0.0000 | loss=8.1889
+method=Full FT | adapter_name=nan | step=3 | eval_stage=step | eval_set=later_steps_seen_so_far | accuracy=0.2132 | loss=4.0699
+method=Full FT | adapter_name=nan | step=3 | eval_stage=step | eval_set=all_seen | accuracy=0.1422 | loss=5.4429
+method=Full FT | adapter_name=nan | step=4 | eval_stage=step | eval_set=current_step | accuracy=0.4295 | loss=1.7723
+method=Full FT | adapter_name=nan | step=4 | eval_stage=step | eval_set=first_step | accuracy=0.0005 | loss=8.2098
+method=Full FT | adapter_name=nan | step=4 | eval_stage=step | eval_set=later_steps_seen_so_far | accuracy=0.1432 | loss=5.2817
+method=Full FT | adapter_name=nan | step=4 | eval_stage=step | eval_set=all_seen | accuracy=0.1075 | loss=6.0137
+method=Full FT | adapter_name=nan | step=5 | eval_stage=step | eval_set=current_step | accuracy=0.4970 | loss=1.6547
+method=Full FT | adapter_name=nan | step=5 | eval_stage=step | eval_set=first_step | accuracy=0.0000 | loss=8.6800
+method=Full FT | adapter_name=nan | step=5 | eval_stage=step | eval_set=later_steps_seen_so_far | accuracy=0.1250 | loss=5.8376
+method=Full FT | adapter_name=nan | step=5 | eval_stage=step | eval_set=all_seen | accuracy=0.1000 | loss=6.4061
+method=Rank-Extension LoRA | adapter_name=RankExt_final | step=5 | eval_stage=final | eval_set=first_step | accuracy=0.0010 | loss=7.1476
+method=Rank-Extension LoRA | adapter_name=RankExt_final | step=5 | eval_stage=final | eval_set=later_steps | accuracy=0.1094 | loss=5.2391
+method=Rank-Extension LoRA | adapter_name=RankExt_final | step=5 | eval_stage=final | eval_set=all_seen | accuracy=0.0877 | loss=5.6208
+method=Full FT | adapter_name=nan | step=5 | eval_stage=final | eval_set=first_step | accuracy=0.0000 | loss=8.6800
+method=Full FT | adapter_name=nan | step=5 | eval_stage=final | eval_set=later_steps | accuracy=0.1250 | loss=5.8376
+method=Full FT | adapter_name=nan | step=5 | eval_stage=final | eval_set=all_seen | accuracy=0.1000 | loss=6.4061
+method=Joint | adapter_name=nan | step=5 | eval_stage=final | eval_set=first_step | accuracy=0.0675 | loss=4.0514
+method=Joint | adapter_name=nan | step=5 | eval_stage=final | eval_set=later_steps | accuracy=0.1081 | loss=3.8353
+method=Joint | adapter_name=nan | step=5 | eval_stage=final | eval_set=all_seen | accuracy=0.1000 | loss=3.8785

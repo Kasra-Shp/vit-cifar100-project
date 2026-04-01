@@ -1,5 +1,5 @@
 {
   "experiment": "step1_scratch",
-  "eval_loss": 2.4996423721313477,
-  "eval_accuracy": 0.2215
+  "eval_loss": 2.303632974624634,
+  "eval_accuracy": 0.295
 }

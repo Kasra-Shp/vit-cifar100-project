@@ -1,38 +1,38 @@
 Experiment summary
 ==================
 
-method=RankExt | adapter_name=RankExt_s2 | step=2 | eval_stage=step | eval_set=current_step | accuracy=0.4665 | loss=1.7567
-method=RankExt | adapter_name=RankExt_s2 | step=2 | eval_stage=step | eval_set=first_step | accuracy=0.0040 | loss=6.3453
-method=RankExt | adapter_name=RankExt_s2 | step=2 | eval_stage=step | eval_set=later_steps | accuracy=0.4665 | loss=1.7567
-method=RankExt | adapter_name=RankExt_s2 | step=2 | eval_stage=step | eval_set=all_seen | accuracy=0.2352 | loss=4.0510
-method=RankExt | adapter_name=RankExt_s3 | step=3 | eval_stage=step | eval_set=current_step | accuracy=0.4770 | loss=1.6757
-method=RankExt | adapter_name=RankExt_s3 | step=3 | eval_stage=step | eval_set=first_step | accuracy=0.0000 | loss=7.3019
-method=RankExt | adapter_name=RankExt_s3 | step=3 | eval_stage=step | eval_set=later_steps | accuracy=0.2390 | loss=4.0840
-method=RankExt | adapter_name=RankExt_s3 | step=3 | eval_stage=step | eval_set=all_seen | accuracy=0.1593 | loss=5.1566
-method=RankExt | adapter_name=RankExt_s4 | step=4 | eval_stage=step | eval_set=current_step | accuracy=0.4645 | loss=1.6798
-method=RankExt | adapter_name=RankExt_s4 | step=4 | eval_stage=step | eval_set=first_step | accuracy=0.0000 | loss=6.9354
-method=RankExt | adapter_name=RankExt_s4 | step=4 | eval_stage=step | eval_set=later_steps | accuracy=0.1553 | loss=5.0536
-method=RankExt | adapter_name=RankExt_s4 | step=4 | eval_stage=step | eval_set=all_seen | accuracy=0.1165 | loss=5.5240
-method=RankExt | adapter_name=RankExt_s5 | step=5 | eval_stage=step | eval_set=current_step | accuracy=0.4905 | loss=1.5927
-method=RankExt | adapter_name=RankExt_s5 | step=5 | eval_stage=step | eval_set=first_step | accuracy=0.0000 | loss=6.9475
-method=RankExt | adapter_name=RankExt_s5 | step=5 | eval_stage=step | eval_set=later_steps | accuracy=0.1264 | loss=5.7471
-method=RankExt | adapter_name=RankExt_s5 | step=5 | eval_stage=step | eval_set=all_seen | accuracy=0.1011 | loss=5.9872
-method=RankExt+Ortho | adapter_name=RankExt+Ortho_s2 | step=2 | eval_stage=step | eval_set=current_step | accuracy=0.4635 | loss=1.7589
-method=RankExt+Ortho | adapter_name=RankExt+Ortho_s2 | step=2 | eval_stage=step | eval_set=first_step | accuracy=0.0045 | loss=6.3355
-method=RankExt+Ortho | adapter_name=RankExt+Ortho_s2 | step=2 | eval_stage=step | eval_set=later_steps | accuracy=0.4635 | loss=1.7589
-method=RankExt+Ortho | adapter_name=RankExt+Ortho_s2 | step=2 | eval_stage=step | eval_set=all_seen | accuracy=0.2340 | loss=4.0472
-method=RankExt+Ortho | adapter_name=RankExt+Ortho_s3 | step=3 | eval_stage=step | eval_set=current_step | accuracy=0.4745 | loss=1.6725
-method=RankExt+Ortho | adapter_name=RankExt+Ortho_s3 | step=3 | eval_stage=step | eval_set=first_step | accuracy=0.0000 | loss=7.2731
-method=RankExt+Ortho | adapter_name=RankExt+Ortho_s3 | step=3 | eval_stage=step | eval_set=later_steps | accuracy=0.2380 | loss=4.0588
-method=RankExt+Ortho | adapter_name=RankExt+Ortho_s3 | step=3 | eval_stage=step | eval_set=all_seen | accuracy=0.1587 | loss=5.1302
-method=RankExt+Ortho | adapter_name=RankExt+Ortho_s4 | step=4 | eval_stage=step | eval_set=current_step | accuracy=0.4570 | loss=1.6820
-method=RankExt+Ortho | adapter_name=RankExt+Ortho_s4 | step=4 | eval_stage=step | eval_set=first_step | accuracy=0.0000 | loss=6.9830
-method=RankExt+Ortho | adapter_name=RankExt+Ortho_s4 | step=4 | eval_stage=step | eval_set=later_steps | accuracy=0.1530 | loss=5.0448
-method=RankExt+Ortho | adapter_name=RankExt+Ortho_s4 | step=4 | eval_stage=step | eval_set=all_seen | accuracy=0.1148 | loss=5.5293
-method=RankExt+Ortho | adapter_name=RankExt+Ortho_s5 | step=5 | eval_stage=step | eval_set=current_step | accuracy=0.4950 | loss=1.5967
-method=RankExt+Ortho | adapter_name=RankExt+Ortho_s5 | step=5 | eval_stage=step | eval_set=first_step | accuracy=0.0000 | loss=6.8572
-method=RankExt+Ortho | adapter_name=RankExt+Ortho_s5 | step=5 | eval_stage=step | eval_set=later_steps | accuracy=0.1283 | loss=5.7322
-method=RankExt+Ortho | adapter_name=RankExt+Ortho_s5 | step=5 | eval_stage=step | eval_set=all_seen | accuracy=0.1026 | loss=5.9572
+method=RankExt | adapter_name=RankExt_s2 | step=2 | eval_stage=step | eval_set=current_step | accuracy=0.4340 | loss=1.8927
+method=RankExt | adapter_name=RankExt_s2 | step=2 | eval_stage=step | eval_set=first_step | accuracy=0.0220 | loss=5.6483
+method=RankExt | adapter_name=RankExt_s2 | step=2 | eval_stage=step | eval_set=later_steps | accuracy=0.4340 | loss=1.8927
+method=RankExt | adapter_name=RankExt_s2 | step=2 | eval_stage=step | eval_set=all_seen | accuracy=0.2280 | loss=3.7705
+method=RankExt | adapter_name=RankExt_s3 | step=3 | eval_stage=step | eval_set=current_step | accuracy=0.4375 | loss=1.8464
+method=RankExt | adapter_name=RankExt_s3 | step=3 | eval_stage=step | eval_set=first_step | accuracy=0.0010 | loss=7.4765
+method=RankExt | adapter_name=RankExt_s3 | step=3 | eval_stage=step | eval_set=later_steps | accuracy=0.2213 | loss=3.8514
+method=RankExt | adapter_name=RankExt_s3 | step=3 | eval_stage=step | eval_set=all_seen | accuracy=0.1478 | loss=5.0598
+method=RankExt | adapter_name=RankExt_s4 | step=4 | eval_stage=step | eval_set=current_step | accuracy=0.4255 | loss=1.8422
+method=RankExt | adapter_name=RankExt_s4 | step=4 | eval_stage=step | eval_set=first_step | accuracy=0.0045 | loss=7.0591
+method=RankExt | adapter_name=RankExt_s4 | step=4 | eval_stage=step | eval_set=later_steps | accuracy=0.1458 | loss=5.0120
+method=RankExt | adapter_name=RankExt_s4 | step=4 | eval_stage=step | eval_set=all_seen | accuracy=0.1105 | loss=5.5238
+method=RankExt | adapter_name=RankExt_s5 | step=5 | eval_stage=step | eval_set=current_step | accuracy=0.4600 | loss=1.7653
+method=RankExt | adapter_name=RankExt_s5 | step=5 | eval_stage=step | eval_set=first_step | accuracy=0.0025 | loss=6.2180
+method=RankExt | adapter_name=RankExt_s5 | step=5 | eval_stage=step | eval_set=later_steps | accuracy=0.1176 | loss=5.6691
+method=RankExt | adapter_name=RankExt_s5 | step=5 | eval_stage=step | eval_set=all_seen | accuracy=0.0946 | loss=5.7788
+method=RankExt+Ortho | adapter_name=RankExt+Ortho_s2 | step=2 | eval_stage=step | eval_set=current_step | accuracy=0.4310 | loss=1.8952
+method=RankExt+Ortho | adapter_name=RankExt+Ortho_s2 | step=2 | eval_stage=step | eval_set=first_step | accuracy=0.0235 | loss=5.6138
+method=RankExt+Ortho | adapter_name=RankExt+Ortho_s2 | step=2 | eval_stage=step | eval_set=later_steps | accuracy=0.4310 | loss=1.8952
+method=RankExt+Ortho | adapter_name=RankExt+Ortho_s2 | step=2 | eval_stage=step | eval_set=all_seen | accuracy=0.2273 | loss=3.7545
+method=RankExt+Ortho | adapter_name=RankExt+Ortho_s3 | step=3 | eval_stage=step | eval_set=current_step | accuracy=0.4440 | loss=1.8456
+method=RankExt+Ortho | adapter_name=RankExt+Ortho_s3 | step=3 | eval_stage=step | eval_set=first_step | accuracy=0.0010 | loss=7.4725
+method=RankExt+Ortho | adapter_name=RankExt+Ortho_s3 | step=3 | eval_stage=step | eval_set=later_steps | accuracy=0.2245 | loss=3.8272
+method=RankExt+Ortho | adapter_name=RankExt+Ortho_s3 | step=3 | eval_stage=step | eval_set=all_seen | accuracy=0.1500 | loss=5.0423
+method=RankExt+Ortho | adapter_name=RankExt+Ortho_s4 | step=4 | eval_stage=step | eval_set=current_step | accuracy=0.4300 | loss=1.8317
+method=RankExt+Ortho | adapter_name=RankExt+Ortho_s4 | step=4 | eval_stage=step | eval_set=first_step | accuracy=0.0035 | loss=7.2765
+method=RankExt+Ortho | adapter_name=RankExt+Ortho_s4 | step=4 | eval_stage=step | eval_set=later_steps | accuracy=0.1470 | loss=5.1148
+method=RankExt+Ortho | adapter_name=RankExt+Ortho_s4 | step=4 | eval_stage=step | eval_set=all_seen | accuracy=0.1111 | loss=5.6552
+method=RankExt+Ortho | adapter_name=RankExt+Ortho_s5 | step=5 | eval_stage=step | eval_set=current_step | accuracy=0.4520 | loss=1.7995
+method=RankExt+Ortho | adapter_name=RankExt+Ortho_s5 | step=5 | eval_stage=step | eval_set=first_step | accuracy=0.0025 | loss=6.1180
+method=RankExt+Ortho | adapter_name=RankExt+Ortho_s5 | step=5 | eval_stage=step | eval_set=later_steps | accuracy=0.1170 | loss=5.5429
+method=RankExt+Ortho | adapter_name=RankExt+Ortho_s5 | step=5 | eval_stage=step | eval_set=all_seen | accuracy=0.0941 | loss=5.6580
 method=Full FT | adapter_name=nan | step=2 | eval_stage=step | eval_set=current_step | accuracy=0.5975 | loss=1.3252
 method=Full FT | adapter_name=nan | step=2 | eval_stage=step | eval_set=first_step | accuracy=0.0000 | loss=7.7223
 method=Full FT | adapter_name=nan | step=2 | eval_stage=step | eval_set=later_steps_seen_so_far | accuracy=0.5975 | loss=1.3252
@@ -49,12 +49,12 @@ method=Full FT | adapter_name=nan | step=5 | eval_stage=step | eval_set=current_
 method=Full FT | adapter_name=nan | step=5 | eval_stage=step | eval_set=first_step | accuracy=0.0000 | loss=9.0940
 method=Full FT | adapter_name=nan | step=5 | eval_stage=step | eval_set=later_steps_seen_so_far | accuracy=0.1679 | loss=6.4555
 method=Full FT | adapter_name=nan | step=5 | eval_stage=step | eval_set=all_seen | accuracy=0.1343 | loss=6.9832
-method=RankExt | adapter_name=RankExt_final | step=5 | eval_stage=final | eval_set=first_step | accuracy=0.0000 | loss=6.9476
-method=RankExt | adapter_name=RankExt_final | step=5 | eval_stage=final | eval_set=later_steps | accuracy=0.1261 | loss=5.7472
-method=RankExt | adapter_name=RankExt_final | step=5 | eval_stage=final | eval_set=all_seen | accuracy=0.1009 | loss=5.9873
-method=RankExt+Ortho | adapter_name=RankExt+Ortho_final | step=5 | eval_stage=final | eval_set=first_step | accuracy=0.0000 | loss=6.8571
-method=RankExt+Ortho | adapter_name=RankExt+Ortho_final | step=5 | eval_stage=final | eval_set=later_steps | accuracy=0.1284 | loss=5.7321
-method=RankExt+Ortho | adapter_name=RankExt+Ortho_final | step=5 | eval_stage=final | eval_set=all_seen | accuracy=0.1027 | loss=5.9571
+method=RankExt | adapter_name=RankExt_final | step=5 | eval_stage=final | eval_set=first_step | accuracy=0.0025 | loss=6.2181
+method=RankExt | adapter_name=RankExt_final | step=5 | eval_stage=final | eval_set=later_steps | accuracy=0.1176 | loss=5.6690
+method=RankExt | adapter_name=RankExt_final | step=5 | eval_stage=final | eval_set=all_seen | accuracy=0.0946 | loss=5.7788
+method=RankExt+Ortho | adapter_name=RankExt+Ortho_final | step=5 | eval_stage=final | eval_set=first_step | accuracy=0.0025 | loss=6.1178
+method=RankExt+Ortho | adapter_name=RankExt+Ortho_final | step=5 | eval_stage=final | eval_set=later_steps | accuracy=0.1170 | loss=5.5428
+method=RankExt+Ortho | adapter_name=RankExt+Ortho_final | step=5 | eval_stage=final | eval_set=all_seen | accuracy=0.0941 | loss=5.6578
 method=Full FT | adapter_name=nan | step=5 | eval_stage=final | eval_set=first_step | accuracy=0.0000 | loss=9.0940
 method=Full FT | adapter_name=nan | step=5 | eval_stage=final | eval_set=later_steps | accuracy=0.1679 | loss=6.4555
 method=Full FT | adapter_name=nan | step=5 | eval_stage=final | eval_set=all_seen | accuracy=0.1343 | loss=6.9832

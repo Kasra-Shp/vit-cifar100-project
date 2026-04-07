@@ -1,42 +1,61 @@
 method,adapter_name,step,eval_stage,eval_set,accuracy,loss
-Rank-Extension LoRA,RankExt_s2,2,step,current_step,0.3006666666666667,3.2784037590026855
-Rank-Extension LoRA,RankExt_s2,2,step,first_step,0.003,6.836141109466553
-Rank-Extension LoRA,RankExt_s2,2,step,later_steps_seen_so_far,0.3006666666666667,3.2784037590026855
-Rank-Extension LoRA,RankExt_s2,2,step,all_seen,0.08418181818181818,5.86584997177124
-Rank-Extension LoRA,RankExt_s3,3,step,current_step,0.4533333333333333,3.034902334213257
-Rank-Extension LoRA,RankExt_s3,3,step,first_step,0.0,6.924516201019287
-Rank-Extension LoRA,RankExt_s3,3,step,later_steps_seen_so_far,0.22666666666666666,3.7041008472442627
-Rank-Extension LoRA,RankExt_s3,3,step,all_seen,0.09714285714285714,5.544337749481201
-Rank-Extension LoRA,RankExt_s4,4,step,current_step,0.5073333333333333,2.963113307952881
-Rank-Extension LoRA,RankExt_s4,4,step,first_step,0.0,6.92561674118042
-Rank-Extension LoRA,RankExt_s4,4,step,later_steps_seen_so_far,0.1691111111111111,3.8793394565582275
-Rank-Extension LoRA,RankExt_s4,4,step,all_seen,0.08952941176470589,5.3128814697265625
-Rank-Extension LoRA,RankExt_s5,5,step,current_step,0.51,2.9459733963012695
-Rank-Extension LoRA,RankExt_s5,5,step,first_step,0.0,6.929710865020752
-Rank-Extension LoRA,RankExt_s5,5,step,later_steps_seen_so_far,0.1275,3.9880547523498535
-Rank-Extension LoRA,RankExt_s5,5,step,all_seen,0.0765,5.164718151092529
-Full FT,,2,step,current_step,0.694,1.0214134454727173
-Full FT,,2,step,first_step,0.01225,7.914151191711426
-Full FT,,2,step,later_steps_seen_so_far,0.694,1.0214134454727173
-Full FT,,2,step,all_seen,0.19818181818181818,6.034310340881348
-Full FT,,3,step,current_step,0.688,1.012790560722351
-Full FT,,3,step,first_step,0.00225,9.377253532409668
-Full FT,,3,step,later_steps_seen_so_far,0.344,3.9807546138763428
-Full FT,,3,step,all_seen,0.14871428571428572,7.064467430114746
-Full FT,,4,step,current_step,0.7206666666666667,0.9184887409210205
-Full FT,,4,step,first_step,0.0,9.507675170898438
-Full FT,,4,step,later_steps_seen_so_far,0.24022222222222223,5.399284839630127
-Full FT,,4,step,all_seen,0.1271764705882353,7.332646369934082
-Full FT,,5,step,current_step,0.7413333333333333,0.8461827635765076
-Full FT,,5,step,first_step,0.0,9.46741008758545
-Full FT,,5,step,later_steps_seen_so_far,0.18533333333333332,6.036781311035156
-Full FT,,5,step,all_seen,0.1112,7.409031391143799
-Rank-Extension LoRA,RankExt_final,5,final,first_step,0.0,6.929710865020752
-Rank-Extension LoRA,RankExt_final,5,final,later_steps,0.1275,3.9880547523498535
-Rank-Extension LoRA,RankExt_final,5,final,all_seen,0.0765,5.164718151092529
-Full FT,,5,final,first_step,0.0,9.46741008758545
-Full FT,,5,final,later_steps,0.18533333333333332,6.036781311035156
-Full FT,,5,final,all_seen,0.1112,7.409031391143799
-Joint,,5,final,first_step,0.282,2.9772236347198486
-Joint,,5,final,later_steps,0.31483333333333335,2.7674593925476074
-Joint,,5,final,all_seen,0.3017,2.851365804672241
+RankExt,RankExt_s2,2,step,current_step,0.4665,1.75672447681427
+RankExt,RankExt_s2,2,step,first_step,0.004,6.345324993133545
+RankExt,RankExt_s2,2,step,later_steps,0.4665,1.75672447681427
+RankExt,RankExt_s2,2,step,all_seen,0.23525,4.051023006439209
+RankExt,RankExt_s3,3,step,current_step,0.477,1.675674557685852
+RankExt,RankExt_s3,3,step,first_step,0.0,7.301925182342529
+RankExt,RankExt_s3,3,step,later_steps,0.239,4.083959579467773
+RankExt,RankExt_s3,3,step,all_seen,0.15933333333333333,5.156612873077393
+RankExt,RankExt_s4,4,step,current_step,0.4645,1.6798025369644165
+RankExt,RankExt_s4,4,step,first_step,0.0,6.935365676879883
+RankExt,RankExt_s4,4,step,later_steps,0.15533333333333332,5.053551197052002
+RankExt,RankExt_s4,4,step,all_seen,0.1165,5.524004936218262
+RankExt,RankExt_s5,5,step,current_step,0.4905,1.5927228927612305
+RankExt,RankExt_s5,5,step,first_step,0.0,6.9474873542785645
+RankExt,RankExt_s5,5,step,later_steps,0.126375,5.7471022605896
+RankExt,RankExt_s5,5,step,all_seen,0.1011,5.987179756164551
+RankExt+Ortho,RankExt+Ortho_s2,2,step,current_step,0.4635,1.7588911056518555
+RankExt+Ortho,RankExt+Ortho_s2,2,step,first_step,0.0045,6.335541248321533
+RankExt+Ortho,RankExt+Ortho_s2,2,step,later_steps,0.4635,1.7588911056518555
+RankExt+Ortho,RankExt+Ortho_s2,2,step,all_seen,0.234,4.047219276428223
+RankExt+Ortho,RankExt+Ortho_s3,3,step,current_step,0.4745,1.6724979877471924
+RankExt+Ortho,RankExt+Ortho_s3,3,step,first_step,0.0,7.273055076599121
+RankExt+Ortho,RankExt+Ortho_s3,3,step,later_steps,0.238,4.058795928955078
+RankExt+Ortho,RankExt+Ortho_s3,3,step,all_seen,0.15866666666666668,5.130213737487793
+RankExt+Ortho,RankExt+Ortho_s4,4,step,current_step,0.457,1.6819854974746704
+RankExt+Ortho,RankExt+Ortho_s4,4,step,first_step,0.0,6.982983589172363
+RankExt+Ortho,RankExt+Ortho_s4,4,step,later_steps,0.153,5.044794082641602
+RankExt+Ortho,RankExt+Ortho_s4,4,step,all_seen,0.11475,5.529342174530029
+RankExt+Ortho,RankExt+Ortho_s5,5,step,current_step,0.495,1.5967308282852173
+RankExt+Ortho,RankExt+Ortho_s5,5,step,first_step,0.0,6.8571953773498535
+RankExt+Ortho,RankExt+Ortho_s5,5,step,later_steps,0.12825,5.732179641723633
+RankExt+Ortho,RankExt+Ortho_s5,5,step,all_seen,0.1026,5.957183361053467
+Full FT,,2,step,current_step,0.5975,1.3251948356628418
+Full FT,,2,step,first_step,0.0,7.722281455993652
+Full FT,,2,step,later_steps_seen_so_far,0.5975,1.3251948356628418
+Full FT,,2,step,all_seen,0.29875,4.523735046386719
+Full FT,,3,step,current_step,0.6175,1.2063361406326294
+Full FT,,3,step,first_step,0.0,8.868976593017578
+Full FT,,3,step,later_steps_seen_so_far,0.309,4.4220428466796875
+Full FT,,3,step,all_seen,0.206,5.904356002807617
+Full FT,,4,step,current_step,0.607,1.2445825338363647
+Full FT,,4,step,first_step,0.0,8.943089485168457
+Full FT,,4,step,later_steps_seen_so_far,0.20266666666666666,5.679032325744629
+Full FT,,4,step,all_seen,0.152,6.495048999786377
+Full FT,,5,step,current_step,0.668,1.0577995777130127
+Full FT,,5,step,first_step,0.0,9.093999862670898
+Full FT,,5,step,later_steps_seen_so_far,0.167875,6.455491065979004
+Full FT,,5,step,all_seen,0.1343,6.983193874359131
+RankExt,RankExt_final,5,final,first_step,0.0,6.947588920593262
+RankExt,RankExt_final,5,final,later_steps,0.126125,5.747172832489014
+RankExt,RankExt_final,5,final,all_seen,0.1009,5.98725700378418
+RankExt+Ortho,RankExt+Ortho_final,5,final,first_step,0.0,6.857054233551025
+RankExt+Ortho,RankExt+Ortho_final,5,final,later_steps,0.128375,5.732061386108398
+RankExt+Ortho,RankExt+Ortho_final,5,final,all_seen,0.1027,5.957060813903809
+Full FT,,5,final,first_step,0.0,9.093999862670898
+Full FT,,5,final,later_steps,0.167875,6.455491065979004
+Full FT,,5,final,all_seen,0.1343,6.983193874359131
+Joint,,5,final,first_step,0.4895,1.9252551794052124
+Joint,,5,final,later_steps,0.505375,1.9293012619018555
+Joint,,5,final,all_seen,0.5022,1.9284909963607788

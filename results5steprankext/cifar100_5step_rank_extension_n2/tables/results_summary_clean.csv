@@ -1,0 +1,61 @@
+method,adapter_name,step,eval_stage,eval_set,accuracy,loss
+Full FT,FT_final,5,final,all_seen,0.1343,6.983193874359131
+Full FT,FT_final,5,final,first_step,0.0,9.093999862670898
+Full FT,FT_final,5,final,later_steps,0.167875,6.455491065979004
+Full FT,FT_s2,2,step,all_seen,0.29875,4.523735046386719
+Full FT,FT_s2,2,step,current_step,0.5975,1.3251948356628418
+Full FT,FT_s2,2,step,first_step,0.0,7.722281455993652
+Full FT,FT_s2,2,step,later_steps_seen_so_far,0.5975,1.3251948356628418
+Full FT,FT_s3,3,step,all_seen,0.206,5.904356002807617
+Full FT,FT_s3,3,step,current_step,0.6175,1.2063361406326294
+Full FT,FT_s3,3,step,first_step,0.0,8.868976593017578
+Full FT,FT_s3,3,step,later_steps_seen_so_far,0.309,4.4220428466796875
+Full FT,FT_s4,4,step,all_seen,0.152,6.495048999786377
+Full FT,FT_s4,4,step,current_step,0.607,1.2445825338363647
+Full FT,FT_s4,4,step,first_step,0.0,8.943089485168457
+Full FT,FT_s4,4,step,later_steps_seen_so_far,0.20266666666666666,5.679032325744629
+Full FT,FT_s5,5,step,all_seen,0.1343,6.983193874359131
+Full FT,FT_s5,5,step,current_step,0.668,1.0577995777130127
+Full FT,FT_s5,5,step,first_step,0.0,9.093999862670898
+Full FT,FT_s5,5,step,later_steps_seen_so_far,0.167875,6.455491065979004
+Joint,Joint_final,5,final,all_seen,0.5022,1.9284909963607788
+Joint,Joint_final,5,final,first_step,0.4895,1.9252551794052124
+Joint,Joint_final,5,final,later_steps,0.505375,1.9293012619018555
+RankExt,RankExt_final,5,final,all_seen,0.0972,5.404200553894043
+RankExt,RankExt_final,5,final,first_step,0.0025,5.864751815795898
+RankExt,RankExt_final,5,final,later_steps,0.120875,5.289061546325684
+RankExt,RankExt_s2,2,step,all_seen,0.2205,3.809333086013794
+RankExt,RankExt_s2,2,step,current_step,0.427,1.9202545881271362
+RankExt,RankExt_s2,2,step,first_step,0.014,5.6984052658081055
+RankExt,RankExt_s2,2,step,later_steps,0.427,1.9202545881271362
+RankExt,RankExt_s3,3,step,all_seen,0.14633333333333334,4.606517791748047
+RankExt,RankExt_s3,3,step,current_step,0.4375,1.88135826587677
+RankExt,RankExt_s3,3,step,first_step,0.0005,6.09225606918335
+RankExt,RankExt_s3,3,step,later_steps,0.21925,3.8636484146118164
+RankExt,RankExt_s4,4,step,all_seen,0.1065,5.1342573165893555
+RankExt,RankExt_s4,4,step,current_step,0.422,1.8665931224822998
+RankExt,RankExt_s4,4,step,first_step,0.0035,6.208551406860352
+RankExt,RankExt_s4,4,step,later_steps,0.14083333333333334,4.776158332824707
+RankExt,RankExt_s5,5,step,all_seen,0.0972,5.404109954833984
+RankExt,RankExt_s5,5,step,current_step,0.47,1.7513000965118408
+RankExt,RankExt_s5,5,step,first_step,0.0025,5.864595413208008
+RankExt,RankExt_s5,5,step,later_steps,0.120875,5.288987159729004
+RankExt+Ortho,RankExt+Ortho_final,5,final,all_seen,0.0975,5.37725830078125
+RankExt+Ortho,RankExt+Ortho_final,5,final,first_step,0.003,5.783390522003174
+RankExt+Ortho,RankExt+Ortho_final,5,final,later_steps,0.121125,5.275725841522217
+RankExt+Ortho,RankExt+Ortho_s2,2,step,all_seen,0.22225,3.7561216354370117
+RankExt+Ortho,RankExt+Ortho_s2,2,step,current_step,0.43,1.925286054611206
+RankExt+Ortho,RankExt+Ortho_s2,2,step,first_step,0.0145,5.5869598388671875
+RankExt+Ortho,RankExt+Ortho_s2,2,step,later_steps,0.43,1.925286054611206
+RankExt+Ortho,RankExt+Ortho_s3,3,step,all_seen,0.14733333333333334,4.594357967376709
+RankExt+Ortho,RankExt+Ortho_s3,3,step,current_step,0.44,1.8933541774749756
+RankExt+Ortho,RankExt+Ortho_s3,3,step,first_step,0.001,6.0901618003845215
+RankExt+Ortho,RankExt+Ortho_s3,3,step,later_steps,0.2205,3.8464548587799072
+RankExt+Ortho,RankExt+Ortho_s4,4,step,all_seen,0.107125,5.098905086517334
+RankExt+Ortho,RankExt+Ortho_s4,4,step,current_step,0.423,1.866821527481079
+RankExt+Ortho,RankExt+Ortho_s4,4,step,first_step,0.005,6.119953155517578
+RankExt+Ortho,RankExt+Ortho_s4,4,step,later_steps,0.14116666666666666,4.758556842803955
+RankExt+Ortho,RankExt+Ortho_s5,5,step,all_seen,0.0975,5.377321720123291
+RankExt+Ortho,RankExt+Ortho_s5,5,step,current_step,0.4725,1.7617485523223877
+RankExt+Ortho,RankExt+Ortho_s5,5,step,first_step,0.003,5.783478260040283
+RankExt+Ortho,RankExt+Ortho_s5,5,step,later_steps,0.121125,5.275783538818359

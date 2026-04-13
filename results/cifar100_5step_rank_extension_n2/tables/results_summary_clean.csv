@@ -1,61 +1,61 @@
 method,adapter_name,step,eval_stage,eval_set,accuracy,loss
-Full FT,FT_final,5,final,all_seen,0.1343,6.983193874359131
-Full FT,FT_final,5,final,first_step,0.0,9.093999862670898
-Full FT,FT_final,5,final,later_steps,0.167875,6.455491065979004
-Full FT,FT_s2,2,step,all_seen,0.29875,4.523735046386719
-Full FT,FT_s2,2,step,current_step,0.5975,1.3251948356628418
-Full FT,FT_s2,2,step,first_step,0.0,7.722281455993652
-Full FT,FT_s2,2,step,later_steps_seen_so_far,0.5975,1.3251948356628418
-Full FT,FT_s3,3,step,all_seen,0.206,5.904356002807617
-Full FT,FT_s3,3,step,current_step,0.6175,1.2063361406326294
-Full FT,FT_s3,3,step,first_step,0.0,8.868976593017578
-Full FT,FT_s3,3,step,later_steps_seen_so_far,0.309,4.4220428466796875
-Full FT,FT_s4,4,step,all_seen,0.152,6.495048999786377
-Full FT,FT_s4,4,step,current_step,0.607,1.2445825338363647
-Full FT,FT_s4,4,step,first_step,0.0,8.943089485168457
-Full FT,FT_s4,4,step,later_steps_seen_so_far,0.20266666666666666,5.679032325744629
-Full FT,FT_s5,5,step,all_seen,0.1343,6.983193874359131
-Full FT,FT_s5,5,step,current_step,0.668,1.0577995777130127
-Full FT,FT_s5,5,step,first_step,0.0,9.093999862670898
-Full FT,FT_s5,5,step,later_steps_seen_so_far,0.167875,6.455491065979004
-Joint,Joint_final,5,final,all_seen,0.5022,1.9284909963607788
-Joint,Joint_final,5,final,first_step,0.4895,1.9252551794052124
-Joint,Joint_final,5,final,later_steps,0.505375,1.9293012619018555
-RankExt,RankExt_final,5,final,all_seen,0.0972,5.404200553894043
-RankExt,RankExt_final,5,final,first_step,0.0025,5.864751815795898
-RankExt,RankExt_final,5,final,later_steps,0.120875,5.289061546325684
-RankExt,RankExt_s2,2,step,all_seen,0.2205,3.809333086013794
-RankExt,RankExt_s2,2,step,current_step,0.427,1.9202545881271362
-RankExt,RankExt_s2,2,step,first_step,0.014,5.6984052658081055
-RankExt,RankExt_s2,2,step,later_steps,0.427,1.9202545881271362
-RankExt,RankExt_s3,3,step,all_seen,0.14633333333333334,4.606517791748047
-RankExt,RankExt_s3,3,step,current_step,0.4375,1.88135826587677
-RankExt,RankExt_s3,3,step,first_step,0.0005,6.09225606918335
-RankExt,RankExt_s3,3,step,later_steps,0.21925,3.8636484146118164
-RankExt,RankExt_s4,4,step,all_seen,0.1065,5.1342573165893555
-RankExt,RankExt_s4,4,step,current_step,0.422,1.8665931224822998
-RankExt,RankExt_s4,4,step,first_step,0.0035,6.208551406860352
-RankExt,RankExt_s4,4,step,later_steps,0.14083333333333334,4.776158332824707
-RankExt,RankExt_s5,5,step,all_seen,0.0972,5.404109954833984
-RankExt,RankExt_s5,5,step,current_step,0.47,1.7513000965118408
-RankExt,RankExt_s5,5,step,first_step,0.0025,5.864595413208008
-RankExt,RankExt_s5,5,step,later_steps,0.120875,5.288987159729004
-RankExt+Ortho,RankExt+Ortho_final,5,final,all_seen,0.0975,5.37725830078125
-RankExt+Ortho,RankExt+Ortho_final,5,final,first_step,0.003,5.783390522003174
-RankExt+Ortho,RankExt+Ortho_final,5,final,later_steps,0.121125,5.275725841522217
-RankExt+Ortho,RankExt+Ortho_s2,2,step,all_seen,0.22225,3.7561216354370117
-RankExt+Ortho,RankExt+Ortho_s2,2,step,current_step,0.43,1.925286054611206
-RankExt+Ortho,RankExt+Ortho_s2,2,step,first_step,0.0145,5.5869598388671875
-RankExt+Ortho,RankExt+Ortho_s2,2,step,later_steps,0.43,1.925286054611206
-RankExt+Ortho,RankExt+Ortho_s3,3,step,all_seen,0.14733333333333334,4.594357967376709
-RankExt+Ortho,RankExt+Ortho_s3,3,step,current_step,0.44,1.8933541774749756
-RankExt+Ortho,RankExt+Ortho_s3,3,step,first_step,0.001,6.0901618003845215
-RankExt+Ortho,RankExt+Ortho_s3,3,step,later_steps,0.2205,3.8464548587799072
-RankExt+Ortho,RankExt+Ortho_s4,4,step,all_seen,0.107125,5.098905086517334
-RankExt+Ortho,RankExt+Ortho_s4,4,step,current_step,0.423,1.866821527481079
-RankExt+Ortho,RankExt+Ortho_s4,4,step,first_step,0.005,6.119953155517578
-RankExt+Ortho,RankExt+Ortho_s4,4,step,later_steps,0.14116666666666666,4.758556842803955
-RankExt+Ortho,RankExt+Ortho_s5,5,step,all_seen,0.0975,5.377321720123291
-RankExt+Ortho,RankExt+Ortho_s5,5,step,current_step,0.4725,1.7617485523223877
-RankExt+Ortho,RankExt+Ortho_s5,5,step,first_step,0.003,5.783478260040283
-RankExt+Ortho,RankExt+Ortho_s5,5,step,later_steps,0.121125,5.275783538818359
+Full FT,FT_final,5,final,all_seen,0.1343,6.757660388946533
+Full FT,FT_final,5,final,first_step,0.0,8.832974433898926
+Full FT,FT_final,5,final,later_steps,0.167875,6.238831996917725
+Full FT,FT_s2,2,step,all_seen,0.30075,4.42752742767334
+Full FT,FT_s2,2,step,current_step,0.6015,1.3131550550460815
+Full FT,FT_s2,2,step,first_step,0.0,7.541885852813721
+Full FT,FT_s2,2,step,later_steps_seen_so_far,0.6015,1.3131550550460815
+Full FT,FT_s3,3,step,all_seen,0.2035,5.683030605316162
+Full FT,FT_s3,3,step,current_step,0.6105,1.2154992818832397
+Full FT,FT_s3,3,step,first_step,0.0,8.503593444824219
+Full FT,FT_s3,3,step,later_steps_seen_so_far,0.30525,4.272747039794922
+Full FT,FT_s4,4,step,all_seen,0.151,6.284104347229004
+Full FT,FT_s4,4,step,current_step,0.6035,1.2513598203659058
+Full FT,FT_s4,4,step,first_step,0.0,8.76303482055664
+Full FT,FT_s4,4,step,later_steps_seen_so_far,0.20133333333333334,5.457791805267334
+Full FT,FT_s5,5,step,all_seen,0.1343,6.757660388946533
+Full FT,FT_s5,5,step,current_step,0.667,1.0666216611862183
+Full FT,FT_s5,5,step,first_step,0.0,8.832974433898926
+Full FT,FT_s5,5,step,later_steps_seen_so_far,0.167875,6.238831996917725
+Joint,Joint_final,5,final,all_seen,0.4537,2.0857884883880615
+Joint,Joint_final,5,final,first_step,0.4365,2.1019601821899414
+Joint,Joint_final,5,final,later_steps,0.458,2.0817465782165527
+RankExt,RankExt_final,5,final,all_seen,0.1036,6.154961585998535
+RankExt,RankExt_final,5,final,first_step,0.0005,7.026275157928467
+RankExt,RankExt_final,5,final,later_steps,0.129375,5.937132835388184
+RankExt,RankExt_s2,2,step,all_seen,0.24125,4.205807685852051
+RankExt,RankExt_s2,2,step,current_step,0.478,1.6913305521011353
+RankExt,RankExt_s2,2,step,first_step,0.0045,6.720284938812256
+RankExt,RankExt_s2,2,step,later_steps,0.478,1.6913305521011353
+RankExt,RankExt_s3,3,step,all_seen,0.16533333333333333,5.314694881439209
+RankExt,RankExt_s3,3,step,current_step,0.488,1.632298231124878
+RankExt,RankExt_s3,3,step,first_step,0.0015,7.966202259063721
+RankExt,RankExt_s3,3,step,later_steps,0.24725,3.9889426231384277
+RankExt,RankExt_s4,4,step,all_seen,0.118,5.478453636169434
+RankExt,RankExt_s4,4,step,current_step,0.459,1.7057238817214966
+RankExt,RankExt_s4,4,step,first_step,0.0005,6.916129112243652
+RankExt,RankExt_s4,4,step,later_steps,0.15716666666666668,4.99922513961792
+RankExt,RankExt_s5,5,step,all_seen,0.1036,6.154923915863037
+RankExt,RankExt_s5,5,step,current_step,0.508,1.5549224615097046
+RankExt,RankExt_s5,5,step,first_step,0.0005,7.026245594024658
+RankExt,RankExt_s5,5,step,later_steps,0.129375,5.93709135055542
+RankExt+Ortho,RankExt+Ortho_final,5,final,all_seen,0.1049,6.18098258972168
+RankExt+Ortho,RankExt+Ortho_final,5,final,first_step,0.0005,7.050389289855957
+RankExt+Ortho,RankExt+Ortho_final,5,final,later_steps,0.131,5.963629722595215
+RankExt+Ortho,RankExt+Ortho_s2,2,step,all_seen,0.24025,4.2123260498046875
+RankExt+Ortho,RankExt+Ortho_s2,2,step,current_step,0.476,1.699502944946289
+RankExt+Ortho,RankExt+Ortho_s2,2,step,first_step,0.0045,6.7251482009887695
+RankExt+Ortho,RankExt+Ortho_s2,2,step,later_steps,0.476,1.699502944946289
+RankExt+Ortho,RankExt+Ortho_s3,3,step,all_seen,0.16383333333333333,5.319850444793701
+RankExt+Ortho,RankExt+Ortho_s3,3,step,current_step,0.4835,1.6349306106567383
+RankExt+Ortho,RankExt+Ortho_s3,3,step,first_step,0.0015,7.989530086517334
+RankExt+Ortho,RankExt+Ortho_s3,3,step,later_steps,0.245,3.9850096702575684
+RankExt+Ortho,RankExt+Ortho_s4,4,step,all_seen,0.11975,5.653225421905518
+RankExt+Ortho,RankExt+Ortho_s4,4,step,current_step,0.4705,1.6574820280075073
+RankExt+Ortho,RankExt+Ortho_s4,4,step,first_step,0.0005,7.196248531341553
+RankExt+Ortho,RankExt+Ortho_s4,4,step,later_steps,0.1595,5.138884544372559
+RankExt+Ortho,RankExt+Ortho_s5,5,step,all_seen,0.1049,6.180943965911865
+RankExt+Ortho,RankExt+Ortho_s5,5,step,current_step,0.512,1.5547856092453003
+RankExt+Ortho,RankExt+Ortho_s5,5,step,first_step,0.0005,7.050325870513916
+RankExt+Ortho,RankExt+Ortho_s5,5,step,later_steps,0.131,5.963598251342773

@@ -1,0 +1,61 @@
+method,adapter_name,step,eval_stage,eval_set,accuracy,loss
+Full FT,FT_final,5,final,all_seen,0.1362,6.802342414855957
+Full FT,FT_final,5,final,first_step,0.0,9.003228187561035
+Full FT,FT_final,5,final,later_steps,0.17025,6.252121925354004
+Full FT,FT_s2,2,step,all_seen,0.3065,4.476881980895996
+Full FT,FT_s2,2,step,current_step,0.613,1.2772026062011719
+Full FT,FT_s2,2,step,first_step,0.0,7.676558494567871
+Full FT,FT_s2,2,step,later_steps_seen_so_far,0.613,1.2772026062011719
+Full FT,FT_s3,3,step,all_seen,0.2075,5.78056526184082
+Full FT,FT_s3,3,step,current_step,0.6225,1.173087239265442
+Full FT,FT_s3,3,step,first_step,0.0,8.690191268920898
+Full FT,FT_s3,3,step,later_steps_seen_so_far,0.31125,4.325747013092041
+Full FT,FT_s4,4,step,all_seen,0.156,6.360902786254883
+Full FT,FT_s4,4,step,current_step,0.6225,1.2043706178665161
+Full FT,FT_s4,4,step,first_step,0.0,8.938279151916504
+Full FT,FT_s4,4,step,later_steps_seen_so_far,0.208,5.501776218414307
+Full FT,FT_s5,5,step,all_seen,0.1362,6.802342414855957
+Full FT,FT_s5,5,step,current_step,0.676,1.0307036638259888
+Full FT,FT_s5,5,step,first_step,0.0,9.003228187561035
+Full FT,FT_s5,5,step,later_steps_seen_so_far,0.17025,6.252121925354004
+Joint,Joint_final,5,final,all_seen,0.4537,2.0857884883880615
+Joint,Joint_final,5,final,first_step,0.4365,2.1019601821899414
+Joint,Joint_final,5,final,later_steps,0.458,2.0817465782165527
+RankExt,RankExt_final,5,final,all_seen,0.1057,6.236876487731934
+RankExt,RankExt_final,5,final,first_step,0.0,7.52752685546875
+RankExt,RankExt_final,5,final,later_steps,0.132125,5.914213180541992
+RankExt,RankExt_s2,2,step,all_seen,0.2455,4.31414794921875
+RankExt,RankExt_s2,2,step,current_step,0.488,1.6550439596176147
+RankExt,RankExt_s2,2,step,first_step,0.003,6.973243236541748
+RankExt,RankExt_s2,2,step,later_steps,0.488,1.6550439596176147
+RankExt,RankExt_s3,3,step,all_seen,0.16966666666666666,5.2766547203063965
+RankExt,RankExt_s3,3,step,current_step,0.507,1.5986250638961792
+RankExt,RankExt_s3,3,step,first_step,0.0,7.882351398468018
+RankExt,RankExt_s3,3,step,later_steps,0.2545,3.973806381225586
+RankExt,RankExt_s4,4,step,all_seen,0.121375,5.645087718963623
+RankExt,RankExt_s4,4,step,current_step,0.4835,1.6283080577850342
+RankExt,RankExt_s4,4,step,first_step,0.0,7.161255836486816
+RankExt,RankExt_s4,4,step,later_steps,0.16183333333333333,5.1396918296813965
+RankExt,RankExt_s5,5,step,all_seen,0.1058,6.236824989318848
+RankExt,RankExt_s5,5,step,current_step,0.519,1.5136096477508545
+RankExt,RankExt_s5,5,step,first_step,0.0,7.527351379394531
+RankExt,RankExt_s5,5,step,later_steps,0.13225,5.914192199707031
+RankExt+Ortho,RankExt+Ortho_final,5,final,all_seen,0.1073,6.375603199005127
+RankExt+Ortho,RankExt+Ortho_final,5,final,first_step,0.0,7.6567511558532715
+RankExt+Ortho,RankExt+Ortho_final,5,final,later_steps,0.134125,6.055317401885986
+RankExt+Ortho,RankExt+Ortho_s2,2,step,all_seen,0.24475,4.310135841369629
+RankExt+Ortho,RankExt+Ortho_s2,2,step,current_step,0.4865,1.658380389213562
+RankExt+Ortho,RankExt+Ortho_s2,2,step,first_step,0.003,6.961879730224609
+RankExt+Ortho,RankExt+Ortho_s2,2,step,later_steps,0.4865,1.658380389213562
+RankExt+Ortho,RankExt+Ortho_s3,3,step,all_seen,0.17166666666666666,5.272665023803711
+RankExt+Ortho,RankExt+Ortho_s3,3,step,current_step,0.513,1.5539895296096802
+RankExt+Ortho,RankExt+Ortho_s3,3,step,first_step,0.0005,7.660661697387695
+RankExt+Ortho,RankExt+Ortho_s3,3,step,later_steps,0.25725,4.0786638259887695
+RankExt+Ortho,RankExt+Ortho_s4,4,step,all_seen,0.12225,5.864445209503174
+RankExt+Ortho,RankExt+Ortho_s4,4,step,current_step,0.489,1.5782465934753418
+RankExt+Ortho,RankExt+Ortho_s4,4,step,first_step,0.0,7.350510597229004
+RankExt+Ortho,RankExt+Ortho_s4,4,step,later_steps,0.163,5.369086742401123
+RankExt+Ortho,RankExt+Ortho_s5,5,step,all_seen,0.1074,6.37562894821167
+RankExt+Ortho,RankExt+Ortho_s5,5,step,current_step,0.534,1.4497499465942383
+RankExt+Ortho,RankExt+Ortho_s5,5,step,first_step,0.0,7.656819820404053
+RankExt+Ortho,RankExt+Ortho_s5,5,step,later_steps,0.13425,6.055331230163574

@@ -1,7 +1,0 @@
-{
-  "experiment": "joint_full",
-  "val_loss": 2.220371723175049,
-  "val_accuracy": 0.4112,
-  "test_loss": 2.20159649848938,
-  "test_accuracy": 0.4296
-}

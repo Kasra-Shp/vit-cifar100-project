@@ -1,7 +1,0 @@
-{
-  "experiment": "step1_scratch",
-  "val_loss": 2.133695363998413,
-  "val_accuracy": 0.528,
-  "test_loss": 2.007138729095459,
-  "test_accuracy": 0.5675
-}

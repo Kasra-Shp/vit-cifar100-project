@@ -26,6 +26,6 @@
     "orth",
     "replay"
   ],
-  "lambda_orth": 1e-06,
+  "lambda_orth": 0.001,
   "replay_per_old_step": 250
 }

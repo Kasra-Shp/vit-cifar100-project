@@ -26,13 +26,13 @@
     "orth",
     "replay"
   ],
-  "lambda_orth": 0.25,
+  "lambda_orth": 0.03,
   "replay_per_old_step": 250,
   "base_source": "imagenet_pretrained_vit",
   "rankext_new_rank_per_step": 8,
-  "rankext_alpha_per_step": 16,
+  "rankext_alpha_multiplier": 2,
   "rankext_epochs": 10,
   "lr_rankext": 5e-05,
   "freeze_old_lora_ranks": true,
-  "freeze_old_classifier_rows": false
+  "freeze_old_classifier_rows": true
 }

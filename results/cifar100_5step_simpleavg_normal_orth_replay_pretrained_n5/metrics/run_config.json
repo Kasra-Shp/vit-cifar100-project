@@ -26,7 +26,8 @@
     "orth",
     "replay"
   ],
-  "lambda_orth": 0.03,
+  "lambda_orth": 0.1,
+  "orth_base_weight_coef": 0.2,
   "replay_per_old_step": 250,
   "base_source": "imagenet_pretrained_vit",
   "rankext_new_rank_per_step": 8,
@@ -34,5 +35,6 @@
   "rankext_epochs": 10,
   "lr_rankext": 5e-05,
   "freeze_old_lora_ranks": true,
-  "freeze_old_classifier_rows": true
+  "freeze_old_classifier_rows": true,
+  "lambda_rankext_orth": 0.1
 }

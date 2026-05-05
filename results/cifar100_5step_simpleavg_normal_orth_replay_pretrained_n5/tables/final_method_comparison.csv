@@ -1,0 +1,23 @@
+method,adapter_name,step,eval_stage,eval_set,accuracy,loss,rank_total,rank_alpha
+Full FT,,5,final,all_seen,0.3443,3.7491836547851562,,
+Joint,,5,final,all_seen,0.9195,0.484639048576355,,
+RankExt,RankExt-r40,5,final,all_seen,0.4963,2.5706708431243896,40.0,80.0
+RankExt + Stitched,RankExt-stitched-r40,5,final,all_seen,0.4972,2.5607903003692627,40.0,80.0
+Simple AVG - Normal,L12345_avg_normal,5,final,all_seen,0.7929,1.2331513166427612,,
+Simple AVG - Orth,L12345_avg_orth,5,final,all_seen,0.7918,1.2342792749404907,,
+Simple AVG - Replay,L12345_avg_replay,5,final,all_seen,0.8213,1.009521722793579,,
+RankExt,RankExt-r40,5,final,current_step,0.977,0.07390141487121582,40.0,80.0
+Full FT,,5,final,first_step,0.1005,5.487778663635254,,
+Joint,,5,final,first_step,0.926,0.46447503566741943,,
+RankExt,RankExt-r40,5,final,first_step,0.3785,3.137751579284668,40.0,80.0
+RankExt + Stitched,RankExt-stitched-r40,5,final,first_step,0.3795,3.118288993835449,40.0,80.0
+Simple AVG - Normal,L12345_avg_normal,5,final,first_step,0.791,1.1786144971847534,,
+Simple AVG - Orth,L12345_avg_orth,5,final,first_step,0.7755,1.2510931491851807,,
+Simple AVG - Replay,L12345_avg_replay,5,final,first_step,0.8945,0.7394952178001404,,
+Full FT,,5,final,later_steps,0.40525,3.3145346641540527,,
+Joint,,5,final,later_steps,0.917875,0.4896799921989441,,
+RankExt,RankExt-r40,5,final,later_steps,0.52575,2.428898334503174,40.0,80.0
+RankExt + Stitched,RankExt-stitched-r40,5,final,later_steps,0.526625,2.4214141368865967,40.0,80.0
+Simple AVG - Normal,L12345_avg_normal,5,final,later_steps,0.793375,1.2467856407165527,,
+Simple AVG - Orth,L12345_avg_orth,5,final,later_steps,0.795875,1.2300760746002197,,
+Simple AVG - Replay,L12345_avg_replay,5,final,later_steps,0.803,1.0770282745361328,,

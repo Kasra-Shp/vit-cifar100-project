@@ -1,122 +1,122 @@
 method,adapter_name,step,eval_stage,eval_set,accuracy,loss,rank_total,rank_alpha
-LoRA Normal,L1,1,step,current_step,0.971,0.12000451236963272,,
-LoRA Normal,L1,1,step,first_step,0.971,0.12000451236963272,,
+LoRA Normal,L1,1,step,current_step,0.9145,0.8356049656867981,,
+LoRA Normal,L1,1,step,first_step,0.9145,0.8356049656867981,,
 LoRA Normal,L1,1,step,later_steps,,,,
-LoRA Normal,L1,1,step,all_seen,0.971,0.12000451236963272,,
-LoRA Normal,L2,2,step,current_step,0.973,0.1084938645362854,,
-LoRA Normal,L2,2,step,first_step,0.0,9.171669960021973,,
-LoRA Normal,L2,2,step,later_steps,0.973,0.1084938645362854,,
-LoRA Normal,L2,2,step,all_seen,0.4865,4.640084743499756,,
-LoRA Normal,L3,3,step,current_step,0.952,0.1471782773733139,,
-LoRA Normal,L3,3,step,first_step,0.0,8.062605857849121,,
-LoRA Normal,L3,3,step,later_steps,0.476,4.14325475692749,,
-LoRA Normal,L3,3,step,all_seen,0.31733333333333336,5.449704170227051,,
-LoRA Normal,L4,4,step,current_step,0.958,0.1726001501083374,,
-LoRA Normal,L4,4,step,first_step,0.0,7.444369316101074,,
-LoRA Normal,L4,4,step,later_steps,0.31933333333333336,5.159990310668945,,
-LoRA Normal,L4,4,step,all_seen,0.2395,5.731083869934082,,
-LoRA Normal,L5,5,step,current_step,0.981,0.08110452443361282,,
-LoRA Normal,L5,5,step,first_step,0.0,7.754820346832275,,
-LoRA Normal,L5,5,step,later_steps,0.24525,6.3040266036987305,,
-LoRA Normal,L5,5,step,all_seen,0.1962,6.594185829162598,,
-LoRA Orth,L1,1,step,current_step,0.9715,0.11117925494909286,,
-LoRA Orth,L1,1,step,first_step,0.9715,0.11117925494909286,,
+LoRA Normal,L1,1,step,all_seen,0.9145,0.8356049656867981,,
+LoRA Normal,L2,2,step,current_step,0.902,0.8614252805709839,,
+LoRA Normal,L2,2,step,first_step,0.0,6.222912311553955,,
+LoRA Normal,L2,2,step,later_steps,0.902,0.8614252805709839,,
+LoRA Normal,L2,2,step,all_seen,0.451,3.542168378829956,,
+LoRA Normal,L3,3,step,current_step,0.864,1.0161629915237427,,
+LoRA Normal,L3,3,step,first_step,0.0,6.105412006378174,,
+LoRA Normal,L3,3,step,later_steps,0.432,3.5573644638061523,,
+LoRA Normal,L3,3,step,all_seen,0.288,4.406712532043457,,
+LoRA Normal,L4,4,step,current_step,0.894,0.8322976231575012,,
+LoRA Normal,L4,4,step,first_step,0.0,6.148224830627441,,
+LoRA Normal,L4,4,step,later_steps,0.298,4.421960830688477,,
+LoRA Normal,L4,4,step,all_seen,0.2235,4.8535261154174805,,
+LoRA Normal,L5,5,step,current_step,0.92,0.9731538891792297,,
+LoRA Normal,L5,5,step,first_step,0.0,5.896803855895996,,
+LoRA Normal,L5,5,step,later_steps,0.23,4.652308940887451,,
+LoRA Normal,L5,5,step,all_seen,0.184,4.901208400726318,,
+LoRA Orth,L1,1,step,current_step,0.913,0.8425973653793335,,
+LoRA Orth,L1,1,step,first_step,0.913,0.8425973653793335,,
 LoRA Orth,L1,1,step,later_steps,,,,
-LoRA Orth,L1,1,step,all_seen,0.9715,0.11117925494909286,,
-LoRA Orth,L2,2,step,current_step,0.9745,0.10591962933540344,,
-LoRA Orth,L2,2,step,first_step,0.0,9.135831832885742,,
-LoRA Orth,L2,2,step,later_steps,0.9745,0.10591962933540344,,
-LoRA Orth,L2,2,step,all_seen,0.48725,4.620874404907227,,
-LoRA Orth,L3,3,step,current_step,0.953,0.14580117166042328,,
-LoRA Orth,L3,3,step,first_step,0.0,8.249920845031738,,
-LoRA Orth,L3,3,step,later_steps,0.4765,4.234371185302734,,
-LoRA Orth,L3,3,step,all_seen,0.31766666666666665,5.572885990142822,,
-LoRA Orth,L4,4,step,current_step,0.9565,0.1771591156721115,,
-LoRA Orth,L4,4,step,first_step,0.0,7.412358283996582,,
-LoRA Orth,L4,4,step,later_steps,0.31883333333333336,5.13828706741333,,
-LoRA Orth,L4,4,step,all_seen,0.239125,5.706808567047119,,
-LoRA Orth,L5,5,step,current_step,0.978,0.08962250500917435,,
-LoRA Orth,L5,5,step,first_step,0.0,7.48370361328125,,
-LoRA Orth,L5,5,step,later_steps,0.2445,6.066103458404541,,
-LoRA Orth,L5,5,step,all_seen,0.1956,6.34962272644043,,
-LoRA Replay,L1,1,step,current_step,0.9715,0.11117925494909286,,
-LoRA Replay,L1,1,step,first_step,0.9715,0.11117925494909286,,
+LoRA Orth,L1,1,step,all_seen,0.913,0.8425973653793335,,
+LoRA Orth,L2,2,step,current_step,0.901,0.8627517223358154,,
+LoRA Orth,L2,2,step,first_step,0.0,6.2234015464782715,,
+LoRA Orth,L2,2,step,later_steps,0.901,0.8627517223358154,,
+LoRA Orth,L2,2,step,all_seen,0.4505,3.543078660964966,,
+LoRA Orth,L3,3,step,current_step,0.865,1.014462947845459,,
+LoRA Orth,L3,3,step,first_step,0.0,6.116600513458252,,
+LoRA Orth,L3,3,step,later_steps,0.4325,3.561251163482666,,
+LoRA Orth,L3,3,step,all_seen,0.28833333333333333,4.4130330085754395,,
+LoRA Orth,L4,4,step,current_step,0.8915,0.8493945598602295,,
+LoRA Orth,L4,4,step,first_step,0.0,6.130349636077881,,
+LoRA Orth,L4,4,step,later_steps,0.2971666666666667,4.411968231201172,,
+LoRA Orth,L4,4,step,all_seen,0.222875,4.8415608406066895,,
+LoRA Orth,L5,5,step,current_step,0.9195,0.9706125855445862,,
+LoRA Orth,L5,5,step,first_step,0.0,5.913741111755371,,
+LoRA Orth,L5,5,step,later_steps,0.229875,4.66201639175415,,
+LoRA Orth,L5,5,step,all_seen,0.1839,4.912362575531006,,
+LoRA Replay,L1,1,step,current_step,0.913,0.8425973653793335,,
+LoRA Replay,L1,1,step,first_step,0.913,0.8425973653793335,,
 LoRA Replay,L1,1,step,later_steps,,,,
-LoRA Replay,L1,1,step,all_seen,0.9715,0.11117925494909286,,
-LoRA Replay,L2,2,step,current_step,0.97,0.1298948973417282,,
-LoRA Replay,L2,2,step,first_step,0.446,2.0263431072235107,,
-LoRA Replay,L2,2,step,later_steps,0.97,0.1298948973417282,,
-LoRA Replay,L2,2,step,all_seen,0.708,1.0781196355819702,,
-LoRA Replay,L3,3,step,current_step,0.948,0.17792591452598572,,
-LoRA Replay,L3,3,step,first_step,0.658,1.4204075336456299,,
-LoRA Replay,L3,3,step,later_steps,0.7675,0.9005323648452759,,
-LoRA Replay,L3,3,step,all_seen,0.731,1.0738248825073242,,
-LoRA Replay,L4,4,step,current_step,0.9565,0.17848090827465057,,
-LoRA Replay,L4,4,step,first_step,0.712,1.2592471837997437,,
-LoRA Replay,L4,4,step,later_steps,0.7586666666666667,1.033734917640686,,
-LoRA Replay,L4,4,step,all_seen,0.747,1.0901128053665161,,
-LoRA Replay,L5,5,step,current_step,0.9775,0.11979243904352188,,
-LoRA Replay,L5,5,step,first_step,0.743,1.201960802078247,,
-LoRA Replay,L5,5,step,later_steps,0.727125,1.1377675533294678,,
-LoRA Replay,L5,5,step,all_seen,0.7303,1.150606632232666,,
-RankExt-IPC-lite,RankExt-IPC-r8,1,step,current_step,0.9575,0.17615117132663727,8.0,16.0
-RankExt-IPC-lite,RankExt-IPC-r8,1,step,first_step,0.9575,0.17615117132663727,8.0,16.0
+LoRA Replay,L1,1,step,all_seen,0.913,0.8425973653793335,,
+LoRA Replay,L2,2,step,current_step,0.9065,0.9014427661895752,,
+LoRA Replay,L2,2,step,first_step,0.0,4.979679584503174,,
+LoRA Replay,L2,2,step,later_steps,0.9065,0.9014427661895752,,
+LoRA Replay,L2,2,step,all_seen,0.45325,2.940563201904297,,
+LoRA Replay,L3,3,step,current_step,0.8635,1.095217227935791,,
+LoRA Replay,L3,3,step,first_step,0.0,4.9463348388671875,,
+LoRA Replay,L3,3,step,later_steps,0.43225,3.0230014324188232,,
+LoRA Replay,L3,3,step,all_seen,0.2881666666666667,3.6641125679016113,,
+LoRA Replay,L4,4,step,current_step,0.8975,0.865016520023346,,
+LoRA Replay,L4,4,step,first_step,0.001,5.008605480194092,,
+LoRA Replay,L4,4,step,later_steps,0.2991666666666667,3.648139238357544,,
+LoRA Replay,L4,4,step,all_seen,0.224625,3.9882559776306152,,
+LoRA Replay,L5,5,step,current_step,0.9255,1.0450679063796997,,
+LoRA Replay,L5,5,step,first_step,0.005,4.929680824279785,,
+LoRA Replay,L5,5,step,later_steps,0.232,3.9257519245147705,,
+LoRA Replay,L5,5,step,all_seen,0.1866,4.126537322998047,,
+RankExt-IPC-lite,RankExt-IPC-r8,1,step,current_step,0.3935,3.2271924018859863,8.0,16.0
+RankExt-IPC-lite,RankExt-IPC-r8,1,step,first_step,0.3935,3.2271924018859863,8.0,16.0
 RankExt-IPC-lite,RankExt-IPC-r8,1,step,later_steps,,,8.0,16.0
-RankExt-IPC-lite,RankExt-IPC-r8,1,step,all_seen,0.9575,0.17615117132663727,8.0,16.0
-RankExt-IPC-lite,RankExt-IPC-r16,2,step,current_step,0.9505,0.22951605916023254,16.0,32.0
-RankExt-IPC-lite,RankExt-IPC-r16,2,step,first_step,0.6195,1.4444841146469116,16.0,32.0
-RankExt-IPC-lite,RankExt-IPC-r16,2,step,later_steps,0.9505,0.22951605916023254,16.0,32.0
-RankExt-IPC-lite,RankExt-IPC-r16,2,step,all_seen,0.785,0.8369989991188049,16.0,32.0
-RankExt-IPC-lite,RankExt-IPC-r24,3,step,current_step,0.9325,0.30979326367378235,24.0,48.0
-RankExt-IPC-lite,RankExt-IPC-r24,3,step,first_step,0.647,1.4632943868637085,24.0,48.0
-RankExt-IPC-lite,RankExt-IPC-r24,3,step,later_steps,0.73075,1.1419910192489624,24.0,48.0
-RankExt-IPC-lite,RankExt-IPC-r24,3,step,all_seen,0.7028333333333333,1.2490925788879395,24.0,48.0
-RankExt-IPC-lite,RankExt-IPC-r32,4,step,current_step,0.932,0.28418657183647156,32.0,64.0
-RankExt-IPC-lite,RankExt-IPC-r32,4,step,first_step,0.5955,1.6373556852340698,32.0,64.0
-RankExt-IPC-lite,RankExt-IPC-r32,4,step,later_steps,0.6003333333333334,1.7975380420684814,32.0,64.0
-RankExt-IPC-lite,RankExt-IPC-r32,4,step,all_seen,0.599125,1.7574894428253174,32.0,64.0
-RankExt-IPC-lite,RankExt-IPC-r40,5,step,current_step,0.962,0.19384878873825073,40.0,80.0
-RankExt-IPC-lite,RankExt-IPC-r40,5,step,first_step,0.364,3.0081257820129395,40.0,80.0
-RankExt-IPC-lite,RankExt-IPC-r40,5,step,later_steps,0.50825,2.234633684158325,40.0,80.0
-RankExt-IPC-lite,RankExt-IPC-r40,5,step,all_seen,0.4794,2.3893325328826904,40.0,80.0
-RankExt-IPC-lite + Stitched,RankExt-IPC-stitched-r40,5,final,first_step,0.364,3.0080459117889404,40.0,80.0
-RankExt-IPC-lite + Stitched,RankExt-IPC-stitched-r40,5,final,later_steps,0.50825,2.2345545291900635,40.0,80.0
-RankExt-IPC-lite + Stitched,RankExt-IPC-stitched-r40,5,final,all_seen,0.4794,2.3892531394958496,40.0,80.0
-Full FT,full_finetune,1,step,current_step,0.9755,0.08688773959875107,,
-Full FT,full_finetune,1,step,first_step,0.9755,0.08688773959875107,,
+RankExt-IPC-lite,RankExt-IPC-r8,1,step,all_seen,0.3935,3.2271924018859863,8.0,16.0
+RankExt-IPC-lite,RankExt-IPC-r16,2,step,current_step,0.1845,3.564162492752075,16.0,32.0
+RankExt-IPC-lite,RankExt-IPC-r16,2,step,first_step,0.3955,3.088968276977539,16.0,32.0
+RankExt-IPC-lite,RankExt-IPC-r16,2,step,later_steps,0.1845,3.564162492752075,16.0,32.0
+RankExt-IPC-lite,RankExt-IPC-r16,2,step,all_seen,0.29,3.326565980911255,16.0,32.0
+RankExt-IPC-lite,RankExt-IPC-r24,3,step,current_step,0.0075,4.179969787597656,24.0,48.0
+RankExt-IPC-lite,RankExt-IPC-r24,3,step,first_step,0.3945,3.0622191429138184,24.0,48.0
+RankExt-IPC-lite,RankExt-IPC-r24,3,step,later_steps,0.10375,3.839892625808716,24.0,48.0
+RankExt-IPC-lite,RankExt-IPC-r24,3,step,all_seen,0.20066666666666666,3.5806682109832764,24.0,48.0
+RankExt-IPC-lite,RankExt-IPC-r32,4,step,current_step,0.0015,4.892334938049316,32.0,64.0
+RankExt-IPC-lite,RankExt-IPC-r32,4,step,first_step,0.414,3.065457344055176,32.0,64.0
+RankExt-IPC-lite,RankExt-IPC-r32,4,step,later_steps,0.07466666666666667,4.1708269119262695,32.0,64.0
+RankExt-IPC-lite,RankExt-IPC-r32,4,step,all_seen,0.1595,3.894484519958496,32.0,64.0
+RankExt-IPC-lite,RankExt-IPC-r40,5,step,current_step,0.0005,5.499291896820068,40.0,80.0
+RankExt-IPC-lite,RankExt-IPC-r40,5,step,first_step,0.4205,3.083322048187256,40.0,80.0
+RankExt-IPC-lite,RankExt-IPC-r40,5,step,later_steps,0.05975,4.481637477874756,40.0,80.0
+RankExt-IPC-lite,RankExt-IPC-r40,5,step,all_seen,0.1319,4.201974391937256,40.0,80.0
+RankExt-IPC-lite + Stitched,RankExt-IPC-stitched-r40,5,final,first_step,0.4205,3.082613229751587,40.0,80.0
+RankExt-IPC-lite + Stitched,RankExt-IPC-stitched-r40,5,final,later_steps,0.05975,4.480928897857666,40.0,80.0
+RankExt-IPC-lite + Stitched,RankExt-IPC-stitched-r40,5,final,all_seen,0.1319,4.201265811920166,40.0,80.0
+Full FT,full_finetune,1,step,current_step,0.9625,0.18864165246486664,,
+Full FT,full_finetune,1,step,first_step,0.9625,0.18864165246486664,,
 Full FT,full_finetune,1,step,later_steps,,,,
-Full FT,full_finetune,1,step,all_seen,0.9755,0.08688773959875107,,
-Full FT,full_finetune,2,step,current_step,0.9775,0.08700355887413025,,
-Full FT,full_finetune,2,step,first_step,0.3665,3.603577136993408,,
-Full FT,full_finetune,2,step,later_steps,0.9775,0.08700355887413025,,
-Full FT,full_finetune,2,step,all_seen,0.672,1.8452895879745483,,
-Full FT,full_finetune,3,step,current_step,0.9575,0.14224989712238312,,
-Full FT,full_finetune,3,step,first_step,0.317,3.3945157527923584,,
-Full FT,full_finetune,3,step,later_steps,0.73425,1.2219067811965942,,
-Full FT,full_finetune,3,step,all_seen,0.5951666666666666,1.946109414100647,,
-Full FT,full_finetune,4,step,current_step,0.9685,0.12702904641628265,,
-Full FT,full_finetune,4,step,first_step,0.2465,3.7258613109588623,,
-Full FT,full_finetune,4,step,later_steps,0.616,2.0401461124420166,,
-Full FT,full_finetune,4,step,all_seen,0.523625,2.461574077606201,,
-Full FT,full_finetune,5,step,current_step,0.984,0.06568660587072372,,
-Full FT,full_finetune,5,step,first_step,0.1005,5.487778663635254,,
-Full FT,full_finetune,5,step,later_steps,0.40525,3.3145346641540527,,
-Full FT,full_finetune,5,step,all_seen,0.3443,3.7491836547851562,,
-Simple AVG - Normal,L12345_avg_normal,5,final,first_step,0.791,1.1786144971847534,,
-Simple AVG - Normal,L12345_avg_normal,5,final,later_steps,0.793375,1.2467856407165527,,
-Simple AVG - Normal,L12345_avg_normal,5,final,all_seen,0.7929,1.2331513166427612,,
-Simple AVG - Orth,L12345_avg_orth,5,final,first_step,0.7855,1.228507161140442,,
-Simple AVG - Orth,L12345_avg_orth,5,final,later_steps,0.792125,1.2643826007843018,,
-Simple AVG - Orth,L12345_avg_orth,5,final,all_seen,0.7908,1.2572059631347656,,
-Simple AVG - Replay,L12345_avg_replay,5,final,first_step,0.8945,0.7394952178001404,,
-Simple AVG - Replay,L12345_avg_replay,5,final,later_steps,0.803,1.0770282745361328,,
-Simple AVG - Replay,L12345_avg_replay,5,final,all_seen,0.8213,1.009521722793579,,
-DO-Merge - Normal,DO_merge_normal,5,final,first_step,0.719,1.150139570236206,,
-DO-Merge - Normal,DO_merge_normal,5,final,later_steps,0.813625,0.9148680567741394,,
-DO-Merge - Normal,DO_merge_normal,5,final,all_seen,0.7947,0.9619215726852417,,
-Full FT,full_finetune,5,final,first_step,0.1005,5.487778663635254,,
-Full FT,full_finetune,5,final,later_steps,0.40525,3.3145346641540527,,
-Full FT,full_finetune,5,final,all_seen,0.3443,3.7491836547851562,,
-Joint,joint_upper_bound,5,final,first_step,0.926,0.46447503566741943,,
-Joint,joint_upper_bound,5,final,later_steps,0.917875,0.4896799921989441,,
-Joint,joint_upper_bound,5,final,all_seen,0.9195,0.484639048576355,,
+Full FT,full_finetune,1,step,all_seen,0.9625,0.18864165246486664,,
+Full FT,full_finetune,2,step,current_step,0.9665,0.16153568029403687,,
+Full FT,full_finetune,2,step,first_step,0.3835,2.668032169342041,,
+Full FT,full_finetune,2,step,later_steps,0.9665,0.16153568029403687,,
+Full FT,full_finetune,2,step,all_seen,0.675,1.4147870540618896,,
+Full FT,full_finetune,3,step,current_step,0.937,0.3399967551231384,,
+Full FT,full_finetune,3,step,first_step,0.3655,2.4756996631622314,,
+Full FT,full_finetune,3,step,later_steps,0.727,1.1338329315185547,,
+Full FT,full_finetune,3,step,all_seen,0.6066666666666667,1.5811214447021484,,
+Full FT,full_finetune,4,step,current_step,0.9535,0.23381060361862183,,
+Full FT,full_finetune,4,step,first_step,0.326,2.949035882949829,,
+Full FT,full_finetune,4,step,later_steps,0.5723333333333334,1.8986899852752686,,
+Full FT,full_finetune,4,step,all_seen,0.51075,2.161276340484619,,
+Full FT,full_finetune,5,step,current_step,0.9735,0.14509539306163788,,
+Full FT,full_finetune,5,step,first_step,0.1745,4.0520172119140625,,
+Full FT,full_finetune,5,step,later_steps,0.37775,2.7432613372802734,,
+Full FT,full_finetune,5,step,all_seen,0.3371,3.0050125122070312,,
+Simple AVG - Normal,L12345_avg_normal,5,final,first_step,0.62,2.8327202796936035,,
+Simple AVG - Normal,L12345_avg_normal,5,final,later_steps,0.612625,2.8245761394500732,,
+Simple AVG - Normal,L12345_avg_normal,5,final,all_seen,0.6141,2.8262054920196533,,
+Simple AVG - Orth,L12345_avg_orth,5,final,first_step,0.617,2.8368091583251953,,
+Simple AVG - Orth,L12345_avg_orth,5,final,later_steps,0.612625,2.823176622390747,,
+Simple AVG - Orth,L12345_avg_orth,5,final,all_seen,0.6135,2.8259034156799316,,
+Simple AVG - Replay,L12345_avg_replay,5,final,first_step,0.632,2.793536424636841,,
+Simple AVG - Replay,L12345_avg_replay,5,final,later_steps,0.630125,2.754254102706909,,
+Simple AVG - Replay,L12345_avg_replay,5,final,all_seen,0.6305,2.762110710144043,,
+DO-Merge - Normal,DO_merge_normal,5,final,first_step,0.6285,2.659869432449341,,
+DO-Merge - Normal,DO_merge_normal,5,final,later_steps,0.67375,2.533750534057617,,
+DO-Merge - Normal,DO_merge_normal,5,final,all_seen,0.6647,2.558974504470825,,
+Full FT,full_finetune,5,final,first_step,0.1745,4.0520172119140625,,
+Full FT,full_finetune,5,final,later_steps,0.37775,2.7432613372802734,,
+Full FT,full_finetune,5,final,all_seen,0.3371,3.0050125122070312,,
+Joint,joint_upper_bound,5,final,first_step,0.922,0.2870810627937317,,
+Joint,joint_upper_bound,5,final,later_steps,0.914,0.310063898563385,,
+Joint,joint_upper_bound,5,final,all_seen,0.9156,0.30546796321868896,,

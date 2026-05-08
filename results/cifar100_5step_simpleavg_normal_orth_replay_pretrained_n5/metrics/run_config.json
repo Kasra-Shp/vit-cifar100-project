@@ -26,15 +26,20 @@
     "orth",
     "replay"
   ],
-  "lambda_orth": 0.1,
-  "orth_base_weight_coef": 0.2,
+  "lambda_orth": 0.03,
+  "orth_base_weight_coef": 0.0,
   "replay_per_old_step": 250,
   "base_source": "imagenet_pretrained_vit",
+  "use_do_merge": true,
+  "do_merge_source_variant": "normal",
   "rankext_new_rank_per_step": 8,
   "rankext_alpha_multiplier": 2,
   "rankext_epochs": 10,
-  "lr_rankext": 5e-05,
+  "lr_rankext": 2e-05,
+  "rankext_weight_decay": 0.0,
   "freeze_old_lora_ranks": true,
   "freeze_old_classifier_rows": true,
-  "lambda_rankext_orth": 0.1
+  "use_rankext_ipc_lite": true,
+  "rankext_ipc_top_fraction": 0.1,
+  "lambda_rankext_orth": 0.03
 }

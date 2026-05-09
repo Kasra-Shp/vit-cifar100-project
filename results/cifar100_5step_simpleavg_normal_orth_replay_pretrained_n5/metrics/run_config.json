@@ -39,7 +39,7 @@
   "lr_ft_replay": 3e-05,
   "rankext_new_rank_per_step": 8,
   "rankext_alpha_multiplier": 2,
-  "rankext_epochs": 1,
+  "rankext_epochs": 2,
   "lr_rankext": 5e-05,
   "rankext_weight_decay": 0.0,
   "freeze_old_lora_ranks": true,

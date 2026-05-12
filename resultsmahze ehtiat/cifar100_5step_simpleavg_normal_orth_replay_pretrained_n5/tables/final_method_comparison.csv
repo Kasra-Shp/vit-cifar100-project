@@ -1,0 +1,22 @@
+method,adapter_name,step,eval_stage,eval_set,accuracy,loss,replay_per_old_step
+DO-Merge - Normal,DO_merge_normal,5,final,all_seen,0.7815,1.2403507232666016,
+Full FT,full_finetune,5,final,all_seen,0.8353,0.6669216156005859,
+Full FT + Replay,full_finetune_replay,5,final,all_seen,0.8394,0.6650038957595825,250.0
+Joint,joint_upper_bound,5,final,all_seen,0.926,0.2896108031272888,
+Simple AVG - Normal,L12345_avg_normal,5,final,all_seen,0.7689,1.6009610891342163,
+Simple AVG - Orth,L12345_avg_orth,5,final,all_seen,0.7666,1.6084203720092773,
+Simple AVG - Replay,L12345_avg_replay,5,final,all_seen,0.7864,1.4824309349060059,
+DO-Merge - Normal,DO_merge_normal,5,final,first_step,0.722,1.429113745689392,
+Full FT,full_finetune,5,final,first_step,0.826,0.7304720282554626,
+Full FT + Replay,full_finetune_replay,5,final,first_step,0.84,0.6343344449996948,250.0
+Joint,joint_upper_bound,5,final,first_step,0.931,0.271180123090744,
+Simple AVG - Normal,L12345_avg_normal,5,final,first_step,0.7735,1.5899935960769653,
+Simple AVG - Orth,L12345_avg_orth,5,final,first_step,0.7575,1.6566606760025024,
+Simple AVG - Replay,L12345_avg_replay,5,final,first_step,0.84,1.2973339557647705,
+DO-Merge - Normal,DO_merge_normal,5,final,later_steps,0.79625,1.1931601762771606,
+Full FT,full_finetune,5,final,later_steps,0.837625,0.6510345339775085,
+Full FT + Replay,full_finetune_replay,5,final,later_steps,0.83925,0.6726712584495544,250.0
+Joint,joint_upper_bound,5,final,later_steps,0.92475,0.29421886801719666,
+Simple AVG - Normal,L12345_avg_normal,5,final,later_steps,0.76775,1.6037025451660156,
+Simple AVG - Orth,L12345_avg_orth,5,final,later_steps,0.768875,1.596359372138977,
+Simple AVG - Replay,L12345_avg_replay,5,final,later_steps,0.773,1.5287048816680908,

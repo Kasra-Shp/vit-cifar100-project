@@ -1,0 +1,122 @@
+method,adapter_name,step,eval_stage,eval_set,accuracy,loss,replay_per_old_step
+LoRA Normal,L1,1,step,current_step,0.964,0.14304721355438232,
+LoRA Normal,L1,1,step,first_step,0.964,0.14304721355438232,
+LoRA Normal,L1,1,step,later_steps,,,
+LoRA Normal,L1,1,step,all_seen,0.964,0.14304721355438232,
+LoRA Normal,L2,2,step,current_step,0.967,0.1312750279903412,
+LoRA Normal,L2,2,step,first_step,0.0,7.947697162628174,
+LoRA Normal,L2,2,step,later_steps,0.967,0.1312750279903412,
+LoRA Normal,L2,2,step,all_seen,0.4835,4.03948450088501,
+LoRA Normal,L3,3,step,current_step,0.9365,0.20554983615875244,
+LoRA Normal,L3,3,step,first_step,0.0,7.372888565063477,
+LoRA Normal,L3,3,step,later_steps,0.46825,3.8312783241271973,
+LoRA Normal,L3,3,step,all_seen,0.31216666666666665,5.011816501617432,
+LoRA Normal,L4,4,step,current_step,0.9445,0.1945824772119522,
+LoRA Normal,L4,4,step,first_step,0.0,7.043515682220459,
+LoRA Normal,L4,4,step,later_steps,0.31483333333333335,4.86721658706665,
+LoRA Normal,L4,4,step,all_seen,0.236125,5.411293983459473,
+LoRA Normal,L5,5,step,current_step,0.973,0.1197449117898941,
+LoRA Normal,L5,5,step,first_step,0.0,7.05694055557251,
+LoRA Normal,L5,5,step,later_steps,0.24325,5.57562780380249,
+LoRA Normal,L5,5,step,all_seen,0.1946,5.871891498565674,
+LoRA Orth,L1,1,step,current_step,0.963,0.1480071246623993,
+LoRA Orth,L1,1,step,first_step,0.963,0.1480071246623993,
+LoRA Orth,L1,1,step,later_steps,,,
+LoRA Orth,L1,1,step,all_seen,0.963,0.1480071246623993,
+LoRA Orth,L2,2,step,current_step,0.9645,0.13782811164855957,
+LoRA Orth,L2,2,step,first_step,0.0,7.90915584564209,
+LoRA Orth,L2,2,step,later_steps,0.9645,0.13782811164855957,
+LoRA Orth,L2,2,step,all_seen,0.48225,4.02349328994751,
+LoRA Orth,L3,3,step,current_step,0.935,0.21035489439964294,
+LoRA Orth,L3,3,step,first_step,0.0,7.356802940368652,
+LoRA Orth,L3,3,step,later_steps,0.4675,3.8186898231506348,
+LoRA Orth,L3,3,step,all_seen,0.31166666666666665,4.9980597496032715,
+LoRA Orth,L4,4,step,current_step,0.944,0.20588888227939606,
+LoRA Orth,L4,4,step,first_step,0.0,6.9776740074157715,
+LoRA Orth,L4,4,step,later_steps,0.31466666666666665,4.818487167358398,
+LoRA Orth,L4,4,step,all_seen,0.236,5.358283042907715,
+LoRA Orth,L5,5,step,current_step,0.969,0.1274491548538208,
+LoRA Orth,L5,5,step,first_step,0.0,7.076586723327637,
+LoRA Orth,L5,5,step,later_steps,0.24225,5.590240955352783,
+LoRA Orth,L5,5,step,all_seen,0.1938,5.887508392333984,
+LoRA Replay,L1,1,step,current_step,0.963,0.1480071246623993,
+LoRA Replay,L1,1,step,first_step,0.963,0.1480071246623993,
+LoRA Replay,L1,1,step,later_steps,,,
+LoRA Replay,L1,1,step,all_seen,0.963,0.1480071246623993,
+LoRA Replay,L2,2,step,current_step,0.9645,0.19936782121658325,
+LoRA Replay,L2,2,step,first_step,0.1465,3.5833027362823486,
+LoRA Replay,L2,2,step,later_steps,0.9645,0.19936782121658325,
+LoRA Replay,L2,2,step,all_seen,0.5555,1.89133620262146,
+LoRA Replay,L3,3,step,current_step,0.9325,0.2505222260951996,
+LoRA Replay,L3,3,step,first_step,0.2845,2.9788546562194824,
+LoRA Replay,L3,3,step,later_steps,0.6055,1.7263453006744385,
+LoRA Replay,L3,3,step,all_seen,0.4985,2.1438493728637695,
+LoRA Replay,L4,4,step,current_step,0.946,0.2184525728225708,
+LoRA Replay,L4,4,step,first_step,0.4135,2.885399341583252,
+LoRA Replay,L4,4,step,later_steps,0.5418333333333333,2.118731737136841,
+LoRA Replay,L4,4,step,all_seen,0.50975,2.310398817062378,
+LoRA Replay,L5,5,step,current_step,0.969,0.19013354182243347,
+LoRA Replay,L5,5,step,first_step,0.3835,2.8296000957489014,
+LoRA Replay,L5,5,step,later_steps,0.465625,2.3360209465026855,
+LoRA Replay,L5,5,step,all_seen,0.4492,2.4347360134124756,
+Full FT,full_finetune,1,step,current_step,0.9785,0.08631879836320877,
+Full FT,full_finetune,1,step,first_step,0.9785,0.08631879836320877,
+Full FT,full_finetune,1,step,later_steps,,,
+Full FT,full_finetune,1,step,all_seen,0.9785,0.08631879836320877,
+Full FT,full_finetune,2,step,current_step,0.9755,0.08073878288269043,
+Full FT,full_finetune,2,step,first_step,0.7345,1.0259941816329956,
+Full FT,full_finetune,2,step,later_steps,0.9755,0.08073878288269043,
+Full FT,full_finetune,2,step,all_seen,0.855,0.55336594581604,
+Full FT,full_finetune,3,step,current_step,0.9525,0.1629822999238968,
+Full FT,full_finetune,3,step,first_step,0.833,0.5928311944007874,
+Full FT,full_finetune,3,step,later_steps,0.8925,0.39257141947746277,
+Full FT,full_finetune,3,step,all_seen,0.8726666666666667,0.4593246281147003,
+Full FT,full_finetune,4,step,current_step,0.966,0.14326831698417664,
+Full FT,full_finetune,4,step,first_step,0.83,0.7918203473091125,
+Full FT,full_finetune,4,step,later_steps,0.8606666666666667,0.6041179895401001,
+Full FT,full_finetune,4,step,all_seen,0.853,0.6510433554649353,
+Full FT,full_finetune,5,step,current_step,0.9765,0.0830608457326889,
+Full FT,full_finetune,5,step,first_step,0.826,0.7304720282554626,
+Full FT,full_finetune,5,step,later_steps,0.837625,0.6510345339775085,
+Full FT,full_finetune,5,step,all_seen,0.8353,0.6669216156005859,
+Full FT + Replay,full_finetune_replay,1,step,current_step,0.976,0.08617361634969711,250.0
+Full FT + Replay,full_finetune_replay,1,step,first_step,0.976,0.08617361634969711,250.0
+Full FT + Replay,full_finetune_replay,1,step,later_steps,,,250.0
+Full FT + Replay,full_finetune_replay,1,step,all_seen,0.976,0.08617361634969711,250.0
+Full FT + Replay,full_finetune_replay,2,step,current_step,0.975,0.08776463568210602,250.0
+Full FT + Replay,full_finetune_replay,2,step,first_step,0.716,1.1753263473510742,250.0
+Full FT + Replay,full_finetune_replay,2,step,later_steps,0.975,0.08776463568210602,250.0
+Full FT + Replay,full_finetune_replay,2,step,all_seen,0.8455,0.6315442323684692,250.0
+Full FT + Replay,full_finetune_replay,3,step,current_step,0.9475,0.20004907250404358,250.0
+Full FT + Replay,full_finetune_replay,3,step,first_step,0.8675,0.4954302906990051,250.0
+Full FT + Replay,full_finetune_replay,3,step,later_steps,0.89575,0.37607884407043457,250.0
+Full FT + Replay,full_finetune_replay,3,step,all_seen,0.8863333333333333,0.415862500667572,250.0
+Full FT + Replay,full_finetune_replay,4,step,current_step,0.9685,0.1338234394788742,250.0
+Full FT + Replay,full_finetune_replay,4,step,first_step,0.861,0.612974226474762,250.0
+Full FT + Replay,full_finetune_replay,4,step,later_steps,0.8626666666666667,0.5756600499153137,250.0
+Full FT + Replay,full_finetune_replay,4,step,all_seen,0.86225,0.5849876999855042,250.0
+Full FT + Replay,full_finetune_replay,5,step,current_step,0.9815,0.08091143518686295,250.0
+Full FT + Replay,full_finetune_replay,5,step,first_step,0.84,0.6343344449996948,250.0
+Full FT + Replay,full_finetune_replay,5,step,later_steps,0.83925,0.6726712584495544,250.0
+Full FT + Replay,full_finetune_replay,5,step,all_seen,0.8394,0.6650038957595825,250.0
+Simple AVG - Normal,L12345_avg_normal,5,final,first_step,0.7735,1.5899935960769653,
+Simple AVG - Normal,L12345_avg_normal,5,final,later_steps,0.76775,1.6037025451660156,
+Simple AVG - Normal,L12345_avg_normal,5,final,all_seen,0.7689,1.6009610891342163,
+Simple AVG - Orth,L12345_avg_orth,5,final,first_step,0.7575,1.6566606760025024,
+Simple AVG - Orth,L12345_avg_orth,5,final,later_steps,0.768875,1.596359372138977,
+Simple AVG - Orth,L12345_avg_orth,5,final,all_seen,0.7666,1.6084203720092773,
+Simple AVG - Replay,L12345_avg_replay,5,final,first_step,0.84,1.2973339557647705,
+Simple AVG - Replay,L12345_avg_replay,5,final,later_steps,0.773,1.5287048816680908,
+Simple AVG - Replay,L12345_avg_replay,5,final,all_seen,0.7864,1.4824309349060059,
+DO-Merge - Normal,DO_merge_normal,5,final,first_step,0.722,1.429113745689392,
+DO-Merge - Normal,DO_merge_normal,5,final,later_steps,0.79625,1.1931601762771606,
+DO-Merge - Normal,DO_merge_normal,5,final,all_seen,0.7815,1.2403507232666016,
+Full FT,full_finetune,5,final,first_step,0.826,0.7304720282554626,
+Full FT,full_finetune,5,final,later_steps,0.837625,0.6510345339775085,
+Full FT,full_finetune,5,final,all_seen,0.8353,0.6669216156005859,
+Full FT + Replay,full_finetune_replay,5,final,first_step,0.84,0.6343344449996948,250.0
+Full FT + Replay,full_finetune_replay,5,final,later_steps,0.83925,0.6726712584495544,250.0
+Full FT + Replay,full_finetune_replay,5,final,all_seen,0.8394,0.6650038957595825,250.0
+Joint,joint_upper_bound,5,final,first_step,0.931,0.271180123090744,
+Joint,joint_upper_bound,5,final,later_steps,0.92475,0.29421886801719666,
+Joint,joint_upper_bound,5,final,all_seen,0.926,0.2896108031272888,

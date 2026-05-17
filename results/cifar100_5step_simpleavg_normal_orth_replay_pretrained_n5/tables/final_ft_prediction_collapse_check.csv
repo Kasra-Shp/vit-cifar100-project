@@ -1,4 +1,0 @@
-eval_name,accuracy_from_predict,num_examples,pred_frac_first_step,pred_frac_later_steps,pred_frac_last_step,pred_frac_seen,pred_frac_unseen,label_min,label_max,pred_min,pred_max
-first_step,0.826,2000,0.8395,0.1605,0.118,1.0,0.0,0,19,0,99
-later_steps,0.837625,8000,0.009,0.991,0.36725,1.0,0.0,20,99,0,99
-all_seen,0.8353,10000,0.1751,0.8249,0.3174,1.0,0.0,0,99,0,99

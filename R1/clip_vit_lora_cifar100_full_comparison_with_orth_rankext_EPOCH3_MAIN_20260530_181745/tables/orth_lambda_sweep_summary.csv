@@ -1,0 +1,9 @@
+method,orth_mode,lambda_orth,zero_old_merge,first_step,later_steps,all_seen,old_new_gap,avg_forgetting
+rank_extension,none,0.0,False,0.0005,0.25575,0.2047,-0.25525,0.923625
+rank_extension_zero_old_merge,none,0.0,True,0.256,0.16725,0.185,0.08875,0.938625
+rank_extension_orth_trace_abs_lam_001,trace_abs,0.01,False,0.008,0.2595,0.2092,-0.2515,0.9197500000000001
+rank_extension_orth_trace_abs_lam_01,trace_abs,0.1,False,0.003,0.254125,0.2039,-0.251125,0.9256249999999999
+rank_extension_zero_old_merge_orth_trace_abs_lam_001,trace_abs,0.01,True,0.249,0.167875,0.1841,0.081125,0.939125
+rank_extension_zero_old_merge_orth_trace_abs_lam_01,trace_abs,0.1,True,0.2305,0.178125,0.1886,0.052375000000000005,0.939625
+rank_extension_orth_norm_lam_500,norm,500.0,False,0.037,0.288625,0.2383,-0.25162500000000004,0.88325
+rank_extension_zero_old_merge_orth_norm_lam_500,norm,500.0,True,0.217,0.19475,0.1992,0.022249999999999992,0.9402499999999999

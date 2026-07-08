@@ -1,0 +1,16 @@
+method,orth_mode,lambda_orth,zero_old_merge,use_kd,kd_weight,kd_temperature,replay_per_class,old_active_in_forward,first_step,later_steps,all_seen,old_new_gap,avg_forgetting
+full_finetune,none,0.0,False,False,0.0,0.0,0,,0.0,0.2655,0.2124,-0.2655,
+simple_avg,none,0.0,False,False,0.0,0.0,0,,0.67,0.432375,0.4799,0.23762500000000003,
+simple_avg_kd,none,0.0,False,True,1.0,2.0,0,,0.7745,0.295875,0.3916,0.47862499999999997,
+simple_avg_factor_orth,factor_orth,50.0,False,False,0.0,0.0,0,,0.014,0.73275,0.589,-0.71875,
+simple_avg_factor_orth_kd,factor_orth,50.0,False,True,1.0,2.0,0,,0.1145,0.729625,0.6066,-0.6151249999999999,
+simple_avg_replay,none,0.0,False,False,0.0,0.0,20,,0.693,0.509875,0.5465,0.18312499999999998,
+do_merging_simple,none,0.0,False,False,0.0,0.0,0,,0.7295,0.51275,0.5561,0.21675,
+rank_extension,none,0.0,False,False,0.0,2.0,0,True,0.0005,0.25575,0.2047,-0.25525,0.923625
+rank_extension_replay,none,0.0,False,False,0.0,2.0,20,True,0.701,0.7205,0.7167,-0.019500000000000073,0.282375
+rank_extension_kd_only,none,0.0,False,True,1.0,2.0,0,True,0.5985,0.51125,0.5287,0.08725000000000005,0.408125
+rank_extension_orth_delta_trace_lam_50,delta_trace,50.0,False,False,0.0,2.0,0,True,0.0275,0.255875,0.2102,-0.22837500000000002,0.91525
+rank_extension_orth_delta_trace_lam_50_kd,delta_trace,50.0,False,True,1.0,2.0,0,True,0.6235,0.53375,0.5517,0.08975000000000011,0.37575000000000003
+rank_extension_orth_factor_lam_50,factor_orth,50.0,False,False,0.0,2.0,0,True,0.1215,0.406625,0.3496,-0.285125,0.741125
+rank_extension_orth_factor_lam_50_kd,factor_orth,50.0,False,True,1.0,2.0,0,True,0.8,0.655375,0.6843,0.144625,0.16975
+joint_upper_bound,none,0.0,False,False,0.0,0.0,0,,0.8675,0.85575,0.8581,0.011750000000000038,

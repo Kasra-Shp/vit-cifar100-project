@@ -1,0 +1,5 @@
+method,orth_loss_type,orth_scale_mode,orth_target_ratio,lambda_orth,use_ipc,lambda_ipc,ipc_top_p,first_step,later_steps,all_seen,old_new_gap,avg_forgetting
+rank_extension_orth_trace_lam_1_auto_ratio_tr_0.001,trace,auto_ratio,0.001,1.0,False,0.0,0.1,0.5499999999999999,25.825,20.77,-25.275,91.28750000000001
+rank_extension_orth_trace_lam_1_auto_ratio_tr_0.01,trace,auto_ratio,0.01,1.0,False,0.0,0.1,4.95,29.2875,24.42,-24.337500000000002,87.425
+rank_extension_orth_trace_lam_1_auto_ratio_tr_0.05,trace,auto_ratio,0.05,1.0,False,0.0,0.1,12.2,34.2875,29.87,-22.0875,80.6375
+rank_extension_orth_trace_lam_0_squared_trace,trace,squared_trace,0.0,0.0,False,0.0,0.1,2.45,25.4875,20.880000000000003,-23.0375,91.14999999999999

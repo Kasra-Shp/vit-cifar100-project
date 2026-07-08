@@ -1,0 +1,10 @@
+Source run folder: C:\Users\ASUSCenter\Desktop\vit-cifar100-project\R2\clip_vit_lora_cifar100_full_comparison_with_orth_rankext_EPOCH3_MAIN_20260703_030830
+The plots are based on 5 CL steps x 3 epochs.
+Lines are intentionally broken at step boundaries.
+Spikes at S2-E1, S3-E1, S4-E1, and S5-E1 correspond to new task starts.
+Factor-orth weighted losses are shown on log scale because lambda_orth=50 can dominate total loss.
+Validation CE is used to inspect overfitting.
+No smoothing or rerunning was applied; all values come directly from existing R2 tables.
+Epoch organization: Used logged step_id + epoch from training_loss_history_by_epoch.csv.
+Missing / unavailable in R2 logs: val_total_loss, batch_size, lora_dropout
+val_total_loss exists as a column in training_loss_history_by_epoch.csv but is blank for these runs.

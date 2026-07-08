@@ -1,0 +1,9 @@
+method,first_step,later_steps,all_seen,rank_all_seen
+simple_avg,67.0,53.55,56.24,1
+rank_extension_orth_norm_lam_100,2.1,27.6375,22.53,2
+full_finetune,0.0,26.55,21.240000000000002,3
+rank_extension,0.05,25.575,20.47,4
+rank_extension_zero_old_merge_orth_norm_lam_100,20.95,19.8625,20.080000000000002,5
+rank_extension_orth_trace_lam_01,0.25,24.1375,19.36,6
+rank_extension_zero_old_merge,25.6,16.725,18.5,7
+rank_extension_zero_old_merge_orth_trace_lam_01,19.25,11.4875,13.04,8

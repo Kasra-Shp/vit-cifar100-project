@@ -1,0 +1,8 @@
+method,first_step,later_steps,all_seen,rank_all_seen
+rank_extension_orth_factor_lam_50_kd_oldactive_true,74.8,65.975,67.74,1
+simple_avg,66.8,49.575,53.02,2
+rank_extension_orth_factor_lam_50_kd_oldactive_false,4.15,57.975,47.21,3
+rank_extension_orth_factor_lam_50_oldactive_true,10.35,40.362500000000004,34.36,4
+rank_extension_orth_factor_lam_50,10.35,40.362500000000004,34.36,5
+rank_extension_orth_factor_lam_50_oldactive_false,0.0,30.175,24.14,6
+rank_extension,0.0,24.224999999999998,19.38,7

@@ -1,0 +1,5 @@
+method,first_step,later_steps,all_seen,old_new_gap,min_old_new,avg_old_new,gap_to_joint_all_seen,first_step_drop_vs_seq_ft
+rank_extension_orth_trace_lam_0_squared_trace,2.45,25.4875,20.880000000000003,-23.0375,2.45,13.96875,,
+rank_extension_orth_trace_lam_1_auto_ratio_tr_0.001,0.5499999999999999,25.825,20.77,-25.275,0.5499999999999999,13.1875,,
+rank_extension_orth_trace_lam_1_auto_ratio_tr_0.01,4.95,29.2875,24.42,-24.337500000000002,4.95,17.118750000000002,,
+rank_extension_orth_trace_lam_1_auto_ratio_tr_0.05,12.2,34.2875,29.87,-22.087500000000002,12.2,23.24375,,

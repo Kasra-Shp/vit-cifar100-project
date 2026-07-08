@@ -1,0 +1,8 @@
+method,first_step,later_steps,all_seen
+Simple AVG - Normal,77.35,76.775,76.89
+Simple AVG - Orth,75.75,76.8875,76.66
+DO-Merge - Normal,72.2,79.625,78.14999999999999
+Simple AVG - Replay,84.0,77.3,78.64
+Full FT,82.6,83.76249999999999,83.53
+Full FT + Replay,84.0,83.92500000000001,83.94
+Joint,93.10000000000001,92.475,92.60000000000001

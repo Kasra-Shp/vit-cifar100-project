@@ -1,0 +1,16 @@
+method,eval_set,accuracy,loss
+do_merging_simple,first_step,0.5605,2.4960594177246094
+do_merging_simple,later_steps,0.43625,2.696969747543335
+do_merging_simple,all_seen,0.4611,2.6567881107330322
+rank_extension_orth_trace_lam_0,first_step,0.0,7.333841800689697
+rank_extension_orth_trace_lam_0,later_steps,0.241875,5.210495948791504
+rank_extension_orth_trace_lam_0,all_seen,0.1935,5.635162353515625
+rank_extension_orth_trace_lam_0.01,first_step,0.0,7.3414483070373535
+rank_extension_orth_trace_lam_0.01,later_steps,0.240125,5.222182273864746
+rank_extension_orth_trace_lam_0.01,all_seen,0.1921,5.646033763885498
+rank_extension_orth_qr_lorac_lam_0.01,first_step,0.0,7.293704509735107
+rank_extension_orth_qr_lorac_lam_0.01,later_steps,0.241,5.217654228210449
+rank_extension_orth_qr_lorac_lam_0.01,all_seen,0.1928,5.6328654289245605
+rank_extension_orth_combined_lam_0.01_ipc_1e-05,first_step,0.0,7.357414245605469
+rank_extension_orth_combined_lam_0.01_ipc_1e-05,later_steps,0.2395,5.2844953536987305
+rank_extension_orth_combined_lam_0.01_ipc_1e-05,all_seen,0.1916,5.699079990386963

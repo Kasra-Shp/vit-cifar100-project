@@ -1,0 +1,19 @@
+method,family,base_method,uses_kd,kd_temperature,kd_weight,uses_delta_trace,uses_factor_orth,lambda_orth,uses_replay,uses_zero_old,rank,rank_schedule,target_modules,first_step,later_steps,all_seen,old_new_gap,avg_forgetting
+simple_avg,simple_avg,simple_avg,False,0.0,0.0,False,False,0.0,False,False,80,fixed:80,"q_proj, v_proj",58.050000000000004,41.725,44.99,16.325000000000003,
+simple_avg_kd_T1,simple_avg,simple_avg_kd,True,1.0,1.0,False,False,0.0,False,False,80,fixed:80,"q_proj, v_proj",77.45,23.5875,34.36,53.862500000000004,
+simple_avg_kd_T2,simple_avg,simple_avg_kd,True,2.0,1.0,False,False,0.0,False,False,80,fixed:80,"q_proj, v_proj",77.45,29.5875,39.160000000000004,47.862500000000004,
+simple_avg_delta_orth,simple_avg,simple_avg_delta_orth,False,0.0,0.0,True,False,50.0,False,False,80,fixed:80,"q_proj, v_proj",33.7,63.0125,57.15,-29.3125,
+simple_avg_delta_orth_kd_T1,simple_avg,simple_avg_delta_orth_kd,True,1.0,1.0,True,False,50.0,False,False,80,fixed:80,"q_proj, v_proj",59.050000000000004,58.537499999999994,58.64,0.51250000000001,
+simple_avg_delta_orth_kd_T2,simple_avg,simple_avg_delta_orth_kd,True,2.0,1.0,True,False,50.0,False,False,80,fixed:80,"q_proj, v_proj",56.05,61.162499999999994,60.14000000000001,-5.112499999999997,
+simple_avg_factor_orth,simple_avg,simple_avg_factor_orth,False,0.0,0.0,False,True,50.0,False,False,80,fixed:80,"q_proj, v_proj",1.4000000000000001,73.275,58.9,-71.875,
+simple_avg_factor_orth_kd_T1,simple_avg,simple_avg_factor_orth_kd,True,1.0,1.0,False,True,50.0,False,False,80,fixed:80,"q_proj, v_proj",12.0,71.98750000000001,59.99,-59.98750000000001,
+simple_avg_factor_orth_kd_T2,simple_avg,simple_avg_factor_orth_kd,True,2.0,1.0,False,True,50.0,False,False,80,fixed:80,"q_proj, v_proj",11.450000000000001,72.96249999999999,60.660000000000004,-61.51249999999999,
+rank_extension,rank_extension,rank_extension,False,0.0,0.0,False,False,0.0,False,False,80,16->32->48->64->80,"q_proj, v_proj",0.05,25.575,20.47,-25.525,0.923625
+rank_extension_kd_only_T1,rank_extension,rank_extension_kd_only,True,1.0,1.0,False,False,0.0,False,False,80,16->32->48->64->80,"q_proj, v_proj",71.45,51.1875,55.24,20.262500000000003,0.30262500000000003
+rank_extension_kd_only_T2,rank_extension,rank_extension_kd_only,True,2.0,1.0,False,False,0.0,False,False,80,16->32->48->64->80,"q_proj, v_proj",59.85,51.125,52.87,8.725000000000001,0.408125
+rank_extension_orth_delta_trace_lam_50,rank_extension,rank_extension_orth_delta_trace_lam_50,False,0.0,0.0,True,False,50.0,False,False,80,16->32->48->64->80,"q_proj, v_proj",2.75,25.587500000000002,21.02,-22.837500000000002,0.91525
+rank_extension_orth_delta_trace_lam_50_kd_T1,rank_extension,rank_extension_orth_delta_trace_lam_50_kd,True,1.0,1.0,True,False,50.0,False,False,80,16->32->48->64->80,"q_proj, v_proj",73.45,52.3625,56.58,21.087500000000006,0.2785
+rank_extension_orth_delta_trace_lam_50_kd_T2,rank_extension,rank_extension_orth_delta_trace_lam_50_kd,True,2.0,1.0,True,False,50.0,False,False,80,16->32->48->64->80,"q_proj, v_proj",62.35000000000001,53.37499999999999,55.169999999999995,8.975000000000016,0.37575000000000003
+rank_extension_orth_factor_lam_50,rank_extension,rank_extension_orth_factor_lam_50,False,0.0,0.0,False,True,50.0,False,False,80,16->32->48->64->80,"q_proj, v_proj",12.15,40.6625,34.96,-28.512500000000003,0.741125
+rank_extension_orth_factor_lam_50_kd_T1,rank_extension,rank_extension_orth_factor_lam_50_kd,True,1.0,1.0,False,True,50.0,False,False,80,16->32->48->64->80,"q_proj, v_proj",83.45,58.56249999999999,63.54,24.88750000000001,0.159125
+rank_extension_orth_factor_lam_50_kd_T2,rank_extension,rank_extension_orth_factor_lam_50_kd,True,2.0,1.0,False,True,50.0,False,False,80,16->32->48->64->80,"q_proj, v_proj",80.0,65.53750000000001,68.43,14.462499999999991,0.16975

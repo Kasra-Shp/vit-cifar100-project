@@ -1,0 +1,10 @@
+comparison,first_step_gain,later_steps_gain,all_seen_gain
+Replay gain: simple_avg_replay - simple_avg_no_replay,4.500000000000007,4.099999999999994,4.179999999999993
+Orthogonality gain: simple_avg_orth - simple_avg_no_replay,16.650000000000013,13.687499999999993,14.280000000000001
+Replay gain: rank_extension_replay - rank_extension,69.55,45.625,50.41
+Orthogonality gain: rank_extension_orth - rank_extension,15.65,10.9375,11.879999999999999
+Orthogonality gain with replay: rank_extension_replay_orth - rank_extension_replay,1.6499999999999915,0.9749999999999943,1.1099999999999994
+Orthogonality gain: do_merging_simple_orth - do_merging_simple,22.200000000000003,14.462499999999999,16.010000000000005
+Orth vs simple avg: do_merging_simple_orth - simple_avg_no_replay,17.20000000000001,10.887499999999996,12.150000000000006
+Rank-extension gain: rank_extension - simple_avg_no_replay,-62.349999999999994,-26.6,-33.75
+Rank-extension replay gain: rank_extension_replay - simple_avg_replay,2.700000000000003,14.925000000000004,12.480000000000004

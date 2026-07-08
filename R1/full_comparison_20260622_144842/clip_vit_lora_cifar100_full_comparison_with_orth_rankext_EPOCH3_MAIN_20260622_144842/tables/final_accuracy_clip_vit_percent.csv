@@ -1,0 +1,16 @@
+method,first_step,later_steps,all_seen
+full_finetune,0.0,26.55,21.240000000000002
+simple_avg,67.0,43.237500000000004,47.99
+simple_avg_replay,69.3,50.9875,54.65
+simple_avg_kd,77.45,29.5875,39.160000000000004
+simple_avg_factor_orth,1.4000000000000001,73.275,58.9
+simple_avg_factor_orth_kd,11.450000000000001,72.96249999999999,60.660000000000004
+do_merging_simple,72.95,51.275000000000006,55.61000000000001
+rank_extension,0.05,25.575,20.47
+rank_extension_replay,70.1,72.05,71.67
+rank_extension_kd_only,59.85,51.125,52.87
+rank_extension_orth_delta_trace_lam_50,2.75,25.587500000000002,21.02
+rank_extension_orth_delta_trace_lam_50_kd,62.35000000000001,53.37499999999999,55.169999999999995
+rank_extension_orth_factor_lam_50,12.15,40.6625,34.96
+rank_extension_orth_factor_lam_50_kd,80.0,65.53750000000001,68.43
+joint_upper_bound,86.75,85.575,85.81

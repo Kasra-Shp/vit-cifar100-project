@@ -1,0 +1,1 @@
+method,lambda_orth,kd_weight,kd_temperature,ce_loss_mean,orth_loss,factor_A_penalty_mean,factor_B_penalty_mean,factor_total_penalty_mean,weighted_factor_orth_mean,weighted_factor_orth_over_CE,mean_A_overlap,mean_B_overlap,kd_loss_mean,weighted_kd_loss,kd_over_CE,total_loss_mean

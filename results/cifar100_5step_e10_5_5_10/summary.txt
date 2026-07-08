@@ -1,0 +1,21 @@
+Experiment summary
+==================
+
+step1_pretrained | method=full_finetune | step=1 | eval_accuracy=0.5495 | eval_loss=1.4932
+step2_lora | method=lora | step=2 | eval_accuracy=0.4537 | eval_loss=2.0080
+step3_lora | method=lora | step=3 | eval_accuracy=0.4133 | eval_loss=2.2203
+step4_lora | method=lora | step=4 | eval_accuracy=0.3896 | eval_loss=2.3637
+step5_lora | method=lora | step=5 | eval_accuracy=0.3695 | eval_loss=2.4825
+step2_full_finetune | method=full_finetune | step=2 | eval_accuracy=0.5002 | eval_loss=1.7899
+step3_full_finetune | method=full_finetune | step=3 | eval_accuracy=0.5000 | eval_loss=1.8295
+step4_full_finetune | method=full_finetune | step=4 | eval_accuracy=0.5122 | eval_loss=1.8675
+step5_full_finetune | method=full_finetune | step=5 | eval_accuracy=0.5064 | eval_loss=1.9493
+lora_final | method=lora | step=5 | eval_accuracy=0.3870 | eval_loss=2.5523
+lora_final | method=lora | step=5 | eval_accuracy=0.3651 | eval_loss=2.4650
+lora_final | method=lora | step=5 | eval_accuracy=0.3695 | eval_loss=2.4825
+ft_final | method=full_finetune | step=5 | eval_accuracy=0.4965 | eval_loss=2.0698
+ft_final | method=full_finetune | step=5 | eval_accuracy=0.5089 | eval_loss=1.9191
+ft_final | method=full_finetune | step=5 | eval_accuracy=0.5064 | eval_loss=1.9493
+joint_final | method=joint_upper_bound | step=0 | eval_accuracy=0.4695 | eval_loss=1.9947
+joint_final | method=joint_upper_bound | step=0 | eval_accuracy=0.5028 | eval_loss=1.8935
+joint_final | method=joint_upper_bound | step=0 | eval_accuracy=0.4961 | eval_loss=1.9137

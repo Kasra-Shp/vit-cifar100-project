@@ -1,0 +1,5 @@
+method,orth_loss_type,lambda_orth,use_ipc,lambda_ipc,ipc_top_p,first_step,later_steps,all_seen,old_new_gap,avg_forgetting
+rank_extension_orth_combined_lam_0.01_ipc_1e-05,combined,0.01,True,1e-05,0.1,0.0,23.95,19.16,-23.95,92.4125
+rank_extension_orth_qr_lorac_lam_0.01,qr_lorac,0.01,False,0.0,0.1,0.0,24.099999999999998,19.28,-24.099999999999998,92.525
+rank_extension_orth_trace_lam_0,trace,0.0,False,0.0,0.1,0.0,24.1875,19.35,-24.1875,92.475
+rank_extension_orth_trace_lam_0.01,trace,0.01,False,0.0,0.1,0.0,24.0125,19.21,-24.0125,92.575

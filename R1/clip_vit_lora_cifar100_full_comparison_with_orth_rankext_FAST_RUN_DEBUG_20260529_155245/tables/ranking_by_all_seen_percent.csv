@@ -1,0 +1,17 @@
+method,first_step,later_steps,all_seen,rank_all_seen
+simple_avg,54.55,32.05,36.55,1
+full_finetune,0.05,26.4125,21.14,2
+rank_extension_orth_norm_lam_10,0.3,24.025,19.28,3
+rank_extension_orth_norm_lam_5,0.3,23.875,19.16,4
+rank_extension_orth_norm_lam_1,0.25,23.175,18.59,5
+rank_extension_orth_trace_lam_1,0.0,23.05,18.44,6
+rank_extension_orth_trace_lam_0p01,0.44999999999999996,22.8875,18.4,7
+rank_extension,0.4,22.900000000000002,18.4,8
+rank_extension_orth_trace_lam_01,0.2,22.875,18.34,9
+rank_extension_zero_old_merge_orth_norm_lam_10,5.1,9.4125,8.55,10
+rank_extension_zero_old_merge_orth_norm_lam_5,5.3,8.9625,8.23,11
+rank_extension_zero_old_merge_orth_norm_lam_1,5.5,8.825,8.16,12
+rank_extension_zero_old_merge_orth_trace_lam_0p01,5.1,8.674999999999999,7.960000000000001,13
+rank_extension_zero_old_merge_orth_trace_lam_1,4.25,8.0,7.249999999999999,14
+rank_extension_zero_old_merge_orth_trace_lam_01,4.8,7.6875,7.109999999999999,15
+rank_extension_zero_old_merge,4.8500000000000005,7.5874999999999995,7.04,16

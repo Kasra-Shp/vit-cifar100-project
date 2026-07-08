@@ -1,0 +1,6 @@
+method,first_step,later_steps,all_seen,old_new_gap,min_old_new,avg_old_new,gap_to_joint_all_seen,first_step_drop_vs_seq_ft
+do_merging_simple,56.05,43.625,46.11,12.424999999999997,43.625,49.8375,,
+rank_extension_orth_combined_lam_0.01_ipc_1e-05,0.0,23.95,19.16,-23.95,0.0,11.975,,
+rank_extension_orth_qr_lorac_lam_0.01,0.0,24.099999999999998,19.28,-24.099999999999998,0.0,12.049999999999999,,
+rank_extension_orth_trace_lam_0,0.0,24.1875,19.35,-24.1875,0.0,12.09375,,
+rank_extension_orth_trace_lam_0.01,0.0,24.0125,19.21,-24.0125,0.0,12.00625,,

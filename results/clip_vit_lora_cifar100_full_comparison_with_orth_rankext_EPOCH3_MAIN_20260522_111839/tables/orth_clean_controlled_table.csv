@@ -1,0 +1,7 @@
+method_config,lambda_orth,first_step,later_steps,all_seen,avg_forgetting,final_old_new_gap,orth_weighted/CE_mean
+rank_extension,0.0,2.45,25.4875,20.880000000000003,91.14999999999999,-23.0375,0.0
+rank_extension_orth_trace_lam_0.03_normalized_fro,0.03,0.05,24.55,19.650000000000002,92.66250000000001,-24.5,2.853782803473606e-05
+rank_extension_orth_trace_lam_0.05_normalized_fro,0.05,0.1,24.375,19.52,92.60000000000001,-24.275,3.750294712473216e-05
+rank_extension_orth_trace_lam_0.1_normalized_fro,0.1,0.2,25.3125,20.29,91.8375,-25.112499999999997,5.88641555314308e-05
+rank_extension_orth_trace_lam_0.3_normalized_fro,0.3,0.35000000000000003,24.675,19.81,92.65,-24.325,0.00011137960273155858
+rank_extension_orth_trace_lam_1_normalized_fro,1.0,0.2,25.4625,20.41,91.91250000000001,-25.2625,0.00031991488710899393

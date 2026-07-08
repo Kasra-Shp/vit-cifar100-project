@@ -1,0 +1,52 @@
+Run folder used as source of truth: C:\Users\ASUSCenter\Desktop\vit-cifar100-project\R2\clip_vit_lora_cifar100_full_comparison_with_orth_rankext_EPOCH3_MAIN_20260703_030830
+Generated from existing logged CSV outputs only; no training was rerun.
+
+1. Latest R2 inventory
+- CSV files found: 142
+- Log/text/json files found: 0
+- Key epoch-level source: tables/training_loss_history_by_epoch.csv
+- Key summary sources: tables/summary_metrics_selected_methods.csv, tables/loss_components_summary_by_method.csv, tables/method_hyperparameter_summary.csv
+- Validation split source: tables/validation_split_summary.csv
+
+2. Supervisor-selected method presence
+- simple_avg: training_loss_history=yes, summary_metrics=yes
+- rank_extension: training_loss_history=yes, summary_metrics=yes
+- simple_avg_factor_orth: training_loss_history=yes, summary_metrics=yes
+- rank_extension_orth_factor_lam_50: training_loss_history=yes, summary_metrics=yes
+- simple_avg_kd_T2: training_loss_history=yes, summary_metrics=yes
+- rank_extension_kd_only_T2: training_loss_history=yes, summary_metrics=yes
+- simple_avg_factor_orth_kd_T2: training_loss_history=yes, summary_metrics=yes
+- rank_extension_orth_factor_lam_50_kd_T2: training_loss_history=yes, summary_metrics=yes
+- simple_avg_factor_orth is present in the logs/results.
+- simple_avg_factor_orth_kd_T2 is present in the logs/results.
+
+3. Logged vs missing metrics
+- Logged per epoch: train_ce_loss, train_total_loss, val_ce_loss, learning_rate, KD raw/weighted loss, factor-orth raw/weighted loss, delta-trace raw/weighted loss.
+- Validation total loss per epoch logged: no
+- val_total_loss is blank in training_loss_history_by_epoch.csv, so no validation-total-loss plot was produced.
+- batch_size is not logged in the latest R2 outputs.
+- LoRA dropout is not logged in the latest R2 outputs.
+
+4. Hyperparameter consistency check
+- For the delta-trace vs factor-orth pairs checked in hyperparameter_consistency_check.csv, the logged main hyperparameters match for rank, LoRA alpha, target modules, epoch schedule, learning-rate schedule, and KD temperature where relevant.
+- The non-logged fields are batch_size and LoRA dropout, so those cannot be confirmed from R2 alone.
+
+5. Diagnostic note on simple_avg delta-trace vs factor-orth
+- In this R2 run, simple_avg_delta_orth is not better than simple_avg_factor_orth on all_seen: 56.95 vs 58.57.
+- In this R2 run, simple_avg_delta_orth_kd_T2 is also not better than simple_avg_factor_orth_kd_T2 on all_seen: 58.16 vs 61.19.
+- The logged main hyperparameters are the same for the compared simple_avg delta-trace and factor-orth variants except for the orthogonality formulation itself.
+- Loss-scale evidence: mean_delta_trace_weighted_over_ce for simple_avg_delta_orth = 0.271, while mean_factor_orth_weighted_over_ce for simple_avg_factor_orth = 128.456.
+- With KD T=2, mean_delta_trace_weighted_over_ce for simple_avg_delta_orth_kd_T2 = 0.064, while mean_factor_orth_weighted_over_ce for simple_avg_factor_orth_kd_T2 = 118.203.
+- Even though factor-orth is higher on all_seen here, the logged loss-scale mismatch is still extreme, so the method difference is more plausibly explained by the orthogonality formulation and its effective scale relative to CE than by different logged main hyperparameters.
+
+6. Files generated
+- supervisor_selected_accuracy_comparison.csv
+- supervisor_selected_accuracy_comparison.png
+- supervisor_selected_train_val_ce_loss.png
+- kd_loss_by_method.png
+- factor_orth_loss_by_method.png
+- total_loss_by_method.png
+- combined_loss_decomposition.png
+- loss_components_summary.csv
+- hyperparameter_consistency_check.csv
+- supervisor_response_notes.txt

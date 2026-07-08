@@ -1,0 +1,3 @@
+method,orth_loss_type,orth_scale_mode,orth_target_ratio,lambda_orth,use_ipc,lambda_ipc,ipc_top_p,first_step,later_steps,all_seen,old_new_gap,avg_forgetting
+rank_extension_orth,trace,auto_ratio,0.08,1.0,False,0.0,0.1,16.05,35.3125,31.46,-19.262500000000003,78.4375
+rank_extension_replay_orth,trace,auto_ratio,0.08,1.0,False,0.0,0.1,71.6,70.975,71.1,0.6249999999999978,28.6375

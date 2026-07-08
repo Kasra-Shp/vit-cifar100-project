@@ -1,0 +1,9 @@
+method,first_step,later_steps,all_seen,old_new_gap,min_old_new,avg_old_new,gap_to_joint_all_seen,first_step_drop_vs_seq_ft
+rank_extension,2.45,25.4875,20.880000000000003,-23.0375,2.45,13.96875,,
+rank_extension_orth,16.05,35.3125,31.46,-19.2625,16.05,25.68125,,
+rank_extension_orth_trace_lam_1_auto_ratio_tr_0.002,0.25,25.924999999999997,20.79,-25.674999999999997,0.25,13.087499999999999,,
+rank_extension_orth_trace_lam_1_auto_ratio_tr_0.005,4.3999999999999995,28.849999999999998,23.96,-24.45,4.3999999999999995,16.625,,
+rank_extension_orth_trace_lam_1_auto_ratio_tr_0.01,4.95,29.2875,24.42,-24.337500000000002,4.95,17.118750000000002,,
+rank_extension_orth_trace_lam_1_auto_ratio_tr_0.02,8.35,31.924999999999997,27.21,-23.574999999999996,8.35,20.1375,,
+rank_extension_orth_trace_lam_1_auto_ratio_tr_0.05,12.2,34.2875,29.87,-22.087500000000002,12.2,23.24375,,
+rank_extension_orth_trace_lam_1_auto_ratio_tr_0.08,16.05,35.3125,31.46,-19.2625,16.05,25.68125,,

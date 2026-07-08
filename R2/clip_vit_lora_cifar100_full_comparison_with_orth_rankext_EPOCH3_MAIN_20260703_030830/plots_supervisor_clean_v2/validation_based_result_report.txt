@@ -1,0 +1,72 @@
+Validation-based result report
+==============================
+
+Source files
+------------
+Validation diagnostics use actual logged validation CE values from:
+R2/clip_vit_lora_cifar100_full_comparison_with_orth_rankext_EPOCH3_MAIN_20260703_030830/tables/training_loss_history_by_epoch.csv
+
+Final/all-seen accuracy values use:
+R2/clip_vit_lora_cifar100_full_comparison_with_orth_rankext_EPOCH3_MAIN_20260703_030830/tables/supervisor_selected_accuracy_comparison.csv
+
+Validation availability
+-----------------------
+The latest R2 folder contains validation CE in training_loss_history_by_epoch.csv. For the 8 supervisor-selected methods, every method has 15 validation CE entries: 5 CL steps x 3 local epochs. No denser batch-level validation logs were found in the latest R2 folder, and val_total_loss is not populated, so validation CE is the main validation signal.
+
+Clear rankings
+--------------
+- Best method by all-seen accuracy: RankExt + FactorOrth + KD T2 (rank_extension_orth_factor_lam_50_kd_T2), all_seen=68.15%.
+- Best method by best validation CE: SimpleAvg (simple_avg), best_val_ce=0.0916 at step 5, epoch 3.
+- Best method by final validation CE: SimpleAvg (simple_avg), final_val_ce=0.0916.
+- Most stable method by validation CE: SimpleAvg (simple_avg), val_ce_std=0.0824, val_ce_range=0.3364.
+- Strongest overfitting signal: RankExt + KD T2 (rank_extension_kd_only_T2), overfitting_score=1.2855, flags=val_up_train_down;final_val_worse_than_best.
+
+Lowest validation CE methods
+----------------------------
+Best validation CE ranking, top 3:
+- SimpleAvg (simple_avg): best_validation_ce_loss=0.0916, final_validation_ce_loss=0.0916, all_seen_accuracy=41.8800, validation_ce_std=0.0824
+- RankExt + FactorOrth (rank_extension_orth_factor_lam_50): best_validation_ce_loss=0.1234, final_validation_ce_loss=0.1234, all_seen_accuracy=34.2300, validation_ce_std=0.1012
+- SimpleAvg + FactorOrth (simple_avg_factor_orth): best_validation_ce_loss=0.1347, final_validation_ce_loss=0.2799, all_seen_accuracy=58.5700, validation_ce_std=0.4942
+
+Final validation CE ranking, top 3:
+- SimpleAvg (simple_avg): final_validation_ce_loss=0.0916, best_validation_ce_loss=0.0916, all_seen_accuracy=41.8800, train_val_ce_gap_final=0.0427
+- RankExt + FactorOrth (rank_extension_orth_factor_lam_50): final_validation_ce_loss=0.1234, best_validation_ce_loss=0.1234, all_seen_accuracy=34.2300, train_val_ce_gap_final=0.0102
+- RankExt (rank_extension): final_validation_ce_loss=0.1597, best_validation_ce_loss=0.1552, all_seen_accuracy=20.9600, train_val_ce_gap_final=0.0843
+
+Validation stability and train-validation gap
+---------------------------------------------
+Most stable validation CE methods by standard deviation:
+- SimpleAvg (simple_avg): validation_ce_std=0.0824, validation_ce_range=0.3364, final_validation_ce_loss=0.0916, all_seen_accuracy=41.8800
+- RankExt (rank_extension): validation_ce_std=0.0967, validation_ce_range=0.3747, final_validation_ce_loss=0.1597, all_seen_accuracy=20.9600
+- RankExt + FactorOrth (rank_extension_orth_factor_lam_50): validation_ce_std=0.1012, validation_ce_range=0.3978, final_validation_ce_loss=0.1234, all_seen_accuracy=34.2300
+
+Largest final train-validation CE gaps:
+- RankExt + KD T2 (rank_extension_kd_only_T2): train_val_ce_gap_final=0.0844, final_train_ce_loss=0.5409, final_validation_ce_loss=0.6253, all_seen_accuracy=54.3300
+- RankExt (rank_extension): train_val_ce_gap_final=0.0843, final_train_ce_loss=0.0753, final_validation_ce_loss=0.1597, all_seen_accuracy=20.9600
+- SimpleAvg + FactorOrth + KD T2 (simple_avg_factor_orth_kd_T2): train_val_ce_gap_final=0.0784, final_train_ce_loss=0.6358, final_validation_ce_loss=0.7142, all_seen_accuracy=61.1900
+
+Accuracy vs validation behavior
+-------------------------------
+The best all-seen accuracy method is RankExt + FactorOrth + KD T2 (rank_extension_orth_factor_lam_50_kd_T2) with all_seen=68.15%. Its final validation CE is 0.7190, best validation CE is 0.1552, and validation CE std is 0.3288. This should be judged as the strongest final-accuracy result, but not solely on accuracy: its validation CE is not the lowest among all methods.
+
+High-accuracy methods with comparatively weaker validation CE among the high-accuracy group:
+- RankExt + FactorOrth + KD T2 (rank_extension_orth_factor_lam_50_kd_T2): all_seen_accuracy=68.1500, final_validation_ce_loss=0.7190, best_validation_ce_loss=0.1552, validation_ce_std=0.3288, overfitting_signal=moderate
+- SimpleAvg + FactorOrth + KD T2 (simple_avg_factor_orth_kd_T2): all_seen_accuracy=61.1900, final_validation_ce_loss=0.7142, best_validation_ce_loss=0.1347, validation_ce_std=0.6184, overfitting_signal=strong
+
+Lower-accuracy methods with comparatively stable validation behavior:
+- SimpleAvg (simple_avg): all_seen_accuracy=41.8800, validation_ce_std=0.0824, validation_ce_range=0.3364, final_validation_ce_loss=0.0916
+- RankExt (rank_extension): all_seen_accuracy=20.9600, validation_ce_std=0.0967, validation_ce_range=0.3747, final_validation_ce_loss=0.1597
+- RankExt + FactorOrth (rank_extension_orth_factor_lam_50): all_seen_accuracy=34.2300, validation_ce_std=0.1012, validation_ce_range=0.3978, final_validation_ce_loss=0.1234
+
+Overfitting interpretation
+--------------------------
+The overfitting check is based on validation CE, not final/test accuracy. A method is flagged when validation CE increases while train CE decreases within a CL step, when the final train-validation CE gap is large, when final validation CE is much worse than the best validation CE, or when validation CE varies strongly across steps.
+
+Methods with explicit validation-up/train-down events:
+- RankExt + KD T2 (rank_extension_kd_only_T2): num_val_ce_increases_while_train_decreases=2, train_val_ce_gap_final=0.0844, validation_ce_final_minus_best=0.4701, overfitting_signal=strong
+- SimpleAvg (simple_avg): num_val_ce_increases_while_train_decreases=1, train_val_ce_gap_final=0.0427, validation_ce_final_minus_best=0.0000, overfitting_signal=moderate
+- SimpleAvg + KD T2 (simple_avg_kd_T2): num_val_ce_increases_while_train_decreases=1, train_val_ce_gap_final=0.0552, validation_ce_final_minus_best=0.2979, overfitting_signal=strong
+
+Overall assessment
+------------------
+Validation CE does not select exactly the same winner as all-seen accuracy. The highest all-seen method should remain important, but validation behavior suggests checking generalization separately: low validation CE and low validation variability indicate cleaner training dynamics, while high accuracy with higher validation CE may reflect a method that performs well on final test metrics despite less favorable validation loss behavior. Because only epoch-level validation CE is available, these conclusions are useful but coarse; denser validation logging would make overfitting detection more reliable.

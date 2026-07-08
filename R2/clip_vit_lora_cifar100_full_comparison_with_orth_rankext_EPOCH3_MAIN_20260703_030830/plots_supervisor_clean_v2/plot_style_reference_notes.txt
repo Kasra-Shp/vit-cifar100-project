@@ -1,0 +1,36 @@
+Supervisor clean v2 plot style/reference notes
+==============================================
+
+Output folder:
+R2/clip_vit_lora_cifar100_full_comparison_with_orth_rankext_EPOCH3_MAIN_20260703_030830/plots_supervisor_clean_v2
+
+Existing plot files/folders inspected:
+- R2/EPOCH3_MAIN_20260626_014124_results/clip_vit_lora_cifar100_full_comparison_with_orth_rankext_EPOCH3_MAIN_20260626_014124/plots/15_paper_style_ce_loss_curves.png
+- R2/EPOCH3_MAIN_20260626_014124_results/clip_vit_lora_cifar100_full_comparison_with_orth_rankext_EPOCH3_MAIN_20260626_014124/plots/16_paper_style_ce_loss_curves_with_factor_orth.png
+- R2/EPOCH3_MAIN_20260626_014124_results/clip_vit_lora_cifar100_full_comparison_with_orth_rankext_EPOCH3_MAIN_20260626_014124/plots/01_grouped_accuracy_comparison_selected_methods.png
+- R2/clip_vit_lora_cifar100_full_comparison_with_orth_rankext_EPOCH3_MAIN_20260703_030830/plots_supervisor_clean/train_ce_loss_by_method_step_gaps.png
+
+Copied/adapted visual style:
+- Large white figures, bold titles, simple Matplotlib colors, thicker lines, and no point markers.
+- Family separation: Simple-Average Family and Rank-Extension Family are plotted separately, matching the good paper-style CE plots.
+- CL-step separation is explicit. Because the latest run has only epoch-level logs, loss plots use local epoch 1/2/3 inside each CL step and do not connect across task boundaries.
+- Legends are outside the axes to avoid covering curves.
+- Light horizontal grid lines are used; x-axis labels are local epochs or CL-step facets.
+- Factor-Orth and total-loss plots use log scale where needed to handle large regularizer/total-loss ranges without flattening CE-scale methods.
+
+Numerical source files used:
+- Accuracy plot: R2/clip_vit_lora_cifar100_full_comparison_with_orth_rankext_EPOCH3_MAIN_20260703_030830/tables/supervisor_selected_accuracy_comparison.csv
+- All loss plots: R2/clip_vit_lora_cifar100_full_comparison_with_orth_rankext_EPOCH3_MAIN_20260703_030830/tables/training_loss_history_by_epoch.csv
+- Method labels/families: R2/clip_vit_lora_cifar100_full_comparison_with_orth_rankext_EPOCH3_MAIN_20260703_030830/tables/supervisor_method_mapping.csv
+
+Dense/batch-level log availability:
+- Latest R2 run inspected: R2/clip_vit_lora_cifar100_full_comparison_with_orth_rankext_EPOCH3_MAIN_20260703_030830
+- No dense/batch-level latest-run loss log was found. The available latest-run loss source is training_loss_history_by_epoch.csv, with 270 rows = 18 methods x 5 CL steps x 3 epochs.
+- Dense loss_components_train_log.csv files were found only in older sibling R2 runs from 20260624 and 20260626. They were used as style references only, not as numerical sources for these v2 plots.
+
+Why these plots are easier to interpret than the previous jagged version:
+- The previous clean plots connected sparse global epoch labels across the full 15-epoch sequence and used markers, making each method look like a sharp sawtooth.
+- The v2 plots do not draw lines across CL task boundaries. Each step is shown as its own local 3-epoch mini-curve, so task resets are visually separated instead of implied as continuous dynamics.
+- Methods are grouped into Simple-Average vs Rank-Extension families, reducing legend/curve overload.
+- The combined decomposition separates CE, KD, Factor-Orth, and Total components into component facets instead of forcing incompatible scales into one axis.
+- All plotted values are directly read from the latest R2 CSV files; final accuracy metrics and logged losses were not changed.

@@ -1,0 +1,7 @@
+method,eval_set,accuracy,loss,orth_loss_type,orth_scale_mode,orth_target_ratio,lambda_orth,use_ipc,lambda_ipc,ipc_top_p,avg_forgetting
+rank_extension_orth,first_step,0.1605,4.660455703735352,trace,auto_ratio,0.08,1.0,False,0.0,0.1,0.784375
+rank_extension_orth,later_steps,0.353125,3.6147091388702393,trace,auto_ratio,0.08,1.0,False,0.0,0.1,0.784375
+rank_extension_orth,all_seen,0.3146,3.8238601684570312,trace,auto_ratio,0.08,1.0,False,0.0,0.1,0.784375
+rank_extension_replay_orth,first_step,0.716,1.0683250427246094,trace,auto_ratio,0.08,1.0,False,0.0,0.1,0.286375
+rank_extension_replay_orth,later_steps,0.70975,1.037532925605774,trace,auto_ratio,0.08,1.0,False,0.0,0.1,0.286375
+rank_extension_replay_orth,all_seen,0.711,1.043692708015442,trace,auto_ratio,0.08,1.0,False,0.0,0.1,0.286375

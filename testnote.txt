@@ -1,0 +1,2954 @@
+Disable and hide generative AI features in settings.
+Untitled0.ipynb
+Untitled0.ipynb_
+
+[ ]
+!nvidia-smi
+
+Sun May 17 17:33:24 2026       
++-----------------------------------------------------------------------------------------+
+| NVIDIA-SMI 580.82.07              Driver Version: 580.82.07      CUDA Version: 13.0     |
++-----------------------------------------+------------------------+----------------------+
+| GPU  Name                 Persistence-M | Bus-Id          Disp.A | Volatile Uncorr. ECC |
+| Fan  Temp   Perf          Pwr:Usage/Cap |           Memory-Usage | GPU-Util  Compute M. |
+|                                         |                        |               MIG M. |
+|=========================================+========================+======================|
+|   0  Tesla T4                       Off |   00000000:00:04.0 Off |                    0 |
+| N/A   37C    P8              9W /   70W |       0MiB /  15360MiB |      0%      Default |
+|                                         |                        |                  N/A |
++-----------------------------------------+------------------------+----------------------+
+
++-----------------------------------------------------------------------------------------+
+| Processes:                                                                              |
+|  GPU   GI   CI              PID   Type   Process name                        GPU Memory |
+|        ID   ID                                                               Usage      |
+|=========================================================================================|
+|  No running processes found                                                             |
++-----------------------------------------------------------------------------------------+
+
+[ ]
+!git clone -b codex-rankext-fixes https://github.com/Kasra-Shp/vit-cifar100-project.git
+%cd vit-cifar100-project
+
+Cloning into 'vit-cifar100-project'...
+remote: Enumerating objects: 2365, done.
+remote: Counting objects: 100% (548/548), done.
+remote: Compressing objects: 100% (424/424), done.
+remote: Total 2365 (delta 291), reused 381 (delta 124), pack-reused 1817 (from 2)
+Receiving objects: 100% (2365/2365), 18.65 MiB | 32.37 MiB/s, done.
+Resolving deltas: 100% (1198/1198), done.
+/content/vit-cifar100-project
+
+[ ]
+!pip install -q transformers datasets peft accelerate evaluate scikit-learn pandas matplotlib seaborn
+
+[ ]
+import json, pathlib
+
+nb_path = pathlib.Path("vit_lora_cifar100_full5step_n5.ipynb")
+nb = json.loads(nb_path.read_text())
+
+for i, cell in enumerate(nb["cells"]):
+    src = "".join(cell.get("source", []))
+    if "FAST_RUN" in src:
+        print("Cell", i)
+        print(src[:1500])
+Cell 2
+# ============================================================
+# 2) Full comparison configuration
+# ============================================================
+
+SEED = 42
+set_seed(SEED)
+random.seed(SEED)
+np.random.seed(SEED)
+torch.manual_seed(SEED)
+
+DEBUG_MODE = False
+
+# FAST_RUN is for the first cluster sanity check only.
+# It verifies plumbing, diagnostics, CSV outputs, and method execution.
+# Do not treat FAST_RUN accuracy as final performance.
+FAST_RUN = True
+
+RUN_NAME_BASE = "clip_vit_lora_cifar100_full_comparison_with_orth_rankext"
+RUN_NAME = f"{RUN_NAME_BASE}_{'FAST_RUN_DEBUG' if FAST_RUN else 'FULL_RUN'}"
+
+# CLIP-ViT checkpoint
+MODEL_CHECKPOINT = "openai/clip-vit-base-patch16"
+
+NUM_CLASSES = 100
+NUM_STEPS = 5
+CLASSES_PER_STEP = 20
+
+# ============================================================
+# Epoch setup
+# ============================================================
+# Full-run values stay available. FAST_RUN overrides only active epochs.
+FULL_FT_EPOCHS = 5
+FULL_LORA_EPOCHS = 5
+FULL_JOINT_EPOCHS = 5
+FULL_ORTH_EPOCHS = 5
+FULL_RANKEXT_EPOCHS = 5
+
+# Legacy name: this is only the FAST_RUN epoch count.
+# It does not train CLIP-ViT from scratch.
+SCRATCH_EPOCHS = 1
+
+if FAST_RUN:
+    FT_EPOCHS = SCRATCH_EPOCHS
+    LORA_EPOCHS = SCRATCH_EPOCHS
+    JOINT_EPOCHS = SCRATCH_EPOCHS
+    ORTH_EPOCHS = SCRATCH_EPOCHS
+    RANKEXT_EPOCHS = SCRATCH_EPOCHS
+else:
+    FT_EPOCHS = FULL_FT_EPOCHS
+    LORA_EPOCHS = FULL_LORA_EPOCHS
+    JOINT_EPOCHS = FULL_JOINT_EPOCHS
+    ORTH_EPOCHS = FULL
+
+[ ]
+!jupyter nbconvert --to script vit_lora_cifar100_full5step_n5.ipynb
+[NbConvertApp] Converting notebook vit_lora_cifar100_full5step_n5.ipynb to script
+[NbConvertApp] Writing 82359 bytes to vit_lora_cifar100_full5step_n5.py
+
+[ ]
+!python -m py_compile vit_lora_cifar100_full5step_n5.py
+
+[ ]
+%cd /content/vit-cifar100-project
+!git pull
+/content/vit-cifar100-project
+remote: Enumerating objects: 5, done.
+remote: Counting objects: 100% (5/5), done.
+remote: Compressing objects: 100% (1/1), done.
+remote: Total 3 (delta 2), reused 3 (delta 2), pack-reused 0 (from 0)
+Unpacking objects: 100% (3/3), 916 bytes | 229.00 KiB/s, done.
+From https://github.com/Kasra-Shp/vit-cifar100-project
+   5856564..5c7ab7a  codex-rankext-fixes -> origin/codex-rankext-fixes
+Updating 5856564..5c7ab7a
+Fast-forward
+ vit_lora_cifar100_full5step_n5.ipynb | 37 +++++++++++++++++++++++++++++++++++-
+ 1 file changed, 36 insertions(+), 1 deletion(-)
+
+[ ]
+!jupyter nbconvert --to script vit_lora_cifar100_full5step_n5.ipynb
+[NbConvertApp] Converting notebook vit_lora_cifar100_full5step_n5.ipynb to script
+[NbConvertApp] Writing 83475 bytes to vit_lora_cifar100_full5step_n5.py
+
+[ ]
+!python -m py_compile vit_lora_cifar100_full5step_n5.py
+
+[ ]
+!git clone -b codex-rankext-fixes https://github.com/Kasra-Shp/vit-cifar100-project.git
+%cd vit-cifar100-project
+Cloning into 'vit-cifar100-project'...
+remote: Enumerating objects: 2386, done.
+remote: Counting objects: 100% (569/569), done.
+remote: Compressing objects: 100% (441/441), done.
+remote: Total 2386 (delta 295), reused 402 (delta 128), pack-reused 1817 (from 2)
+Receiving objects: 100% (2386/2386), 19.21 MiB | 26.40 MiB/s, done.
+Resolving deltas: 100% (1202/1202), done.
+/content/vit-cifar100-project/vit-cifar100-project
+
+[ ]
+%cd /content/vit-cifar100-project
+!git fetch origin
+!git checkout codex-rankext-fixes
+!git pull origin codex-rankext-fixes
+/content/vit-cifar100-project
+remote: Enumerating objects: 20, done.
+remote: Counting objects: 100% (20/20), done.
+remote: Compressing objects: 100% (15/15), done.
+remote: Total 18 (delta 3), reused 18 (delta 3), pack-reused 0 (from 0)
+Unpacking objects: 100% (18/18), 570.86 KiB | 9.51 MiB/s, done.
+From https://github.com/Kasra-Shp/vit-cifar100-project
+   5c7ab7a..fd2bfd8  codex-rankext-fixes -> origin/codex-rankext-fixes
+Already on 'codex-rankext-fixes'
+Your branch is behind 'origin/codex-rankext-fixes' by 2 commits, and can be fast-forwarded.
+  (use "git pull" to update your local branch)
+From https://github.com/Kasra-Shp/vit-cifar100-project
+ * branch            codex-rankext-fixes -> FETCH_HEAD
+Updating 5c7ab7a..fd2bfd8
+Fast-forward
+ .../metrics/joint_metrics.json                     |   5 -
+ .../metrics/run_config.json                        |  52 ----
+ .../plots/curve_lora_separate_current_step.png     | Bin 36442 -> 0 bytes
+ .../plots/final_accuracy_clean_comparison.png      | Bin 92485 -> 0 bytes
+ .../plots/final_accuracy_comparison.png            | Bin 114979 -> 0 bytes
+ ...final_accuracy_replay_diagnostic_comparison.png | Bin 91915 -> 0 bytes
+ .../plots/final_all_seen_all_methods.png           | Bin 96682 -> 0 bytes
+ .../plots/final_first_step_all_methods.png         | Bin 98008 -> 0 bytes
+ .../plots/final_later_step_all_methods.png         | Bin 96084 -> 0 bytes
+ .../plots/merge_strategy_comparison.png            | Bin 80312 -> 0 bytes
+ .../plots/simple_avg_variant_comparison.png        | Bin 58452 -> 0 bytes
+ .../summary.txt                                    | 121 ---------
+ .../tables/all_results_raw.csv                     | 122 ---------
+ .../tables/final_accuracy_wide_percent.csv         |   8 -
+ .../tables/final_ft_prediction_collapse_check.csv  |   4 -
+ .../tables/final_method_comparison.csv             |  22 --
+ .../tables/final_numeric_comparison.csv            |   8 -
+ .../tables/final_summary_table.csv                 |   8 -
+ .../tables/ft_debug_classifier_drift.csv           |   6 -
+ .../tables/ft_debug_prediction_groups.csv          |  20 --
+ .../tables/ft_replay_results_debug.csv             |  21 --
+ .../tables/ft_results_debug.csv                    |  21 --
+ .../tables/joint_log_history.csv                   | 260 -------------------
+ .../tables/rankext_debug_diagnostics.csv           |   6 -
+ .../tables/rankext_diagnosis_auto.csv              |   6 -
+ .../tables/rankext_final_blockwise_eval.csv        |  11 -
+ .../tables/results_summary_clean.csv               | 122 ---------
+ .../tables/step1_ft_log_history.csv                | 259 -------------------
+ .../tables/step1_ft_replay_log_history.csv         | 257 -------------------
+ .../tables/step1_lora_normal_log_history.csv       |  59 -----
+ .../tables/step1_lora_orth_log_history.csv         |  59 -----
+ .../tables/step1_lora_replay_log_history.csv       |  59 -----
+ .../tables/step1_rankext_log_history.csv           |  32 ---
+ .../tables/step2_ft_log_history.csv                | 266 -------------------
+ .../tables/step2_ft_replay_log_history.csv         | 263 -------------------
+ .../tables/step2_lora_normal_log_history.csv       |  60 -----
+ .../tables/step2_lora_orth_log_history.csv         |  60 -----
+ .../tables/step2_lora_replay_log_history.csv       |  61 -----
+ .../tables/step2_rankext_log_history.csv           |  33 ---
+ .../tables/step3_ft_log_history.csv                | 272 --------------------
+ .../tables/step3_ft_replay_log_history.csv         | 269 -------------------
+ .../tables/step3_lora_normal_log_history.csv       |  60 -----
+ .../tables/step3_lora_orth_log_history.csv         |  60 -----
+ .../tables/step3_lora_replay_log_history.csv       |  62 -----
+ .../tables/step3_rankext_log_history.csv           |  33 ---
+ .../tables/step4_ft_log_history.csv                | 278 --------------------
+ .../tables/step4_ft_replay_log_history.csv         | 275 --------------------
+ .../tables/step4_lora_normal_log_history.csv       |  60 -----
+ .../tables/step4_lora_orth_log_history.csv         |  60 -----
+ .../tables/step4_lora_replay_log_history.csv       |  63 -----
+ .../tables/step4_rankext_log_history.csv           |  33 ---
+ .../tables/step5_ft_log_history.csv                | 285 ---------------------
+ .../tables/step5_ft_replay_log_history.csv         | 282 --------------------
+ .../tables/step5_lora_normal_log_history.csv       |  60 -----
+ .../tables/step5_lora_orth_log_history.csv         |  60 -----
+ .../tables/step5_lora_replay_log_history.csv       |  65 -----
+ .../tables/step5_rankext_log_history.csv           |  34 ---
+ .../plots/01_grouped_accuracy_comparison.png       | Bin 152290 -> 0 bytes
+ .../plots/02_accuracy_heatmap.png                  | Bin 130478 -> 0 bytes
+ .../plots/03_all_seen_ranking.png                  | Bin 130145 -> 0 bytes
+ .../plots/04_old_new_gap.png                       | Bin 130465 -> 0 bytes
+ .../plots/05_gap_to_joint_upper_bound.png          | Bin 130030 -> 0 bytes
+ .../plots/06_replay_gain.png                       | Bin 42186 -> 0 bytes
+ .../plots/07_loss_comparison.png                   | Bin 138321 -> 0 bytes
+ .../tables/all_results_clip_vit_debug.csv          |  28 --
+ .../all_results_clip_vit_full_comparison.csv       |  28 --
+ .../tables/final_accuracy_clip_vit_percent.csv     |  10 -
+ .../tables/final_loss_table.csv                    |  10 -
+ .../tables/summary_metrics_clip_vit_percent.csv    |  10 -
+ .../plots/01_grouped_accuracy_comparison.png       | Bin 131505 -> 0 bytes
+ .../plots/02_accuracy_heatmap.png                  | Bin 111723 -> 0 bytes
+ .../plots/03_all_seen_ranking.png                  | Bin 108636 -> 0 bytes
+ .../plots/04_old_new_gap.png                       | Bin 111855 -> 0 bytes
+ .../plots/05_gap_to_joint_upper_bound.png          | Bin 107215 -> 0 bytes
+ .../plots/06_replay_gain.png                       | Bin 43040 -> 0 bytes
+ .../plots/07_loss_comparison.png                   | Bin 117449 -> 0 bytes
+ .../tables/all_results_clip_vit_debug.csv          |  22 --
+ .../all_results_clip_vit_full_comparison.csv       |  22 --
+ .../tables/final_accuracy_clip_vit_percent.csv     |   8 -
+ .../tables/final_loss_table.csv                    |   8 -
+ .../tables/summary_metrics_clip_vit_percent.csv    |   8 -
+ .../plots/01_grouped_accuracy_comparison.png       | Bin 0 -> 137108 bytes
+ .../plots/02_accuracy_heatmap.png                  | Bin 0 -> 166701 bytes
+ .../plots/03_all_seen_ranking.png                  | Bin 0 -> 118298 bytes
+ .../plots/04_old_new_gap.png                       | Bin 0 -> 117057 bytes
+ .../plots/05_gap_to_joint_upper_bound.png          | Bin 0 -> 54696 bytes
+ .../plots/07_loss_comparison.png                   | Bin 0 -> 121222 bytes
+ .../tables/all_results_clip_vit_debug.csv          |  31 +++
+ .../all_results_clip_vit_rankext_orth_sweep.csv    |  31 +++
+ .../tables/final_accuracy_table_percent.csv        |  11 +
+ .../tables/final_loss_table.csv                    |  11 +
+ .../tables/summary_metrics_percent.csv             |  11 +
+ ...5step_n5_test.ipynb => "\330\257\330\257.ipynb" |   0
+ 93 files changed, 95 insertions(+), 4756 deletions(-)
+ delete mode 100644 results/cifar100_5step_simpleavg_normal_orth_replay_pretrained_n5/metrics/joint_metrics.json
+ delete mode 100644 results/cifar100_5step_simpleavg_normal_orth_replay_pretrained_n5/metrics/run_config.json
+ delete mode 100644 results/cifar100_5step_simpleavg_normal_orth_replay_pretrained_n5/plots/curve_lora_separate_current_step.png
+ delete mode 100644 results/cifar100_5step_simpleavg_normal_orth_replay_pretrained_n5/plots/final_accuracy_clean_comparison.png
+ delete mode 100644 results/cifar100_5step_simpleavg_normal_orth_replay_pretrained_n5/plots/final_accuracy_comparison.png
+ delete mode 100644 results/cifar100_5step_simpleavg_normal_orth_replay_pretrained_n5/plots/final_accuracy_replay_diagnostic_comparison.png
+ delete mode 100644 results/cifar100_5step_simpleavg_normal_orth_replay_pretrained_n5/plots/final_all_seen_all_methods.png
+ delete mode 100644 results/cifar100_5step_simpleavg_normal_orth_replay_pretrained_n5/plots/final_first_step_all_methods.png
+ delete mode 100644 results/cifar100_5step_simpleavg_normal_orth_replay_pretrained_n5/plots/final_later_step_all_methods.png
+ delete mode 100644 results/cifar100_5step_simpleavg_normal_orth_replay_pretrained_n5/plots/merge_strategy_comparison.png
+ delete mode 100644 results/cifar100_5step_simpleavg_normal_orth_replay_pretrained_n5/plots/simple_avg_variant_comparison.png
+ delete mode 100644 results/cifar100_5step_simpleavg_normal_orth_replay_pretrained_n5/summary.txt
+ delete mode 100644 results/cifar100_5step_simpleavg_normal_orth_replay_pretrained_n5/tables/all_results_raw.csv
+ delete mode 100644 results/cifar100_5step_simpleavg_normal_orth_replay_pretrained_n5/tables/final_accuracy_wide_percent.csv
+ delete mode 100644 results/cifar100_5step_simpleavg_normal_orth_replay_pretrained_n5/tables/final_ft_prediction_collapse_check.csv
+ delete mode 100644 results/cifar100_5step_simpleavg_normal_orth_replay_pretrained_n5/tables/final_method_comparison.csv
+ delete mode 100644 results/cifar100_5step_simpleavg_normal_orth_replay_pretrained_n5/tables/final_numeric_comparison.csv
+ delete mode 100644 results/cifar100_5step_simpleavg_normal_orth_replay_pretrained_n5/tables/final_summary_table.csv
+ delete mode 100644 results/cifar100_5step_simpleavg_normal_orth_replay_pretrained_n5/tables/ft_debug_classifier_drift.csv
+ delete mode 100644 results/cifar100_5step_simpleavg_normal_orth_replay_pretrained_n5/tables/ft_debug_prediction_groups.csv
+ delete mode 100644 results/cifar100_5step_simpleavg_normal_orth_replay_pretrained_n5/tables/ft_replay_results_debug.csv
+ delete mode 100644 results/cifar100_5step_simpleavg_normal_orth_replay_pretrained_n5/tables/ft_results_debug.csv
+ delete mode 100644 results/cifar100_5step_simpleavg_normal_orth_replay_pretrained_n5/tables/joint_log_history.csv
+ delete mode 100644 results/cifar100_5step_simpleavg_normal_orth_replay_pretrained_n5/tables/rankext_debug_diagnostics.csv
+ delete mode 100644 results/cifar100_5step_simpleavg_normal_orth_replay_pretrained_n5/tables/rankext_diagnosis_auto.csv
+ delete mode 100644 results/cifar100_5step_simpleavg_normal_orth_replay_pretrained_n5/tables/rankext_final_blockwise_eval.csv
+ delete mode 100644 results/cifar100_5step_simpleavg_normal_orth_replay_pretrained_n5/tables/results_summary_clean.csv
+ delete mode 100644 results/cifar100_5step_simpleavg_normal_orth_replay_pretrained_n5/tables/step1_ft_log_history.csv
+ delete mode 100644 results/cifar100_5step_simpleavg_normal_orth_replay_pretrained_n5/tables/step1_ft_replay_log_history.csv
+ delete mode 100644 results/cifar100_5step_simpleavg_normal_orth_replay_pretrained_n5/tables/step1_lora_normal_log_history.csv
+ delete mode 100644 results/cifar100_5step_simpleavg_normal_orth_replay_pretrained_n5/tables/step1_lora_orth_log_history.csv
+ delete mode 100644 results/cifar100_5step_simpleavg_normal_orth_replay_pretrained_n5/tables/step1_lora_replay_log_history.csv
+ delete mode 100644 results/cifar100_5step_simpleavg_normal_orth_replay_pretrained_n5/tables/step1_rankext_log_history.csv
+ delete mode 100644 results/cifar100_5step_simpleavg_normal_orth_replay_pretrained_n5/tables/step2_ft_log_history.csv
+ delete mode 100644 results/cifar100_5step_simpleavg_normal_orth_replay_pretrained_n5/tables/step2_ft_replay_log_history.csv
+ delete mode 100644 results/cifar100_5step_simpleavg_normal_orth_replay_pretrained_n5/tables/step2_lora_normal_log_history.csv
+ delete mode 100644 results/cifar100_5step_simpleavg_normal_orth_replay_pretrained_n5/tables/step2_lora_orth_log_history.csv
+ delete mode 100644 results/cifar100_5step_simpleavg_normal_orth_replay_pretrained_n5/tables/step2_lora_replay_log_history.csv
+ delete mode 100644 results/cifar100_5step_simpleavg_normal_orth_replay_pretrained_n5/tables/step2_rankext_log_history.csv
+ delete mode 100644 results/cifar100_5step_simpleavg_normal_orth_replay_pretrained_n5/tables/step3_ft_log_history.csv
+ delete mode 100644 results/cifar100_5step_simpleavg_normal_orth_replay_pretrained_n5/tables/step3_ft_replay_log_history.csv
+ delete mode 100644 results/cifar100_5step_simpleavg_normal_orth_replay_pretrained_n5/tables/step3_lora_normal_log_history.csv
+ delete mode 100644 results/cifar100_5step_simpleavg_normal_orth_replay_pretrained_n5/tables/step3_lora_orth_log_history.csv
+ delete mode 100644 results/cifar100_5step_simpleavg_normal_orth_replay_pretrained_n5/tables/step3_lora_replay_log_history.csv
+ delete mode 100644 results/cifar100_5step_simpleavg_normal_orth_replay_pretrained_n5/tables/step3_rankext_log_history.csv
+ delete mode 100644 results/cifar100_5step_simpleavg_normal_orth_replay_pretrained_n5/tables/step4_ft_log_history.csv
+ delete mode 100644 results/cifar100_5step_simpleavg_normal_orth_replay_pretrained_n5/tables/step4_ft_replay_log_history.csv
+ delete mode 100644 results/cifar100_5step_simpleavg_normal_orth_replay_pretrained_n5/tables/step4_lora_normal_log_history.csv
+ delete mode 100644 results/cifar100_5step_simpleavg_normal_orth_replay_pretrained_n5/tables/step4_lora_orth_log_history.csv
+ delete mode 100644 results/cifar100_5step_simpleavg_normal_orth_replay_pretrained_n5/tables/step4_lora_replay_log_history.csv
+ delete mode 100644 results/cifar100_5step_simpleavg_normal_orth_replay_pretrained_n5/tables/step4_rankext_log_history.csv
+ delete mode 100644 results/cifar100_5step_simpleavg_normal_orth_replay_pretrained_n5/tables/step5_ft_log_history.csv
+ delete mode 100644 results/cifar100_5step_simpleavg_normal_orth_replay_pretrained_n5/tables/step5_ft_replay_log_history.csv
+ delete mode 100644 results/cifar100_5step_simpleavg_normal_orth_replay_pretrained_n5/tables/step5_lora_normal_log_history.csv
+ delete mode 100644 results/cifar100_5step_simpleavg_normal_orth_replay_pretrained_n5/tables/step5_lora_orth_log_history.csv
+ delete mode 100644 results/cifar100_5step_simpleavg_normal_orth_replay_pretrained_n5/tables/step5_lora_replay_log_history.csv
+ delete mode 100644 results/cifar100_5step_simpleavg_normal_orth_replay_pretrained_n5/tables/step5_rankext_log_history.csv
+ delete mode 100644 results/clip_vit_lora_cifar100_full_comparison_with_do_exact_style_20260514_152651/plots/01_grouped_accuracy_comparison.png
+ delete mode 100644 results/clip_vit_lora_cifar100_full_comparison_with_do_exact_style_20260514_152651/plots/02_accuracy_heatmap.png
+ delete mode 100644 results/clip_vit_lora_cifar100_full_comparison_with_do_exact_style_20260514_152651/plots/03_all_seen_ranking.png
+ delete mode 100644 results/clip_vit_lora_cifar100_full_comparison_with_do_exact_style_20260514_152651/plots/04_old_new_gap.png
+ delete mode 100644 results/clip_vit_lora_cifar100_full_comparison_with_do_exact_style_20260514_152651/plots/05_gap_to_joint_upper_bound.png
+ delete mode 100644 results/clip_vit_lora_cifar100_full_comparison_with_do_exact_style_20260514_152651/plots/06_replay_gain.png
+ delete mode 100644 results/clip_vit_lora_cifar100_full_comparison_with_do_exact_style_20260514_152651/plots/07_loss_comparison.png
+ delete mode 100644 results/clip_vit_lora_cifar100_full_comparison_with_do_exact_style_20260514_152651/tables/all_results_clip_vit_debug.csv
+ delete mode 100644 results/clip_vit_lora_cifar100_full_comparison_with_do_exact_style_20260514_152651/tables/all_results_clip_vit_full_comparison.csv
+ delete mode 100644 results/clip_vit_lora_cifar100_full_comparison_with_do_exact_style_20260514_152651/tables/final_accuracy_clip_vit_percent.csv
+ delete mode 100644 results/clip_vit_lora_cifar100_full_comparison_with_do_exact_style_20260514_152651/tables/final_loss_table.csv
+ delete mode 100644 results/clip_vit_lora_cifar100_full_comparison_with_do_exact_style_20260514_152651/tables/summary_metrics_clip_vit_percent.csv
+ delete mode 100644 results/clip_vit_lora_cifar100_full_comparison_with_orth_rankext_20260513_220103/plots/01_grouped_accuracy_comparison.png
+ delete mode 100644 results/clip_vit_lora_cifar100_full_comparison_with_orth_rankext_20260513_220103/plots/02_accuracy_heatmap.png
+ delete mode 100644 results/clip_vit_lora_cifar100_full_comparison_with_orth_rankext_20260513_220103/plots/03_all_seen_ranking.png
+ delete mode 100644 results/clip_vit_lora_cifar100_full_comparison_with_orth_rankext_20260513_220103/plots/04_old_new_gap.png
+ delete mode 100644 results/clip_vit_lora_cifar100_full_comparison_with_orth_rankext_20260513_220103/plots/05_gap_to_joint_upper_bound.png
+ delete mode 100644 results/clip_vit_lora_cifar100_full_comparison_with_orth_rankext_20260513_220103/plots/06_replay_gain.png
+ delete mode 100644 results/clip_vit_lora_cifar100_full_comparison_with_orth_rankext_20260513_220103/plots/07_loss_comparison.png
+ delete mode 100644 results/clip_vit_lora_cifar100_full_comparison_with_orth_rankext_20260513_220103/tables/all_results_clip_vit_debug.csv
+ delete mode 100644 results/clip_vit_lora_cifar100_full_comparison_with_orth_rankext_20260513_220103/tables/all_results_clip_vit_full_comparison.csv
+ delete mode 100644 results/clip_vit_lora_cifar100_full_comparison_with_orth_rankext_20260513_220103/tables/final_accuracy_clip_vit_percent.csv
+ delete mode 100644 results/clip_vit_lora_cifar100_full_comparison_with_orth_rankext_20260513_220103/tables/final_loss_table.csv
+ delete mode 100644 results/clip_vit_lora_cifar100_full_comparison_with_orth_rankext_20260513_220103/tables/summary_metrics_clip_vit_percent.csv
+ create mode 100644 results/clip_vit_lora_cifar100_rankext_orth_sweep_epoch3_20260517_200901/plots/01_grouped_accuracy_comparison.png
+ create mode 100644 results/clip_vit_lora_cifar100_rankext_orth_sweep_epoch3_20260517_200901/plots/02_accuracy_heatmap.png
+ create mode 100644 results/clip_vit_lora_cifar100_rankext_orth_sweep_epoch3_20260517_200901/plots/03_all_seen_ranking.png
+ create mode 100644 results/clip_vit_lora_cifar100_rankext_orth_sweep_epoch3_20260517_200901/plots/04_old_new_gap.png
+ create mode 100644 results/clip_vit_lora_cifar100_rankext_orth_sweep_epoch3_20260517_200901/plots/05_gap_to_joint_upper_bound.png
+ create mode 100644 results/clip_vit_lora_cifar100_rankext_orth_sweep_epoch3_20260517_200901/plots/07_loss_comparison.png
+ create mode 100644 results/clip_vit_lora_cifar100_rankext_orth_sweep_epoch3_20260517_200901/tables/all_results_clip_vit_debug.csv
+ create mode 100644 results/clip_vit_lora_cifar100_rankext_orth_sweep_epoch3_20260517_200901/tables/all_results_clip_vit_rankext_orth_sweep.csv
+ create mode 100644 results/clip_vit_lora_cifar100_rankext_orth_sweep_epoch3_20260517_200901/tables/final_accuracy_table_percent.csv
+ create mode 100644 results/clip_vit_lora_cifar100_rankext_orth_sweep_epoch3_20260517_200901/tables/final_loss_table.csv
+ create mode 100644 results/clip_vit_lora_cifar100_rankext_orth_sweep_epoch3_20260517_200901/tables/summary_metrics_percent.csv
+ rename vit_lora_cifar100_full5step_n5_test.ipynb => "\330\257\330\257.ipynb" (100%)
+
+[ ]
+!git log --oneline -5
+fd2bfd8 (HEAD -> codex-rankext-fixes, origin/codex-rankext-fixes) fix some bugs
+cde98af fix some bugs
+5c7ab7a Add PEFT torchao compatibility guard for Colab
+5856564 fix some bugs
+979af86 fix some bugs
+
+[ ]
+!jupyter nbconvert --to script vit_lora_cifar100_full5step_n5.ipynb
+[NbConvertApp] Converting notebook vit_lora_cifar100_full5step_n5.ipynb to script
+[NbConvertApp] Writing 83475 bytes to vit_lora_cifar100_full5step_n5.py
+
+[ ]
+!grep -n "FAST_RUN\|SCRATCH_EPOCHS\|RANKEXT_EPOCHS\|RUN_NAME" vit_lora_cifar100_full5step_n5.py | head -n 100
+115:# FAST_RUN is for the first cluster sanity check only.
+117:# Do not treat FAST_RUN accuracy as final performance.
+118:FAST_RUN = True
+120:RUN_NAME_BASE = "clip_vit_lora_cifar100_full_comparison_with_orth_rankext"
+121:RUN_NAME = f"{RUN_NAME_BASE}_{'FAST_RUN_DEBUG' if FAST_RUN else 'FULL_RUN'}"
+133:# Full-run values stay available. FAST_RUN overrides only active epochs.
+138:FULL_RANKEXT_EPOCHS = 5
+140:# Legacy name: this is only the FAST_RUN epoch count.
+142:SCRATCH_EPOCHS = 1
+144:if FAST_RUN:
+145:    FT_EPOCHS = SCRATCH_EPOCHS
+146:    LORA_EPOCHS = SCRATCH_EPOCHS
+147:    JOINT_EPOCHS = SCRATCH_EPOCHS
+148:    ORTH_EPOCHS = SCRATCH_EPOCHS
+149:    RANKEXT_EPOCHS = SCRATCH_EPOCHS
+155:    RANKEXT_EPOCHS = FULL_RANKEXT_EPOCHS
+283:    f"{RUN_NAME}_{RUN_TAG}"
+306:    "FAST_RUN": FAST_RUN,
+307:    "RUN_NAME": RUN_NAME,
+308:    "SCRATCH_EPOCHS": SCRATCH_EPOCHS,
+317:    "RANKEXT_EPOCHS": RANKEXT_EPOCHS,
+322:    "FULL_RANKEXT_EPOCHS": FULL_RANKEXT_EPOCHS,
+2144:            epochs=RANKEXT_EPOCHS,
+2635:- RANKEXT_EPOCHS = {RANKEXT_EPOCHS}
+
+[ ]
+!python vit_lora_cifar100_full5step_n5.py
+Device: cuda
+FP16: True
+Checkpoint: openai/clip-vit-base-patch16
+BASE_OUTPUT_DIR: /nfsd/lttm4/tesisti/shahrampour/projects/runs/cifar100_5step_n5_main/results/clip_vit_lora_cifar100_full_comparison_with_orth_rankext_FAST_RUN_DEBUG_20260517_212836
+TABLES_DIR: /nfsd/lttm4/tesisti/shahrampour/projects/runs/cifar100_5step_n5_main/results/clip_vit_lora_cifar100_full_comparison_with_orth_rankext_FAST_RUN_DEBUG_20260517_212836/tables
+PLOTS_DIR: /nfsd/lttm4/tesisti/shahrampour/projects/runs/cifar100_5step_n5_main/results/clip_vit_lora_cifar100_full_comparison_with_orth_rankext_FAST_RUN_DEBUG_20260517_212836/plots
+MODELS_DIR: /nfsd/lttm4/tesisti/shahrampour/projects/runs/cifar100_5step_n5_main/results/clip_vit_lora_cifar100_full_comparison_with_orth_rankext_FAST_RUN_DEBUG_20260517_212836/models
+
+Run mode:
+{'FAST_RUN': True, 'RUN_NAME': 'clip_vit_lora_cifar100_full_comparison_with_orth_rankext_FAST_RUN_DEBUG', 'SCRATCH_EPOCHS': 1}
+
+Epochs:
+{'FT_EPOCHS': 1, 'LORA_EPOCHS': 1, 'JOINT_EPOCHS': 1, 'ORTH_EPOCHS': 1, 'RANKEXT_EPOCHS': 1, 'FULL_FT_EPOCHS': 5, 'FULL_LORA_EPOCHS': 5, 'FULL_JOINT_EPOCHS': 5, 'FULL_ORTH_EPOCHS': 5, 'FULL_RANKEXT_EPOCHS': 5}
+
+LoRA:
+{'LORA_R': 8, 'LORA_ALPHA': 16, 'LORA_DROPOUT': 0.05, 'TARGET_MODULES': ['q_proj', 'v_proj']}
+
+Orthogonal loss:
+{'LAMBDA_ORTH': 0.0001, 'ORTH_DIAGNOSTICS': True}
+
+Rank extension:
+{'RANKEXT_NEW_RANK_PER_STEP': 8, 'RANKEXT_ALPHA_PER_RANK': 2.0, 'LR_RANKEXT': 0.0001, 'RANKEXT_REPLAY_PER_CLASS': 20, 'RANKEXT_DIAGNOSTICS': True}
+
+Methods:
+{
+  "seq_ft_no_replay": true,
+  "simple_avg_no_replay": true,
+  "simple_avg_replay": true,
+  "do_merging_simple": true,
+  "orthogonal_loss": true,
+  "rank_extension": true,
+  "rank_extension_replay": true,
+  "rank_extension_orth": true,
+  "rank_extension_replay_orth": true,
+  "joint_upper_bound": true
+}
+Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.
+Dataset columns: ['img', 'fine_label', 'coarse_label']
+Label column: fine_label
+Image column: img
+Step 1: 0-19
+Step 2: 20-39
+Step 3: 40-59
+Step 4: 60-79
+Step 5: 80-99
+Image size: 224 224
+CLIP mean: [0.48145466, 0.4578275, 0.40821073]
+CLIP std: [0.26862954, 0.26130258, 0.27577711]
+LoRA target modules: ['q_proj', 'v_proj']
+first_step eval: 2000
+later_steps eval: 8000
+all_seen eval: 10000
+Loading weights: 100% 199/199 [00:00<00:00, 1065.36it/s, Materializing param=vision_model.pre_layrnorm.weight]
+CLIPVisionModel LOAD REPORT from: openai/clip-vit-base-patch16
+Key                                                          | Status     |  | 
+-------------------------------------------------------------+------------+--+-
+text_model.encoder.layers.{0...11}.self_attn.out_proj.weight | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.self_attn.v_proj.bias     | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.layer_norm1.weight        | UNEXPECTED |  | 
+text_model.embeddings.token_embedding.weight                 | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.mlp.fc1.weight            | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.self_attn.out_proj.bias   | UNEXPECTED |  | 
+text_model.embeddings.position_embedding.weight              | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.self_attn.q_proj.bias     | UNEXPECTED |  | 
+visual_projection.weight                                     | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.self_attn.k_proj.weight   | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.mlp.fc2.weight            | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.self_attn.k_proj.bias     | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.mlp.fc1.bias              | UNEXPECTED |  | 
+vision_model.embeddings.position_ids                         | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.mlp.fc2.bias              | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.layer_norm2.weight        | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.self_attn.v_proj.weight   | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.self_attn.q_proj.weight   | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.layer_norm2.bias          | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.layer_norm1.bias          | UNEXPECTED |  | 
+logit_scale                                                  | UNEXPECTED |  | 
+text_projection.weight                                       | UNEXPECTED |  | 
+text_model.final_layer_norm.weight                           | UNEXPECTED |  | 
+text_model.embeddings.position_ids                           | UNEXPECTED |  | 
+text_model.final_layer_norm.bias                             | UNEXPECTED |  | 
+
+Notes:
+- UNEXPECTED	:can be ignored when loading from different task/architecture; not ok if you expect identical arch.
+Step 1 | current=10000 | replay=0 | total=10000
+
+===== seq_ft_no_replay | step 1/5 =====
+/usr/local/lib/python3.12/dist-packages/torch/utils/data/dataloader.py:424: UserWarning: This DataLoader will create 4 worker processes in total. Our suggested max number of worker in current system is 2, which is smaller than what this DataLoader is going to create. Please be aware that excessive worker creation might get DataLoader running slow or even freeze, lower the worker number to avoid potential slowness/freeze if necessary.
+  self.check_worker_number_rationality()
+  0% 0/625 [00:00<?, ?it/s]/usr/local/lib/python3.12/dist-packages/torch/utils/data/dataloader.py:432: UserWarning: This DataLoader will create 4 worker processes in total. Our suggested max number of worker in current system is 2, which is smaller than what this DataLoader is going to create. Please be aware that excessive worker creation might get DataLoader running slow or even freeze, lower the worker number to avoid potential slowness/freeze if necessary.
+  self.check_worker_number_rationality()
+{'loss': '6.605', 'grad_norm': '122.7', 'learning_rate': '2.371e-05', 'epoch': '0.08'}
+{'loss': '2.019', 'grad_norm': '131.3', 'learning_rate': '2.968e-05', 'epoch': '0.16'}
+{'loss': '1.687', 'grad_norm': '73.1', 'learning_rate': '2.827e-05', 'epoch': '0.24'}
+{'loss': '1.473', 'grad_norm': '95.18', 'learning_rate': '2.583e-05', 'epoch': '0.32'}
+{'loss': '1.423', 'grad_norm': '112.4', 'learning_rate': '2.255e-05', 'epoch': '0.4'}
+{'loss': '1.029', 'grad_norm': '92.86', 'learning_rate': '1.869e-05', 'epoch': '0.48'}
+{'loss': '1.027', 'grad_norm': '136.6', 'learning_rate': '1.454e-05', 'epoch': '0.56'}
+{'loss': '0.9287', 'grad_norm': '216.8', 'learning_rate': '1.043e-05', 'epoch': '0.64'}
+{'loss': '0.7674', 'grad_norm': '100.5', 'learning_rate': '6.671e-06', 'epoch': '0.72'}
+{'loss': '0.5066', 'grad_norm': '11.55', 'learning_rate': '3.557e-06', 'epoch': '0.8'}
+{'loss': '0.4363', 'grad_norm': '38.23', 'learning_rate': '1.329e-06', 'epoch': '0.88'}
+{'loss': '0.3918', 'grad_norm': '19.62', 'learning_rate': '1.576e-07', 'epoch': '0.96'}
+100% 625/625 [02:01<00:00,  4.77it/s]
+  0% 0/63 [00:00<?, ?it/s]
+  5% 3/63 [00:00<00:03, 17.23it/s]
+  8% 5/63 [00:00<00:04, 12.72it/s]
+ 11% 7/63 [00:00<00:04, 11.52it/s]
+ 14% 9/63 [00:00<00:05, 10.33it/s]
+ 17% 11/63 [00:00<00:04, 10.43it/s]
+ 21% 13/63 [00:01<00:04, 10.57it/s]
+ 24% 15/63 [00:01<00:04, 10.69it/s]
+ 27% 17/63 [00:01<00:04, 10.75it/s]
+ 30% 19/63 [00:01<00:04, 10.63it/s]
+ 33% 21/63 [00:01<00:03, 10.71it/s]
+ 37% 23/63 [00:02<00:03, 10.80it/s]
+ 40% 25/63 [00:02<00:03, 10.87it/s]
+ 43% 27/63 [00:02<00:03, 10.86it/s]
+ 46% 29/63 [00:02<00:03, 10.91it/s]
+ 49% 31/63 [00:02<00:02, 10.91it/s]
+ 52% 33/63 [00:03<00:02, 10.93it/s]
+ 56% 35/63 [00:03<00:02, 10.97it/s]
+ 59% 37/63 [00:03<00:02, 11.02it/s]
+ 62% 39/63 [00:03<00:02, 11.05it/s]
+ 65% 41/63 [00:03<00:01, 11.09it/s]
+ 68% 43/63 [00:03<00:01, 11.06it/s]
+ 71% 45/63 [00:04<00:01, 11.04it/s]
+ 75% 47/63 [00:04<00:01, 11.00it/s]
+ 78% 49/63 [00:04<00:01, 10.99it/s]
+ 81% 51/63 [00:04<00:01, 10.99it/s]
+ 84% 53/63 [00:04<00:00, 10.99it/s]
+ 87% 55/63 [00:05<00:00, 11.04it/s]
+ 90% 57/63 [00:05<00:00, 11.06it/s]
+ 94% 59/63 [00:05<00:00, 11.10it/s]
+ 97% 61/63 [00:05<00:00, 11.11it/s]
+                                     
+{'eval_loss': '0.1704', 'eval_accuracy': '0.9485', 'eval_runtime': '7.279', 'eval_samples_per_second': '274.8', 'eval_steps_per_second': '8.655', 'epoch': '1'}
+100% 625/625 [02:08<00:00,  4.77it/s]
+100% 63/63 [00:05<00:00, 10.32it/s]
+{'train_runtime': '128.6', 'train_samples_per_second': '77.79', 'train_steps_per_second': '4.862', 'train_loss': '1.48', 'epoch': '1'}
+100% 625/625 [02:08<00:00,  4.86it/s]
+100% 63/63 [00:05<00:00, 10.90it/s]
+Step 2 | current=10000 | replay=0 | total=10000
+
+===== seq_ft_no_replay | step 2/5 =====
+/usr/local/lib/python3.12/dist-packages/torch/utils/data/dataloader.py:424: UserWarning: This DataLoader will create 4 worker processes in total. Our suggested max number of worker in current system is 2, which is smaller than what this DataLoader is going to create. Please be aware that excessive worker creation might get DataLoader running slow or even freeze, lower the worker number to avoid potential slowness/freeze if necessary.
+  self.check_worker_number_rationality()
+  0% 0/625 [00:00<?, ?it/s]/usr/local/lib/python3.12/dist-packages/torch/utils/data/dataloader.py:432: UserWarning: This DataLoader will create 4 worker processes in total. Our suggested max number of worker in current system is 2, which is smaller than what this DataLoader is going to create. Please be aware that excessive worker creation might get DataLoader running slow or even freeze, lower the worker number to avoid potential slowness/freeze if necessary.
+  self.check_worker_number_rationality()
+{'loss': '9.49', 'grad_norm': '52.76', 'learning_rate': '2.371e-05', 'epoch': '0.08'}
+{'loss': '1.939', 'grad_norm': '107.8', 'learning_rate': '2.968e-05', 'epoch': '0.16'}
+{'loss': '1.501', 'grad_norm': '62.77', 'learning_rate': '2.827e-05', 'epoch': '0.24'}
+{'loss': '1.351', 'grad_norm': '54.31', 'learning_rate': '2.583e-05', 'epoch': '0.32'}
+{'loss': '1.045', 'grad_norm': '120.5', 'learning_rate': '2.255e-05', 'epoch': '0.4'}
+{'loss': '0.9452', 'grad_norm': '90.2', 'learning_rate': '1.869e-05', 'epoch': '0.48'}
+{'loss': '1.026', 'grad_norm': '111.7', 'learning_rate': '1.454e-05', 'epoch': '0.56'}
+{'loss': '0.6077', 'grad_norm': '116.9', 'learning_rate': '1.043e-05', 'epoch': '0.64'}
+{'loss': '0.5936', 'grad_norm': '125.1', 'learning_rate': '6.671e-06', 'epoch': '0.72'}
+{'loss': '0.5069', 'grad_norm': '31.74', 'learning_rate': '3.557e-06', 'epoch': '0.8'}
+{'loss': '0.3564', 'grad_norm': '13.57', 'learning_rate': '1.329e-06', 'epoch': '0.88'}
+{'loss': '0.5057', 'grad_norm': '72.2', 'learning_rate': '1.576e-07', 'epoch': '0.96'}
+100% 625/625 [02:06<00:00,  4.60it/s]
+  0% 0/63 [00:00<?, ?it/s]
+  5% 3/63 [00:00<00:04, 14.66it/s]
+  8% 5/63 [00:00<00:04, 12.24it/s]
+ 11% 7/63 [00:00<00:04, 11.52it/s]
+ 14% 9/63 [00:00<00:04, 11.11it/s]
+ 17% 11/63 [00:00<00:04, 10.82it/s]
+ 21% 13/63 [00:01<00:04, 10.27it/s]
+ 24% 15/63 [00:01<00:04, 10.15it/s]
+ 27% 17/63 [00:01<00:04,  9.88it/s]
+ 30% 19/63 [00:01<00:04, 10.11it/s]
+ 33% 21/63 [00:01<00:04,  9.92it/s]
+ 35% 22/63 [00:02<00:04,  9.77it/s]
+ 37% 23/63 [00:02<00:04,  9.52it/s]
+ 40% 25/63 [00:02<00:03,  9.93it/s]
+ 41% 26/63 [00:02<00:03,  9.85it/s]
+ 43% 27/63 [00:02<00:03,  9.73it/s]
+ 44% 28/63 [00:02<00:03,  9.34it/s]
+ 46% 29/63 [00:02<00:03,  9.28it/s]
+ 48% 30/63 [00:02<00:03,  9.32it/s]
+ 49% 31/63 [00:03<00:03,  9.28it/s]
+ 52% 33/63 [00:03<00:03,  9.78it/s]
+ 56% 35/63 [00:03<00:02,  9.91it/s]
+ 57% 36/63 [00:03<00:02,  9.91it/s]
+ 59% 37/63 [00:03<00:02,  9.72it/s]
+ 60% 38/63 [00:03<00:02,  9.76it/s]
+ 63% 40/63 [00:03<00:02, 10.09it/s]
+ 65% 41/63 [00:04<00:02,  9.95it/s]
+ 68% 43/63 [00:04<00:01, 10.12it/s]
+ 71% 45/63 [00:04<00:01, 10.32it/s]
+ 75% 47/63 [00:04<00:01, 10.45it/s]
+ 78% 49/63 [00:04<00:01, 10.54it/s]
+ 81% 51/63 [00:04<00:01, 10.61it/s]
+ 84% 53/63 [00:05<00:00, 10.68it/s]
+ 87% 55/63 [00:05<00:00, 10.69it/s]
+ 90% 57/63 [00:05<00:00, 10.69it/s]
+ 94% 59/63 [00:05<00:00, 10.71it/s]
+ 97% 61/63 [00:05<00:00, 10.68it/s]
+                                     
+{'eval_loss': '0.1838', 'eval_accuracy': '0.946', 'eval_runtime': '6.791', 'eval_samples_per_second': '294.5', 'eval_steps_per_second': '9.277', 'epoch': '1'}
+100% 625/625 [02:13<00:00,  4.60it/s]
+100% 63/63 [00:06<00:00, 10.06it/s]
+{'train_runtime': '133.7', 'train_samples_per_second': '74.77', 'train_steps_per_second': '4.673', 'train_loss': '1.605', 'epoch': '1'}
+100% 625/625 [02:13<00:00,  4.67it/s]
+100% 63/63 [00:05<00:00, 10.76it/s]
+Step 3 | current=10000 | replay=0 | total=10000
+
+===== seq_ft_no_replay | step 3/5 =====
+/usr/local/lib/python3.12/dist-packages/torch/utils/data/dataloader.py:424: UserWarning: This DataLoader will create 4 worker processes in total. Our suggested max number of worker in current system is 2, which is smaller than what this DataLoader is going to create. Please be aware that excessive worker creation might get DataLoader running slow or even freeze, lower the worker number to avoid potential slowness/freeze if necessary.
+  self.check_worker_number_rationality()
+  0% 0/625 [00:00<?, ?it/s]/usr/local/lib/python3.12/dist-packages/torch/utils/data/dataloader.py:432: UserWarning: This DataLoader will create 4 worker processes in total. Our suggested max number of worker in current system is 2, which is smaller than what this DataLoader is going to create. Please be aware that excessive worker creation might get DataLoader running slow or even freeze, lower the worker number to avoid potential slowness/freeze if necessary.
+  self.check_worker_number_rationality()
+{'loss': '9.276', 'grad_norm': '71.08', 'learning_rate': '2.371e-05', 'epoch': '0.08'}
+{'loss': '1.912', 'grad_norm': '72.2', 'learning_rate': '2.968e-05', 'epoch': '0.16'}
+{'loss': '1.571', 'grad_norm': '190.7', 'learning_rate': '2.827e-05', 'epoch': '0.24'}
+{'loss': '1.463', 'grad_norm': '105.2', 'learning_rate': '2.583e-05', 'epoch': '0.32'}
+{'loss': '1.32', 'grad_norm': '74.59', 'learning_rate': '2.255e-05', 'epoch': '0.4'}
+{'loss': '1.103', 'grad_norm': '80.96', 'learning_rate': '1.869e-05', 'epoch': '0.48'}
+{'loss': '0.8938', 'grad_norm': '49.02', 'learning_rate': '1.454e-05', 'epoch': '0.56'}
+{'loss': '0.8286', 'grad_norm': '23.65', 'learning_rate': '1.043e-05', 'epoch': '0.64'}
+{'loss': '0.6619', 'grad_norm': '36.33', 'learning_rate': '6.671e-06', 'epoch': '0.72'}
+{'loss': '0.649', 'grad_norm': '72.54', 'learning_rate': '3.557e-06', 'epoch': '0.8'}
+{'loss': '0.5062', 'grad_norm': '80.12', 'learning_rate': '1.329e-06', 'epoch': '0.88'}
+{'loss': '0.4214', 'grad_norm': '41.99', 'learning_rate': '1.576e-07', 'epoch': '0.96'}
+100% 625/625 [02:08<00:00,  4.54it/s]
+  0% 0/63 [00:00<?, ?it/s]
+  3% 2/63 [00:00<00:03, 17.42it/s]
+  6% 4/63 [00:00<00:05, 11.75it/s]
+ 10% 6/63 [00:00<00:05, 11.11it/s]
+ 13% 8/63 [00:00<00:05, 10.78it/s]
+ 16% 10/63 [00:00<00:04, 10.69it/s]
+ 19% 12/63 [00:01<00:04, 10.62it/s]
+ 22% 14/63 [00:01<00:04, 10.64it/s]
+ 25% 16/63 [00:01<00:04, 10.59it/s]
+ 29% 18/63 [00:01<00:04, 10.61it/s]
+ 32% 20/63 [00:01<00:04, 10.65it/s]
+ 35% 22/63 [00:02<00:03, 10.56it/s]
+ 38% 24/63 [00:02<00:03, 10.56it/s]
+ 41% 26/63 [00:02<00:03, 10.62it/s]
+ 44% 28/63 [00:02<00:03, 10.57it/s]
+ 48% 30/63 [00:02<00:03, 10.62it/s]
+ 51% 32/63 [00:02<00:02, 10.63it/s]
+ 54% 34/63 [00:03<00:02, 10.59it/s]
+ 57% 36/63 [00:03<00:02, 10.55it/s]
+ 60% 38/63 [00:03<00:02, 10.51it/s]
+ 63% 40/63 [00:03<00:02, 10.32it/s]
+ 67% 42/63 [00:03<00:02, 10.18it/s]
+ 70% 44/63 [00:04<00:02,  9.45it/s]
+ 71% 45/63 [00:04<00:01,  9.38it/s]
+ 73% 46/63 [00:04<00:01,  9.38it/s]
+ 75% 47/63 [00:04<00:01,  9.33it/s]
+ 76% 48/63 [00:04<00:01,  8.69it/s]
+ 78% 49/63 [00:04<00:01,  7.73it/s]
+ 79% 50/63 [00:04<00:01,  7.91it/s]
+ 81% 51/63 [00:05<00:01,  8.13it/s]
+ 83% 52/63 [00:05<00:01,  7.94it/s]
+ 84% 53/63 [00:05<00:01,  7.65it/s]
+ 86% 54/63 [00:05<00:01,  7.77it/s]
+ 89% 56/63 [00:05<00:00,  8.74it/s]
+ 92% 58/63 [00:05<00:00,  9.45it/s]
+ 95% 60/63 [00:06<00:00,  9.87it/s]
+                                     
+{'eval_loss': '0.2317', 'eval_accuracy': '0.9215', 'eval_runtime': '7.017', 'eval_samples_per_second': '285', 'eval_steps_per_second': '8.979', 'epoch': '1'}
+100% 625/625 [02:15<00:00,  4.54it/s]
+100% 63/63 [00:06<00:00, 10.15it/s]
+{'train_runtime': '135.2', 'train_samples_per_second': '73.97', 'train_steps_per_second': '4.623', 'train_loss': '1.667', 'epoch': '1'}
+100% 625/625 [02:15<00:00,  4.62it/s]
+100% 63/63 [00:05<00:00, 10.60it/s]
+Step 4 | current=10000 | replay=0 | total=10000
+
+===== seq_ft_no_replay | step 4/5 =====
+/usr/local/lib/python3.12/dist-packages/torch/utils/data/dataloader.py:424: UserWarning: This DataLoader will create 4 worker processes in total. Our suggested max number of worker in current system is 2, which is smaller than what this DataLoader is going to create. Please be aware that excessive worker creation might get DataLoader running slow or even freeze, lower the worker number to avoid potential slowness/freeze if necessary.
+  self.check_worker_number_rationality()
+  0% 0/625 [00:00<?, ?it/s]/usr/local/lib/python3.12/dist-packages/torch/utils/data/dataloader.py:432: UserWarning: This DataLoader will create 4 worker processes in total. Our suggested max number of worker in current system is 2, which is smaller than what this DataLoader is going to create. Please be aware that excessive worker creation might get DataLoader running slow or even freeze, lower the worker number to avoid potential slowness/freeze if necessary.
+  self.check_worker_number_rationality()
+{'loss': '9.986', 'grad_norm': '40.87', 'learning_rate': '2.371e-05', 'epoch': '0.08'}
+{'loss': '2.356', 'grad_norm': '57.96', 'learning_rate': '2.968e-05', 'epoch': '0.16'}
+{'loss': '1.817', 'grad_norm': '49.56', 'learning_rate': '2.827e-05', 'epoch': '0.24'}
+{'loss': '1.752', 'grad_norm': '98.48', 'learning_rate': '2.583e-05', 'epoch': '0.32'}
+{'loss': '1.369', 'grad_norm': '111.9', 'learning_rate': '2.255e-05', 'epoch': '0.4'}
+{'loss': '1.338', 'grad_norm': '108', 'learning_rate': '1.869e-05', 'epoch': '0.48'}
+{'loss': '1.209', 'grad_norm': '77.6', 'learning_rate': '1.454e-05', 'epoch': '0.56'}
+{'loss': '1.039', 'grad_norm': '79.37', 'learning_rate': '1.043e-05', 'epoch': '0.64'}
+{'loss': '0.7846', 'grad_norm': '93.32', 'learning_rate': '6.671e-06', 'epoch': '0.72'}
+{'loss': '0.8127', 'grad_norm': '49.02', 'learning_rate': '3.557e-06', 'epoch': '0.8'}
+{'loss': '0.5965', 'grad_norm': '29.97', 'learning_rate': '1.329e-06', 'epoch': '0.88'}
+{'loss': '0.6729', 'grad_norm': '13.41', 'learning_rate': '1.576e-07', 'epoch': '0.96'}
+100% 625/625 [02:09<00:00,  4.53it/s]
+  0% 0/63 [00:00<?, ?it/s]
+  3% 2/63 [00:00<00:03, 19.83it/s]
+  6% 4/63 [00:00<00:04, 12.51it/s]
+ 10% 6/63 [00:00<00:05, 11.34it/s]
+ 13% 8/63 [00:00<00:04, 11.04it/s]
+ 16% 10/63 [00:00<00:04, 10.81it/s]
+ 19% 12/63 [00:01<00:04, 10.82it/s]
+ 22% 14/63 [00:01<00:04, 10.75it/s]
+ 25% 16/63 [00:01<00:04, 10.69it/s]
+ 29% 18/63 [00:01<00:04, 10.70it/s]
+ 32% 20/63 [00:01<00:04, 10.70it/s]
+ 35% 22/63 [00:02<00:03, 10.68it/s]
+ 38% 24/63 [00:02<00:03, 10.59it/s]
+ 41% 26/63 [00:02<00:03, 10.59it/s]
+ 44% 28/63 [00:02<00:03, 10.54it/s]
+ 48% 30/63 [00:02<00:03, 10.56it/s]
+ 51% 32/63 [00:02<00:02, 10.58it/s]
+ 54% 34/63 [00:03<00:02, 10.55it/s]
+ 57% 36/63 [00:03<00:02, 10.59it/s]
+ 60% 38/63 [00:03<00:02, 10.60it/s]
+ 63% 40/63 [00:03<00:02, 10.50it/s]
+ 67% 42/63 [00:03<00:02, 10.16it/s]
+ 70% 44/63 [00:04<00:01, 10.22it/s]
+ 73% 46/63 [00:04<00:01, 10.23it/s]
+ 76% 48/63 [00:04<00:01,  9.95it/s]
+ 78% 49/63 [00:04<00:01,  9.25it/s]
+ 79% 50/63 [00:04<00:01,  9.38it/s]
+ 81% 51/63 [00:04<00:01,  9.32it/s]
+ 84% 53/63 [00:05<00:01,  9.47it/s]
+ 86% 54/63 [00:05<00:00,  9.44it/s]
+ 87% 55/63 [00:05<00:00,  9.43it/s]
+ 90% 57/63 [00:05<00:00, 10.03it/s]
+ 94% 59/63 [00:05<00:00, 10.24it/s]
+ 97% 61/63 [00:05<00:00, 10.39it/s]
+                                     
+{'eval_loss': '0.3402', 'eval_accuracy': '0.893', 'eval_runtime': '6.75', 'eval_samples_per_second': '296.3', 'eval_steps_per_second': '9.333', 'epoch': '1'}
+100% 625/625 [02:16<00:00,  4.53it/s]
+100% 63/63 [00:06<00:00,  9.09it/s]
+{'train_runtime': '136.4', 'train_samples_per_second': '73.32', 'train_steps_per_second': '4.582', 'train_loss': '1.918', 'epoch': '1'}
+100% 625/625 [02:16<00:00,  4.58it/s]
+100% 63/63 [00:05<00:00, 10.67it/s]
+Step 5 | current=10000 | replay=0 | total=10000
+
+===== seq_ft_no_replay | step 5/5 =====
+/usr/local/lib/python3.12/dist-packages/torch/utils/data/dataloader.py:424: UserWarning: This DataLoader will create 4 worker processes in total. Our suggested max number of worker in current system is 2, which is smaller than what this DataLoader is going to create. Please be aware that excessive worker creation might get DataLoader running slow or even freeze, lower the worker number to avoid potential slowness/freeze if necessary.
+  self.check_worker_number_rationality()
+  0% 0/625 [00:00<?, ?it/s]/usr/local/lib/python3.12/dist-packages/torch/utils/data/dataloader.py:432: UserWarning: This DataLoader will create 4 worker processes in total. Our suggested max number of worker in current system is 2, which is smaller than what this DataLoader is going to create. Please be aware that excessive worker creation might get DataLoader running slow or even freeze, lower the worker number to avoid potential slowness/freeze if necessary.
+  self.check_worker_number_rationality()
+{'loss': '9.5', 'grad_norm': '41.77', 'learning_rate': '2.371e-05', 'epoch': '0.08'}
+{'loss': '1.814', 'grad_norm': '46.52', 'learning_rate': '2.968e-05', 'epoch': '0.16'}
+{'loss': '1.183', 'grad_norm': '39.86', 'learning_rate': '2.827e-05', 'epoch': '0.24'}
+{'loss': '1.106', 'grad_norm': '67.17', 'learning_rate': '2.583e-05', 'epoch': '0.32'}
+{'loss': '0.9149', 'grad_norm': '75.6', 'learning_rate': '2.255e-05', 'epoch': '0.4'}
+{'loss': '0.912', 'grad_norm': '16.34', 'learning_rate': '1.869e-05', 'epoch': '0.48'}
+{'loss': '0.8886', 'grad_norm': '70.14', 'learning_rate': '1.454e-05', 'epoch': '0.56'}
+{'loss': '0.5755', 'grad_norm': '80.98', 'learning_rate': '1.043e-05', 'epoch': '0.64'}
+{'loss': '0.5997', 'grad_norm': '47.22', 'learning_rate': '6.671e-06', 'epoch': '0.72'}
+{'loss': '0.4841', 'grad_norm': '82.28', 'learning_rate': '3.557e-06', 'epoch': '0.8'}
+{'loss': '0.3712', 'grad_norm': '66.82', 'learning_rate': '1.329e-06', 'epoch': '0.88'}
+{'loss': '0.4036', 'grad_norm': '25.7', 'learning_rate': '1.576e-07', 'epoch': '0.96'}
+100% 625/625 [02:09<00:00,  4.44it/s]
+  0% 0/63 [00:00<?, ?it/s]
+  5% 3/63 [00:00<00:03, 15.72it/s]
+  8% 5/63 [00:00<00:04, 12.62it/s]
+ 11% 7/63 [00:00<00:04, 11.72it/s]
+ 14% 9/63 [00:00<00:04, 11.29it/s]
+ 17% 11/63 [00:00<00:04, 11.04it/s]
+ 21% 13/63 [00:01<00:04, 10.87it/s]
+ 24% 15/63 [00:01<00:04, 10.82it/s]
+ 27% 17/63 [00:01<00:04, 10.77it/s]
+ 30% 19/63 [00:01<00:04, 10.78it/s]
+ 33% 21/63 [00:01<00:03, 10.69it/s]
+ 37% 23/63 [00:02<00:03, 10.72it/s]
+ 40% 25/63 [00:02<00:03, 10.64it/s]
+ 43% 27/63 [00:02<00:03, 10.62it/s]
+ 46% 29/63 [00:02<00:03, 10.65it/s]
+ 49% 31/63 [00:02<00:03, 10.62it/s]
+ 52% 33/63 [00:03<00:02, 10.65it/s]
+ 56% 35/63 [00:03<00:02, 10.66it/s]
+ 59% 37/63 [00:03<00:02, 10.66it/s]
+ 62% 39/63 [00:03<00:02, 10.63it/s]
+ 65% 41/63 [00:03<00:02, 10.65it/s]
+ 68% 43/63 [00:03<00:01, 10.62it/s]
+ 71% 45/63 [00:04<00:01, 10.66it/s]
+ 75% 47/63 [00:04<00:01, 10.67it/s]
+ 78% 49/63 [00:04<00:01, 10.68it/s]
+ 81% 51/63 [00:04<00:01, 10.64it/s]
+ 84% 53/63 [00:04<00:00, 10.54it/s]
+ 87% 55/63 [00:05<00:00, 10.57it/s]
+ 90% 57/63 [00:05<00:00, 10.60it/s]
+ 94% 59/63 [00:05<00:00, 10.64it/s]
+ 97% 61/63 [00:05<00:00, 10.64it/s]
+100% 63/63 [00:05<00:00,  9.37it/s]
+{'eval_loss': '0.1677', 'eval_accuracy': '0.949', 'eval_runtime': '6.629', 'eval_samples_per_second': '301.7', 'eval_steps_per_second': '9.504', 'epoch': '1'}
+
+100% 625/625 [02:15<00:00,  4.44it/s]
+{'train_runtime': '136', 'train_samples_per_second': '73.54', 'train_steps_per_second': '4.596', 'train_loss': '1.511', 'epoch': '1'}
+100% 625/625 [02:15<00:00,  4.60it/s]
+100% 63/63 [00:06<00:00, 10.19it/s]
+/usr/local/lib/python3.12/dist-packages/torch/utils/data/dataloader.py:424: UserWarning: This DataLoader will create 4 worker processes in total. Our suggested max number of worker in current system is 2, which is smaller than what this DataLoader is going to create. Please be aware that excessive worker creation might get DataLoader running slow or even freeze, lower the worker number to avoid potential slowness/freeze if necessary.
+  self.check_worker_number_rationality()
+/usr/local/lib/python3.12/dist-packages/torch/utils/data/dataloader.py:432: UserWarning: This DataLoader will create 4 worker processes in total. Our suggested max number of worker in current system is 2, which is smaller than what this DataLoader is going to create. Please be aware that excessive worker creation might get DataLoader running slow or even freeze, lower the worker number to avoid potential slowness/freeze if necessary.
+  self.check_worker_number_rationality()
+100% 63/63 [00:06<00:00, 10.32it/s]
+100% 250/250 [00:24<00:00, 10.30it/s]
+100% 313/313 [00:30<00:00, 10.12it/s]
+             method     eval_set  accuracy      loss
+0  seq_ft_no_replay   first_step  0.001000  7.044227
+1  seq_ft_no_replay  later_steps  0.262125  4.623623
+2  seq_ft_no_replay     all_seen  0.209900  5.107743
+Loading weights: 100% 199/199 [00:00<00:00, 1550.21it/s, Materializing param=vision_model.pre_layrnorm.weight]
+CLIPVisionModel LOAD REPORT from: openai/clip-vit-base-patch16
+Key                                                          | Status     |  | 
+-------------------------------------------------------------+------------+--+-
+text_model.encoder.layers.{0...11}.self_attn.out_proj.weight | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.self_attn.v_proj.bias     | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.layer_norm1.weight        | UNEXPECTED |  | 
+text_model.embeddings.token_embedding.weight                 | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.mlp.fc1.weight            | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.self_attn.out_proj.bias   | UNEXPECTED |  | 
+text_model.embeddings.position_embedding.weight              | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.self_attn.q_proj.bias     | UNEXPECTED |  | 
+visual_projection.weight                                     | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.self_attn.k_proj.weight   | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.mlp.fc2.weight            | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.self_attn.k_proj.bias     | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.mlp.fc1.bias              | UNEXPECTED |  | 
+vision_model.embeddings.position_ids                         | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.mlp.fc2.bias              | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.layer_norm2.weight        | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.self_attn.v_proj.weight   | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.self_attn.q_proj.weight   | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.layer_norm2.bias          | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.layer_norm1.bias          | UNEXPECTED |  | 
+logit_scale                                                  | UNEXPECTED |  | 
+text_projection.weight                                       | UNEXPECTED |  | 
+text_model.final_layer_norm.weight                           | UNEXPECTED |  | 
+text_model.embeddings.position_ids                           | UNEXPECTED |  | 
+text_model.final_layer_norm.bias                             | UNEXPECTED |  | 
+
+Notes:
+- UNEXPECTED	:can be ignored when loading from different task/architecture; not ok if you expect identical arch.
+[PEFT compatibility] Disabled torchao LoRA dispatcher because installed torchao is incompatible with PEFT.
+trainable params: 371,812 || all params: 86,248,136 || trainable%: 0.4311
+Step 1 | current=10000 | replay=0 | total=10000
+
+===== simple_avg_no_replay_source | step 1/5 | replay_per_class=0 =====
+/usr/local/lib/python3.12/dist-packages/torch/utils/data/dataloader.py:424: UserWarning: This DataLoader will create 4 worker processes in total. Our suggested max number of worker in current system is 2, which is smaller than what this DataLoader is going to create. Please be aware that excessive worker creation might get DataLoader running slow or even freeze, lower the worker number to avoid potential slowness/freeze if necessary.
+  self.check_worker_number_rationality()
+  0% 0/625 [00:00<?, ?it/s]/usr/local/lib/python3.12/dist-packages/torch/utils/data/dataloader.py:432: UserWarning: This DataLoader will create 4 worker processes in total. Our suggested max number of worker in current system is 2, which is smaller than what this DataLoader is going to create. Please be aware that excessive worker creation might get DataLoader running slow or even freeze, lower the worker number to avoid potential slowness/freeze if necessary.
+  self.check_worker_number_rationality()
+{'loss': '4.622', 'grad_norm': '7.822', 'learning_rate': '3.952e-05', 'epoch': '0.08'}
+{'loss': '3.63', 'grad_norm': '8.068', 'learning_rate': '4.947e-05', 'epoch': '0.16'}
+{'loss': '2.684', 'grad_norm': '8.632', 'learning_rate': '4.711e-05', 'epoch': '0.24'}
+{'loss': '1.995', 'grad_norm': '11.59', 'learning_rate': '4.304e-05', 'epoch': '0.32'}
+{'loss': '1.508', 'grad_norm': '9.337', 'learning_rate': '3.758e-05', 'epoch': '0.4'}
+{'loss': '1.175', 'grad_norm': '10.57', 'learning_rate': '3.114e-05', 'epoch': '0.48'}
+{'loss': '0.9918', 'grad_norm': '10.44', 'learning_rate': '2.423e-05', 'epoch': '0.56'}
+{'loss': '0.8528', 'grad_norm': '12.07', 'learning_rate': '1.738e-05', 'epoch': '0.64'}
+{'loss': '0.8352', 'grad_norm': '12.81', 'learning_rate': '1.112e-05', 'epoch': '0.72'}
+{'loss': '0.7596', 'grad_norm': '7.441', 'learning_rate': '5.929e-06', 'epoch': '0.8'}
+{'loss': '0.7363', 'grad_norm': '8.326', 'learning_rate': '2.215e-06', 'epoch': '0.88'}
+{'loss': '0.7379', 'grad_norm': '17.43', 'learning_rate': '2.627e-07', 'epoch': '0.96'}
+100% 625/625 [01:25<00:00,  5.54it/s]
+  0% 0/63 [00:00<?, ?it/s]
+  3% 2/63 [00:00<00:03, 17.45it/s]
+  6% 4/63 [00:00<00:05, 11.79it/s]
+ 10% 6/63 [00:00<00:05, 10.92it/s]
+ 13% 8/63 [00:00<00:05, 10.41it/s]
+ 16% 10/63 [00:00<00:05, 10.25it/s]
+ 19% 12/63 [00:01<00:05,  9.98it/s]
+ 22% 14/63 [00:01<00:04,  9.86it/s]
+ 24% 15/63 [00:01<00:05,  9.59it/s]
+ 25% 16/63 [00:01<00:05,  9.32it/s]
+ 27% 17/63 [00:01<00:05,  8.76it/s]
+ 29% 18/63 [00:01<00:05,  8.83it/s]
+ 30% 19/63 [00:01<00:05,  8.62it/s]
+ 32% 20/63 [00:02<00:04,  8.70it/s]
+ 33% 21/63 [00:02<00:04,  8.81it/s]
+ 35% 22/63 [00:02<00:04,  8.69it/s]
+ 37% 23/63 [00:02<00:04,  8.48it/s]
+ 38% 24/63 [00:02<00:04,  8.55it/s]
+ 40% 25/63 [00:02<00:04,  7.94it/s]
+ 41% 26/63 [00:02<00:04,  8.43it/s]
+ 43% 27/63 [00:02<00:04,  8.24it/s]
+ 46% 29/63 [00:03<00:04,  8.43it/s]
+ 49% 31/63 [00:03<00:03,  8.89it/s]
+ 51% 32/63 [00:03<00:03,  8.88it/s]
+ 52% 33/63 [00:03<00:03,  9.03it/s]
+ 54% 34/63 [00:03<00:03,  9.09it/s]
+ 56% 35/63 [00:03<00:03,  9.31it/s]
+ 57% 36/63 [00:03<00:03,  8.88it/s]
+ 59% 37/63 [00:04<00:03,  8.60it/s]
+ 60% 38/63 [00:04<00:02,  8.78it/s]
+ 63% 40/63 [00:04<00:02,  9.29it/s]
+ 65% 41/63 [00:04<00:02,  9.36it/s]
+ 67% 42/63 [00:04<00:02,  9.51it/s]
+ 68% 43/63 [00:04<00:02,  9.56it/s]
+ 71% 45/63 [00:04<00:01,  9.70it/s]
+ 73% 46/63 [00:04<00:01,  9.69it/s]
+ 76% 48/63 [00:05<00:01,  9.79it/s]
+ 78% 49/63 [00:05<00:01,  9.80it/s]
+ 79% 50/63 [00:05<00:01,  9.82it/s]
+ 81% 51/63 [00:05<00:01,  9.77it/s]
+ 84% 53/63 [00:05<00:01,  9.88it/s]
+ 86% 54/63 [00:05<00:00,  9.86it/s]
+ 89% 56/63 [00:05<00:00,  9.91it/s]
+ 90% 57/63 [00:06<00:00,  9.92it/s]
+ 92% 58/63 [00:06<00:00,  9.92it/s]
+ 94% 59/63 [00:06<00:00,  9.83it/s]
+ 95% 60/63 [00:06<00:00,  9.80it/s]
+ 98% 62/63 [00:06<00:00,  9.89it/s]
+100% 63/63 [00:06<00:00,  8.82it/s]
+{'eval_loss': '0.7683', 'eval_accuracy': '0.897', 'eval_runtime': '7.402', 'eval_samples_per_second': '270.2', 'eval_steps_per_second': '8.512', 'epoch': '1'}
+
+100% 625/625 [01:32<00:00,  5.54it/s]
+{'train_runtime': '92.68', 'train_samples_per_second': '107.9', 'train_steps_per_second': '6.743', 'train_loss': '1.673', 'epoch': '1'}
+100% 625/625 [01:32<00:00,  6.74it/s]
+100% 63/63 [00:06<00:00,  9.84it/s]
+Loading weights: 100% 199/199 [00:00<00:00, 1225.96it/s, Materializing param=vision_model.pre_layrnorm.weight]
+CLIPVisionModel LOAD REPORT from: openai/clip-vit-base-patch16
+Key                                                          | Status     |  | 
+-------------------------------------------------------------+------------+--+-
+text_model.encoder.layers.{0...11}.self_attn.out_proj.weight | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.self_attn.v_proj.bias     | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.layer_norm1.weight        | UNEXPECTED |  | 
+text_model.embeddings.token_embedding.weight                 | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.mlp.fc1.weight            | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.self_attn.out_proj.bias   | UNEXPECTED |  | 
+text_model.embeddings.position_embedding.weight              | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.self_attn.q_proj.bias     | UNEXPECTED |  | 
+visual_projection.weight                                     | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.self_attn.k_proj.weight   | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.mlp.fc2.weight            | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.self_attn.k_proj.bias     | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.mlp.fc1.bias              | UNEXPECTED |  | 
+vision_model.embeddings.position_ids                         | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.mlp.fc2.bias              | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.layer_norm2.weight        | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.self_attn.v_proj.weight   | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.self_attn.q_proj.weight   | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.layer_norm2.bias          | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.layer_norm1.bias          | UNEXPECTED |  | 
+logit_scale                                                  | UNEXPECTED |  | 
+text_projection.weight                                       | UNEXPECTED |  | 
+text_model.final_layer_norm.weight                           | UNEXPECTED |  | 
+text_model.embeddings.position_ids                           | UNEXPECTED |  | 
+text_model.final_layer_norm.bias                             | UNEXPECTED |  | 
+
+Notes:
+- UNEXPECTED	:can be ignored when loading from different task/architecture; not ok if you expect identical arch.
+trainable params: 371,812 || all params: 86,248,136 || trainable%: 0.4311
+Step 2 | current=10000 | replay=0 | total=10000
+
+===== simple_avg_no_replay_source | step 2/5 | replay_per_class=0 =====
+/usr/local/lib/python3.12/dist-packages/torch/utils/data/dataloader.py:424: UserWarning: This DataLoader will create 4 worker processes in total. Our suggested max number of worker in current system is 2, which is smaller than what this DataLoader is going to create. Please be aware that excessive worker creation might get DataLoader running slow or even freeze, lower the worker number to avoid potential slowness/freeze if necessary.
+  self.check_worker_number_rationality()
+  0% 0/625 [00:00<?, ?it/s]/usr/local/lib/python3.12/dist-packages/torch/utils/data/dataloader.py:432: UserWarning: This DataLoader will create 4 worker processes in total. Our suggested max number of worker in current system is 2, which is smaller than what this DataLoader is going to create. Please be aware that excessive worker creation might get DataLoader running slow or even freeze, lower the worker number to avoid potential slowness/freeze if necessary.
+  self.check_worker_number_rationality()
+{'loss': '4.519', 'grad_norm': '8.18', 'learning_rate': '3.952e-05', 'epoch': '0.08'}
+{'loss': '3.579', 'grad_norm': '7.808', 'learning_rate': '4.947e-05', 'epoch': '0.16'}
+{'loss': '2.667', 'grad_norm': '8.955', 'learning_rate': '4.711e-05', 'epoch': '0.24'}
+{'loss': '2.018', 'grad_norm': '10.71', 'learning_rate': '4.304e-05', 'epoch': '0.32'}
+{'loss': '1.528', 'grad_norm': '10.97', 'learning_rate': '3.758e-05', 'epoch': '0.4'}
+{'loss': '1.271', 'grad_norm': '10.63', 'learning_rate': '3.114e-05', 'epoch': '0.48'}
+{'loss': '1.095', 'grad_norm': '11.3', 'learning_rate': '2.423e-05', 'epoch': '0.56'}
+{'loss': '0.9371', 'grad_norm': '19.51', 'learning_rate': '1.738e-05', 'epoch': '0.64'}
+{'loss': '0.8701', 'grad_norm': '14', 'learning_rate': '1.112e-05', 'epoch': '0.72'}
+{'loss': '0.8427', 'grad_norm': '15.96', 'learning_rate': '5.929e-06', 'epoch': '0.8'}
+{'loss': '0.7974', 'grad_norm': '11.27', 'learning_rate': '2.215e-06', 'epoch': '0.88'}
+{'loss': '0.7864', 'grad_norm': '12.41', 'learning_rate': '2.627e-07', 'epoch': '0.96'}
+100% 625/625 [01:25<00:00,  5.57it/s]
+  0% 0/63 [00:00<?, ?it/s]
+  3% 2/63 [00:00<00:03, 19.40it/s]
+  6% 4/63 [00:00<00:05, 10.58it/s]
+ 10% 6/63 [00:00<00:05,  9.60it/s]
+ 13% 8/63 [00:00<00:05,  9.59it/s]
+ 16% 10/63 [00:00<00:05,  9.61it/s]
+ 19% 12/63 [00:01<00:05,  9.71it/s]
+ 22% 14/63 [00:01<00:05,  9.72it/s]
+ 24% 15/63 [00:01<00:04,  9.75it/s]
+ 25% 16/63 [00:01<00:04,  9.67it/s]
+ 29% 18/63 [00:01<00:04,  9.80it/s]
+ 32% 20/63 [00:02<00:04,  9.86it/s]
+ 33% 21/63 [00:02<00:04,  9.79it/s]
+ 35% 22/63 [00:02<00:04,  9.83it/s]
+ 37% 23/63 [00:02<00:04,  9.84it/s]
+ 38% 24/63 [00:02<00:03,  9.85it/s]
+ 40% 25/63 [00:02<00:03,  9.85it/s]
+ 41% 26/63 [00:02<00:03,  9.84it/s]
+ 44% 28/63 [00:02<00:03,  9.89it/s]
+ 46% 29/63 [00:02<00:03,  9.88it/s]
+ 48% 30/63 [00:03<00:03,  9.89it/s]
+ 49% 31/63 [00:03<00:03,  9.85it/s]
+ 51% 32/63 [00:03<00:03,  9.88it/s]
+ 52% 33/63 [00:03<00:03,  9.87it/s]
+ 54% 34/63 [00:03<00:02,  9.82it/s]
+ 56% 35/63 [00:03<00:02,  9.84it/s]
+ 57% 36/63 [00:03<00:02,  9.84it/s]
+ 60% 38/63 [00:03<00:02,  9.91it/s]
+ 62% 39/63 [00:03<00:02,  9.90it/s]
+ 63% 40/63 [00:04<00:02,  9.88it/s]
+ 65% 41/63 [00:04<00:02,  9.90it/s]
+ 67% 42/63 [00:04<00:02,  9.80it/s]
+ 68% 43/63 [00:04<00:02,  9.84it/s]
+ 70% 44/63 [00:04<00:01,  9.86it/s]
+ 71% 45/63 [00:04<00:01,  9.82it/s]
+ 73% 46/63 [00:04<00:01,  9.76it/s]
+ 76% 48/63 [00:04<00:01,  9.83it/s]
+ 78% 49/63 [00:04<00:01,  9.84it/s]
+ 79% 50/63 [00:05<00:01,  9.81it/s]
+ 81% 51/63 [00:05<00:01,  9.85it/s]
+ 83% 52/63 [00:05<00:01,  9.77it/s]
+ 84% 53/63 [00:05<00:01,  9.70it/s]
+ 86% 54/63 [00:05<00:00,  9.65it/s]
+ 87% 55/63 [00:05<00:00,  9.66it/s]
+ 89% 56/63 [00:05<00:00,  9.70it/s]
+ 90% 57/63 [00:05<00:00,  9.77it/s]
+ 92% 58/63 [00:05<00:00,  9.79it/s]
+ 95% 60/63 [00:06<00:00,  9.88it/s]
+ 97% 61/63 [00:06<00:00,  9.90it/s]
+ 98% 62/63 [00:06<00:00,  9.84it/s]
+100% 63/63 [00:06<00:00,  7.82it/s]
+{'eval_loss': '0.8455', 'eval_accuracy': '0.866', 'eval_runtime': '7.108', 'eval_samples_per_second': '281.4', 'eval_steps_per_second': '8.863', 'epoch': '1'}
+
+100% 625/625 [01:32<00:00,  5.57it/s]
+{'train_runtime': '92.49', 'train_samples_per_second': '108.1', 'train_steps_per_second': '6.757', 'train_loss': '1.704', 'epoch': '1'}
+100% 625/625 [01:32<00:00,  6.76it/s]
+100% 63/63 [00:06<00:00,  9.65it/s]
+Loading weights: 100% 199/199 [00:00<00:00, 1116.64it/s, Materializing param=vision_model.pre_layrnorm.weight]
+CLIPVisionModel LOAD REPORT from: openai/clip-vit-base-patch16
+Key                                                          | Status     |  | 
+-------------------------------------------------------------+------------+--+-
+text_model.encoder.layers.{0...11}.self_attn.out_proj.weight | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.self_attn.v_proj.bias     | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.layer_norm1.weight        | UNEXPECTED |  | 
+text_model.embeddings.token_embedding.weight                 | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.mlp.fc1.weight            | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.self_attn.out_proj.bias   | UNEXPECTED |  | 
+text_model.embeddings.position_embedding.weight              | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.self_attn.q_proj.bias     | UNEXPECTED |  | 
+visual_projection.weight                                     | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.self_attn.k_proj.weight   | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.mlp.fc2.weight            | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.self_attn.k_proj.bias     | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.mlp.fc1.bias              | UNEXPECTED |  | 
+vision_model.embeddings.position_ids                         | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.mlp.fc2.bias              | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.layer_norm2.weight        | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.self_attn.v_proj.weight   | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.self_attn.q_proj.weight   | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.layer_norm2.bias          | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.layer_norm1.bias          | UNEXPECTED |  | 
+logit_scale                                                  | UNEXPECTED |  | 
+text_projection.weight                                       | UNEXPECTED |  | 
+text_model.final_layer_norm.weight                           | UNEXPECTED |  | 
+text_model.embeddings.position_ids                           | UNEXPECTED |  | 
+text_model.final_layer_norm.bias                             | UNEXPECTED |  | 
+
+Notes:
+- UNEXPECTED	:can be ignored when loading from different task/architecture; not ok if you expect identical arch.
+trainable params: 371,812 || all params: 86,248,136 || trainable%: 0.4311
+Step 3 | current=10000 | replay=0 | total=10000
+
+===== simple_avg_no_replay_source | step 3/5 | replay_per_class=0 =====
+/usr/local/lib/python3.12/dist-packages/torch/utils/data/dataloader.py:424: UserWarning: This DataLoader will create 4 worker processes in total. Our suggested max number of worker in current system is 2, which is smaller than what this DataLoader is going to create. Please be aware that excessive worker creation might get DataLoader running slow or even freeze, lower the worker number to avoid potential slowness/freeze if necessary.
+  self.check_worker_number_rationality()
+  0% 0/625 [00:00<?, ?it/s]/usr/local/lib/python3.12/dist-packages/torch/utils/data/dataloader.py:432: UserWarning: This DataLoader will create 4 worker processes in total. Our suggested max number of worker in current system is 2, which is smaller than what this DataLoader is going to create. Please be aware that excessive worker creation might get DataLoader running slow or even freeze, lower the worker number to avoid potential slowness/freeze if necessary.
+  self.check_worker_number_rationality()
+{'loss': '4.664', 'grad_norm': '8.08', 'learning_rate': '3.952e-05', 'epoch': '0.08'}
+{'loss': '3.71', 'grad_norm': '8.654', 'learning_rate': '4.947e-05', 'epoch': '0.16'}
+{'loss': '2.757', 'grad_norm': '10.03', 'learning_rate': '4.711e-05', 'epoch': '0.24'}
+{'loss': '2.145', 'grad_norm': '11.35', 'learning_rate': '4.304e-05', 'epoch': '0.32'}
+{'loss': '1.699', 'grad_norm': '13.52', 'learning_rate': '3.758e-05', 'epoch': '0.4'}
+{'loss': '1.388', 'grad_norm': '12.97', 'learning_rate': '3.114e-05', 'epoch': '0.48'}
+{'loss': '1.194', 'grad_norm': '16.12', 'learning_rate': '2.423e-05', 'epoch': '0.56'}
+{'loss': '1.075', 'grad_norm': '10.19', 'learning_rate': '1.738e-05', 'epoch': '0.64'}
+{'loss': '1.017', 'grad_norm': '14.08', 'learning_rate': '1.112e-05', 'epoch': '0.72'}
+{'loss': '0.979', 'grad_norm': '9.649', 'learning_rate': '5.929e-06', 'epoch': '0.8'}
+{'loss': '0.9254', 'grad_norm': '10.81', 'learning_rate': '2.215e-06', 'epoch': '0.88'}
+{'loss': '0.9546', 'grad_norm': '12.88', 'learning_rate': '2.627e-07', 'epoch': '0.96'}
+100% 625/625 [01:25<00:00,  6.26it/s]
+  0% 0/63 [00:00<?, ?it/s]
+  3% 2/63 [00:00<00:03, 16.22it/s]
+  6% 4/63 [00:00<00:05, 11.62it/s]
+ 10% 6/63 [00:00<00:05, 10.77it/s]
+ 13% 8/63 [00:00<00:05, 10.42it/s]
+ 16% 10/63 [00:00<00:05, 10.20it/s]
+ 19% 12/63 [00:01<00:05, 10.05it/s]
+ 22% 14/63 [00:01<00:04,  9.94it/s]
+ 25% 16/63 [00:01<00:04,  9.95it/s]
+ 29% 18/63 [00:01<00:04,  9.85it/s]
+ 30% 19/63 [00:01<00:04,  9.87it/s]
+ 32% 20/63 [00:01<00:04,  9.89it/s]
+ 33% 21/63 [00:02<00:04,  9.90it/s]
+ 35% 22/63 [00:02<00:04,  9.89it/s]
+ 37% 23/63 [00:02<00:04,  9.89it/s]
+ 40% 25/63 [00:02<00:03,  9.91it/s]
+ 41% 26/63 [00:02<00:03,  9.90it/s]
+ 43% 27/63 [00:02<00:03,  9.89it/s]
+ 44% 28/63 [00:02<00:03,  9.90it/s]
+ 48% 30/63 [00:02<00:03,  9.89it/s]
+ 49% 31/63 [00:03<00:03,  9.85it/s]
+ 52% 33/63 [00:03<00:03,  9.88it/s]
+ 54% 34/63 [00:03<00:02,  9.85it/s]
+ 56% 35/63 [00:03<00:02,  9.82it/s]
+ 57% 36/63 [00:03<00:02,  9.86it/s]
+ 59% 37/63 [00:03<00:02,  9.84it/s]
+ 60% 38/63 [00:03<00:02,  9.87it/s]
+ 62% 39/63 [00:03<00:02,  9.87it/s]
+ 65% 41/63 [00:04<00:02,  9.88it/s]
+ 67% 42/63 [00:04<00:02,  9.88it/s]
+ 68% 43/63 [00:04<00:02,  9.89it/s]
+ 70% 44/63 [00:04<00:01,  9.89it/s]
+ 71% 45/63 [00:04<00:01,  9.89it/s]
+ 73% 46/63 [00:04<00:01,  9.83it/s]
+ 75% 47/63 [00:04<00:01,  9.87it/s]
+ 76% 48/63 [00:04<00:01,  9.87it/s]
+ 78% 49/63 [00:04<00:01,  9.86it/s]
+ 79% 50/63 [00:04<00:01,  9.73it/s]
+ 81% 51/63 [00:05<00:01,  9.74it/s]
+ 83% 52/63 [00:05<00:01,  9.74it/s]
+ 84% 53/63 [00:05<00:01,  9.75it/s]
+ 86% 54/63 [00:05<00:00,  9.76it/s]
+ 87% 55/63 [00:05<00:00,  9.78it/s]
+ 89% 56/63 [00:05<00:00,  9.77it/s]
+ 90% 57/63 [00:05<00:00,  9.81it/s]
+ 92% 58/63 [00:05<00:00,  9.83it/s]
+ 94% 59/63 [00:05<00:00,  9.81it/s]
+ 95% 60/63 [00:06<00:00,  9.80it/s]
+ 97% 61/63 [00:06<00:00,  9.75it/s]
+ 98% 62/63 [00:06<00:00,  9.74it/s]
+100% 63/63 [00:06<00:00,  8.97it/s]
+{'eval_loss': '0.9875', 'eval_accuracy': '0.822', 'eval_runtime': '7.099', 'eval_samples_per_second': '281.7', 'eval_steps_per_second': '8.875', 'epoch': '1'}
+
+100% 625/625 [01:32<00:00,  6.26it/s]
+{'train_runtime': '92.65', 'train_samples_per_second': '107.9', 'train_steps_per_second': '6.745', 'train_loss': '1.838', 'epoch': '1'}
+100% 625/625 [01:32<00:00,  6.75it/s]
+100% 63/63 [00:07<00:00,  8.90it/s]
+Loading weights: 100% 199/199 [00:00<00:00, 1191.81it/s, Materializing param=vision_model.pre_layrnorm.weight]
+CLIPVisionModel LOAD REPORT from: openai/clip-vit-base-patch16
+Key                                                          | Status     |  | 
+-------------------------------------------------------------+------------+--+-
+text_model.encoder.layers.{0...11}.self_attn.out_proj.weight | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.self_attn.v_proj.bias     | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.layer_norm1.weight        | UNEXPECTED |  | 
+text_model.embeddings.token_embedding.weight                 | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.mlp.fc1.weight            | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.self_attn.out_proj.bias   | UNEXPECTED |  | 
+text_model.embeddings.position_embedding.weight              | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.self_attn.q_proj.bias     | UNEXPECTED |  | 
+visual_projection.weight                                     | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.self_attn.k_proj.weight   | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.mlp.fc2.weight            | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.self_attn.k_proj.bias     | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.mlp.fc1.bias              | UNEXPECTED |  | 
+vision_model.embeddings.position_ids                         | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.mlp.fc2.bias              | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.layer_norm2.weight        | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.self_attn.v_proj.weight   | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.self_attn.q_proj.weight   | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.layer_norm2.bias          | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.layer_norm1.bias          | UNEXPECTED |  | 
+logit_scale                                                  | UNEXPECTED |  | 
+text_projection.weight                                       | UNEXPECTED |  | 
+text_model.final_layer_norm.weight                           | UNEXPECTED |  | 
+text_model.embeddings.position_ids                           | UNEXPECTED |  | 
+text_model.final_layer_norm.bias                             | UNEXPECTED |  | 
+
+Notes:
+- UNEXPECTED	:can be ignored when loading from different task/architecture; not ok if you expect identical arch.
+trainable params: 371,812 || all params: 86,248,136 || trainable%: 0.4311
+Step 4 | current=10000 | replay=0 | total=10000
+
+===== simple_avg_no_replay_source | step 4/5 | replay_per_class=0 =====
+/usr/local/lib/python3.12/dist-packages/torch/utils/data/dataloader.py:424: UserWarning: This DataLoader will create 4 worker processes in total. Our suggested max number of worker in current system is 2, which is smaller than what this DataLoader is going to create. Please be aware that excessive worker creation might get DataLoader running slow or even freeze, lower the worker number to avoid potential slowness/freeze if necessary.
+  self.check_worker_number_rationality()
+  0% 0/625 [00:00<?, ?it/s]/usr/local/lib/python3.12/dist-packages/torch/utils/data/dataloader.py:432: UserWarning: This DataLoader will create 4 worker processes in total. Our suggested max number of worker in current system is 2, which is smaller than what this DataLoader is going to create. Please be aware that excessive worker creation might get DataLoader running slow or even freeze, lower the worker number to avoid potential slowness/freeze if necessary.
+  self.check_worker_number_rationality()
+{'loss': '4.587', 'grad_norm': '8.727', 'learning_rate': '3.952e-05', 'epoch': '0.08'}
+{'loss': '3.724', 'grad_norm': '7.988', 'learning_rate': '4.947e-05', 'epoch': '0.16'}
+{'loss': '2.873', 'grad_norm': '9.203', 'learning_rate': '4.711e-05', 'epoch': '0.24'}
+{'loss': '2.301', 'grad_norm': '13.11', 'learning_rate': '4.304e-05', 'epoch': '0.32'}
+{'loss': '1.866', 'grad_norm': '11.1', 'learning_rate': '3.758e-05', 'epoch': '0.4'}
+{'loss': '1.615', 'grad_norm': '11.36', 'learning_rate': '3.114e-05', 'epoch': '0.48'}
+{'loss': '1.454', 'grad_norm': '15.27', 'learning_rate': '2.423e-05', 'epoch': '0.56'}
+{'loss': '1.301', 'grad_norm': '11.6', 'learning_rate': '1.738e-05', 'epoch': '0.64'}
+{'loss': '1.267', 'grad_norm': '12.86', 'learning_rate': '1.112e-05', 'epoch': '0.72'}
+{'loss': '1.181', 'grad_norm': '21.54', 'learning_rate': '5.929e-06', 'epoch': '0.8'}
+{'loss': '1.125', 'grad_norm': '12.52', 'learning_rate': '2.215e-06', 'epoch': '0.88'}
+{'loss': '1.181', 'grad_norm': '12.17', 'learning_rate': '2.627e-07', 'epoch': '0.96'}
+100% 625/625 [01:25<00:00,  5.88it/s]
+  0% 0/63 [00:00<?, ?it/s]
+  3% 2/63 [00:00<00:03, 19.52it/s]
+  6% 4/63 [00:00<00:04, 12.43it/s]
+ 10% 6/63 [00:00<00:05, 10.88it/s]
+ 13% 8/63 [00:00<00:05, 10.34it/s]
+ 16% 10/63 [00:00<00:05,  9.84it/s]
+ 19% 12/63 [00:01<00:05,  9.48it/s]
+ 21% 13/63 [00:01<00:05,  9.03it/s]
+ 22% 14/63 [00:01<00:05,  8.85it/s]
+ 24% 15/63 [00:01<00:05,  8.63it/s]
+ 25% 16/63 [00:01<00:05,  8.60it/s]
+ 29% 18/63 [00:01<00:04,  9.07it/s]
+ 30% 19/63 [00:02<00:05,  7.68it/s]
+ 32% 20/63 [00:02<00:05,  7.45it/s]
+ 33% 21/63 [00:02<00:05,  7.62it/s]
+ 35% 22/63 [00:02<00:05,  7.77it/s]
+ 37% 23/63 [00:02<00:05,  7.32it/s]
+ 38% 24/63 [00:02<00:05,  7.58it/s]
+ 40% 25/63 [00:02<00:04,  7.70it/s]
+ 41% 26/63 [00:02<00:04,  7.96it/s]
+ 43% 27/63 [00:03<00:04,  7.79it/s]
+ 44% 28/63 [00:03<00:05,  6.75it/s]
+ 46% 29/63 [00:03<00:04,  7.01it/s]
+ 48% 30/63 [00:03<00:04,  7.41it/s]
+ 49% 31/63 [00:03<00:04,  7.96it/s]
+ 51% 32/63 [00:03<00:04,  7.65it/s]
+ 52% 33/63 [00:03<00:03,  7.58it/s]
+ 54% 34/63 [00:04<00:03,  7.78it/s]
+ 56% 35/63 [00:04<00:03,  7.48it/s]
+ 57% 36/63 [00:04<00:03,  8.06it/s]
+ 59% 37/63 [00:04<00:03,  8.50it/s]
+ 62% 39/63 [00:04<00:02,  9.11it/s]
+ 63% 40/63 [00:04<00:02,  9.26it/s]
+ 65% 41/63 [00:04<00:02,  9.31it/s]
+ 67% 42/63 [00:04<00:02,  9.44it/s]
+ 68% 43/63 [00:05<00:02,  9.57it/s]
+ 71% 45/63 [00:05<00:01,  9.71it/s]
+ 73% 46/63 [00:05<00:01,  9.07it/s]
+ 75% 47/63 [00:05<00:01,  9.25it/s]
+ 76% 48/63 [00:05<00:01,  9.33it/s]
+ 78% 49/63 [00:05<00:01,  9.40it/s]
+ 79% 50/63 [00:05<00:01,  9.51it/s]
+ 81% 51/63 [00:05<00:01,  9.45it/s]
+ 83% 52/63 [00:05<00:01,  9.45it/s]
+ 84% 53/63 [00:06<00:01,  9.52it/s]
+ 86% 54/63 [00:06<00:00,  9.55it/s]
+ 87% 55/63 [00:06<00:00,  9.66it/s]
+ 89% 56/63 [00:06<00:00,  9.73it/s]
+ 90% 57/63 [00:06<00:00,  9.80it/s]
+ 92% 58/63 [00:06<00:00,  9.79it/s]
+ 94% 59/63 [00:06<00:00,  9.83it/s]
+ 97% 61/63 [00:06<00:00,  9.89it/s]
+ 98% 62/63 [00:06<00:00,  9.90it/s]
+100% 63/63 [00:07<00:00,  9.22it/s]
+{'eval_loss': '1.214', 'eval_accuracy': '0.7685', 'eval_runtime': '7.829', 'eval_samples_per_second': '255.5', 'eval_steps_per_second': '8.047', 'epoch': '1'}
+
+100% 625/625 [01:33<00:00,  5.88it/s]
+{'train_runtime': '93.68', 'train_samples_per_second': '106.7', 'train_steps_per_second': '6.671', 'train_loss': '2.003', 'epoch': '1'}
+100% 625/625 [01:33<00:00,  6.67it/s]
+100% 63/63 [00:06<00:00,  9.86it/s]
+Loading weights: 100% 199/199 [00:00<00:00, 1031.88it/s, Materializing param=vision_model.pre_layrnorm.weight]
+CLIPVisionModel LOAD REPORT from: openai/clip-vit-base-patch16
+Key                                                          | Status     |  | 
+-------------------------------------------------------------+------------+--+-
+text_model.encoder.layers.{0...11}.self_attn.out_proj.weight | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.self_attn.v_proj.bias     | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.layer_norm1.weight        | UNEXPECTED |  | 
+text_model.embeddings.token_embedding.weight                 | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.mlp.fc1.weight            | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.self_attn.out_proj.bias   | UNEXPECTED |  | 
+text_model.embeddings.position_embedding.weight              | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.self_attn.q_proj.bias     | UNEXPECTED |  | 
+visual_projection.weight                                     | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.self_attn.k_proj.weight   | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.mlp.fc2.weight            | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.self_attn.k_proj.bias     | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.mlp.fc1.bias              | UNEXPECTED |  | 
+vision_model.embeddings.position_ids                         | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.mlp.fc2.bias              | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.layer_norm2.weight        | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.self_attn.v_proj.weight   | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.self_attn.q_proj.weight   | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.layer_norm2.bias          | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.layer_norm1.bias          | UNEXPECTED |  | 
+logit_scale                                                  | UNEXPECTED |  | 
+text_projection.weight                                       | UNEXPECTED |  | 
+text_model.final_layer_norm.weight                           | UNEXPECTED |  | 
+text_model.embeddings.position_ids                           | UNEXPECTED |  | 
+text_model.final_layer_norm.bias                             | UNEXPECTED |  | 
+
+Notes:
+- UNEXPECTED	:can be ignored when loading from different task/architecture; not ok if you expect identical arch.
+trainable params: 371,812 || all params: 86,248,136 || trainable%: 0.4311
+Step 5 | current=10000 | replay=0 | total=10000
+
+===== simple_avg_no_replay_source | step 5/5 | replay_per_class=0 =====
+/usr/local/lib/python3.12/dist-packages/torch/utils/data/dataloader.py:424: UserWarning: This DataLoader will create 4 worker processes in total. Our suggested max number of worker in current system is 2, which is smaller than what this DataLoader is going to create. Please be aware that excessive worker creation might get DataLoader running slow or even freeze, lower the worker number to avoid potential slowness/freeze if necessary.
+  self.check_worker_number_rationality()
+  0% 0/625 [00:00<?, ?it/s]/usr/local/lib/python3.12/dist-packages/torch/utils/data/dataloader.py:432: UserWarning: This DataLoader will create 4 worker processes in total. Our suggested max number of worker in current system is 2, which is smaller than what this DataLoader is going to create. Please be aware that excessive worker creation might get DataLoader running slow or even freeze, lower the worker number to avoid potential slowness/freeze if necessary.
+  self.check_worker_number_rationality()
+{'loss': '4.718', 'grad_norm': '8.531', 'learning_rate': '3.952e-05', 'epoch': '0.08'}
+{'loss': '3.73', 'grad_norm': '8.075', 'learning_rate': '4.947e-05', 'epoch': '0.16'}
+{'loss': '2.848', 'grad_norm': '7.546', 'learning_rate': '4.711e-05', 'epoch': '0.24'}
+{'loss': '2.331', 'grad_norm': '8.895', 'learning_rate': '4.304e-05', 'epoch': '0.32'}
+{'loss': '1.856', 'grad_norm': '10.32', 'learning_rate': '3.758e-05', 'epoch': '0.4'}
+{'loss': '1.51', 'grad_norm': '13.69', 'learning_rate': '3.114e-05', 'epoch': '0.48'}
+{'loss': '1.264', 'grad_norm': '10.58', 'learning_rate': '2.423e-05', 'epoch': '0.56'}
+{'loss': '1.083', 'grad_norm': '23.92', 'learning_rate': '1.738e-05', 'epoch': '0.64'}
+{'loss': '1.044', 'grad_norm': '20.54', 'learning_rate': '1.112e-05', 'epoch': '0.72'}
+{'loss': '0.9446', 'grad_norm': '12.96', 'learning_rate': '5.929e-06', 'epoch': '0.8'}
+{'loss': '0.921', 'grad_norm': '15.56', 'learning_rate': '2.215e-06', 'epoch': '0.88'}
+{'loss': '0.9081', 'grad_norm': '16.9', 'learning_rate': '2.627e-07', 'epoch': '0.96'}
+100% 625/625 [01:25<00:00,  6.19it/s]
+  0% 0/63 [00:00<?, ?it/s]
+  3% 2/63 [00:00<00:03, 17.90it/s]
+  6% 4/63 [00:00<00:05, 11.62it/s]
+ 10% 6/63 [00:00<00:05, 10.74it/s]
+ 13% 8/63 [00:00<00:05, 10.34it/s]
+ 16% 10/63 [00:00<00:05, 10.08it/s]
+ 19% 12/63 [00:01<00:05,  9.92it/s]
+ 22% 14/63 [00:01<00:04,  9.86it/s]
+ 25% 16/63 [00:01<00:04,  9.81it/s]
+ 27% 17/63 [00:01<00:04,  9.80it/s]
+ 29% 18/63 [00:01<00:04,  9.82it/s]
+ 30% 19/63 [00:01<00:04,  9.71it/s]
+ 32% 20/63 [00:01<00:04,  9.77it/s]
+ 33% 21/63 [00:02<00:04,  9.79it/s]
+ 35% 22/63 [00:02<00:04,  9.81it/s]
+ 37% 23/63 [00:02<00:04,  9.79it/s]
+ 38% 24/63 [00:02<00:03,  9.79it/s]
+ 40% 25/63 [00:02<00:03,  9.76it/s]
+ 41% 26/63 [00:02<00:03,  9.74it/s]
+ 43% 27/63 [00:02<00:03,  9.75it/s]
+ 44% 28/63 [00:02<00:03,  9.72it/s]
+ 46% 29/63 [00:02<00:03,  9.68it/s]
+ 48% 30/63 [00:02<00:03,  9.70it/s]
+ 49% 31/63 [00:03<00:03,  9.74it/s]
+ 51% 32/63 [00:03<00:03,  9.75it/s]
+ 52% 33/63 [00:03<00:03,  9.80it/s]
+ 54% 34/63 [00:03<00:02,  9.79it/s]
+ 56% 35/63 [00:03<00:02,  9.82it/s]
+ 57% 36/63 [00:03<00:02,  9.86it/s]
+ 59% 37/63 [00:03<00:02,  9.84it/s]
+ 60% 38/63 [00:03<00:02,  9.80it/s]
+ 63% 40/63 [00:04<00:02,  9.78it/s]
+ 67% 42/63 [00:04<00:02,  9.51it/s]
+ 68% 43/63 [00:04<00:02,  9.46it/s]
+ 70% 44/63 [00:04<00:02,  9.50it/s]
+ 71% 45/63 [00:04<00:01,  9.55it/s]
+ 73% 46/63 [00:04<00:01,  8.89it/s]
+ 75% 47/63 [00:04<00:02,  7.93it/s]
+ 76% 48/63 [00:04<00:01,  7.57it/s]
+ 78% 49/63 [00:05<00:01,  7.85it/s]
+ 79% 50/63 [00:05<00:01,  7.60it/s]
+ 81% 51/63 [00:05<00:01,  7.61it/s]
+ 83% 52/63 [00:05<00:01,  7.31it/s]
+ 84% 53/63 [00:05<00:01,  7.10it/s]
+ 86% 54/63 [00:05<00:01,  7.11it/s]
+ 87% 55/63 [00:05<00:01,  7.08it/s]
+ 89% 56/63 [00:06<00:00,  7.65it/s]
+ 90% 57/63 [00:06<00:00,  8.13it/s]
+ 92% 58/63 [00:06<00:00,  8.54it/s]
+ 94% 59/63 [00:06<00:00,  8.85it/s]
+ 95% 60/63 [00:06<00:00,  9.11it/s]
+ 97% 61/63 [00:06<00:00,  9.29it/s]
+ 98% 62/63 [00:06<00:00,  9.46it/s]
+100% 63/63 [00:06<00:00,  7.89it/s]
+{'eval_loss': '0.9818', 'eval_accuracy': '0.8615', 'eval_runtime': '7.615', 'eval_samples_per_second': '262.6', 'eval_steps_per_second': '8.273', 'epoch': '1'}
+
+100% 625/625 [01:33<00:00,  6.19it/s]
+{'train_runtime': '93.6', 'train_samples_per_second': '106.8', 'train_steps_per_second': '6.677', 'train_loss': '1.89', 'epoch': '1'}
+100% 625/625 [01:33<00:00,  6.68it/s]
+100% 63/63 [00:06<00:00,  9.80it/s]
+Loading weights: 100% 199/199 [00:00<00:00, 1403.45it/s, Materializing param=vision_model.pre_layrnorm.weight]
+CLIPVisionModel LOAD REPORT from: openai/clip-vit-base-patch16
+Key                                                          | Status     |  | 
+-------------------------------------------------------------+------------+--+-
+text_model.encoder.layers.{0...11}.self_attn.out_proj.weight | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.self_attn.v_proj.bias     | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.layer_norm1.weight        | UNEXPECTED |  | 
+text_model.embeddings.token_embedding.weight                 | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.mlp.fc1.weight            | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.self_attn.out_proj.bias   | UNEXPECTED |  | 
+text_model.embeddings.position_embedding.weight              | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.self_attn.q_proj.bias     | UNEXPECTED |  | 
+visual_projection.weight                                     | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.self_attn.k_proj.weight   | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.mlp.fc2.weight            | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.self_attn.k_proj.bias     | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.mlp.fc1.bias              | UNEXPECTED |  | 
+vision_model.embeddings.position_ids                         | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.mlp.fc2.bias              | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.layer_norm2.weight        | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.self_attn.v_proj.weight   | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.self_attn.q_proj.weight   | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.layer_norm2.bias          | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.layer_norm1.bias          | UNEXPECTED |  | 
+logit_scale                                                  | UNEXPECTED |  | 
+text_projection.weight                                       | UNEXPECTED |  | 
+text_model.final_layer_norm.weight                           | UNEXPECTED |  | 
+text_model.embeddings.position_ids                           | UNEXPECTED |  | 
+text_model.final_layer_norm.bias                             | UNEXPECTED |  | 
+
+Notes:
+- UNEXPECTED	:can be ignored when loading from different task/architecture; not ok if you expect identical arch.
+/usr/local/lib/python3.12/dist-packages/torch/utils/data/dataloader.py:424: UserWarning: This DataLoader will create 4 worker processes in total. Our suggested max number of worker in current system is 2, which is smaller than what this DataLoader is going to create. Please be aware that excessive worker creation might get DataLoader running slow or even freeze, lower the worker number to avoid potential slowness/freeze if necessary.
+  self.check_worker_number_rationality()
+/usr/local/lib/python3.12/dist-packages/torch/utils/data/dataloader.py:432: UserWarning: This DataLoader will create 4 worker processes in total. Our suggested max number of worker in current system is 2, which is smaller than what this DataLoader is going to create. Please be aware that excessive worker creation might get DataLoader running slow or even freeze, lower the worker number to avoid potential slowness/freeze if necessary.
+  self.check_worker_number_rationality()
+100% 63/63 [00:06<00:00,  9.64it/s]
+100% 250/250 [00:24<00:00, 10.03it/s]
+100% 313/313 [00:30<00:00, 10.23it/s]
+                 method     eval_set  accuracy      loss
+0  simple_avg_no_replay   first_step  0.480000  3.334757
+1  simple_avg_no_replay  later_steps  0.293875  3.646319
+2  simple_avg_no_replay     all_seen  0.331100  3.584007
+Loading weights: 100% 199/199 [00:00<00:00, 905.72it/s, Materializing param=vision_model.pre_layrnorm.weight]
+CLIPVisionModel LOAD REPORT from: openai/clip-vit-base-patch16
+Key                                                          | Status     |  | 
+-------------------------------------------------------------+------------+--+-
+text_model.encoder.layers.{0...11}.self_attn.out_proj.weight | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.self_attn.v_proj.bias     | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.layer_norm1.weight        | UNEXPECTED |  | 
+text_model.embeddings.token_embedding.weight                 | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.mlp.fc1.weight            | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.self_attn.out_proj.bias   | UNEXPECTED |  | 
+text_model.embeddings.position_embedding.weight              | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.self_attn.q_proj.bias     | UNEXPECTED |  | 
+visual_projection.weight                                     | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.self_attn.k_proj.weight   | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.mlp.fc2.weight            | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.self_attn.k_proj.bias     | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.mlp.fc1.bias              | UNEXPECTED |  | 
+vision_model.embeddings.position_ids                         | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.mlp.fc2.bias              | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.layer_norm2.weight        | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.self_attn.v_proj.weight   | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.self_attn.q_proj.weight   | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.layer_norm2.bias          | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.layer_norm1.bias          | UNEXPECTED |  | 
+logit_scale                                                  | UNEXPECTED |  | 
+text_projection.weight                                       | UNEXPECTED |  | 
+text_model.final_layer_norm.weight                           | UNEXPECTED |  | 
+text_model.embeddings.position_ids                           | UNEXPECTED |  | 
+text_model.final_layer_norm.bias                             | UNEXPECTED |  | 
+
+Notes:
+- UNEXPECTED	:can be ignored when loading from different task/architecture; not ok if you expect identical arch.
+trainable params: 371,812 || all params: 86,248,136 || trainable%: 0.4311
+Step 1 | current=10000 | replay=0 | total=10000
+
+===== simple_avg_replay_source | step 1/5 | replay_per_class=20 =====
+/usr/local/lib/python3.12/dist-packages/torch/utils/data/dataloader.py:424: UserWarning: This DataLoader will create 4 worker processes in total. Our suggested max number of worker in current system is 2, which is smaller than what this DataLoader is going to create. Please be aware that excessive worker creation might get DataLoader running slow or even freeze, lower the worker number to avoid potential slowness/freeze if necessary.
+  self.check_worker_number_rationality()
+  0% 0/625 [00:00<?, ?it/s]/usr/local/lib/python3.12/dist-packages/torch/utils/data/dataloader.py:432: UserWarning: This DataLoader will create 4 worker processes in total. Our suggested max number of worker in current system is 2, which is smaller than what this DataLoader is going to create. Please be aware that excessive worker creation might get DataLoader running slow or even freeze, lower the worker number to avoid potential slowness/freeze if necessary.
+  self.check_worker_number_rationality()
+{'loss': '4.622', 'grad_norm': '7.822', 'learning_rate': '3.952e-05', 'epoch': '0.08'}
+{'loss': '3.63', 'grad_norm': '8.068', 'learning_rate': '4.947e-05', 'epoch': '0.16'}
+{'loss': '2.685', 'grad_norm': '8.63', 'learning_rate': '4.711e-05', 'epoch': '0.24'}
+{'loss': '1.995', 'grad_norm': '11.59', 'learning_rate': '4.304e-05', 'epoch': '0.32'}
+{'loss': '1.508', 'grad_norm': '9.344', 'learning_rate': '3.758e-05', 'epoch': '0.4'}
+{'loss': '1.175', 'grad_norm': '10.57', 'learning_rate': '3.114e-05', 'epoch': '0.48'}
+{'loss': '0.9913', 'grad_norm': '10.45', 'learning_rate': '2.423e-05', 'epoch': '0.56'}
+{'loss': '0.8526', 'grad_norm': '12.16', 'learning_rate': '1.738e-05', 'epoch': '0.64'}
+{'loss': '0.835', 'grad_norm': '12.87', 'learning_rate': '1.112e-05', 'epoch': '0.72'}
+{'loss': '0.7595', 'grad_norm': '7.47', 'learning_rate': '5.929e-06', 'epoch': '0.8'}
+{'loss': '0.7363', 'grad_norm': '8.333', 'learning_rate': '2.215e-06', 'epoch': '0.88'}
+{'loss': '0.7379', 'grad_norm': '17.39', 'learning_rate': '2.627e-07', 'epoch': '0.96'}
+100% 625/625 [01:25<00:00,  5.31it/s]
+  0% 0/63 [00:00<?, ?it/s]
+  3% 2/63 [00:00<00:03, 19.41it/s]
+  6% 4/63 [00:00<00:05, 11.78it/s]
+ 10% 6/63 [00:00<00:05, 10.80it/s]
+ 13% 8/63 [00:00<00:05, 10.45it/s]
+ 16% 10/63 [00:00<00:05, 10.22it/s]
+ 19% 12/63 [00:01<00:05, 10.08it/s]
+ 22% 14/63 [00:01<00:04, 10.01it/s]
+ 25% 16/63 [00:01<00:04,  9.98it/s]
+ 29% 18/63 [00:01<00:04,  9.90it/s]
+ 30% 19/63 [00:01<00:04,  9.89it/s]
+ 32% 20/63 [00:01<00:04,  9.89it/s]
+ 33% 21/63 [00:02<00:04,  9.87it/s]
+ 35% 22/63 [00:02<00:04,  9.86it/s]
+ 37% 23/63 [00:02<00:04,  9.85it/s]
+ 38% 24/63 [00:02<00:03,  9.88it/s]
+ 40% 25/63 [00:02<00:03,  9.72it/s]
+ 41% 26/63 [00:02<00:03,  9.74it/s]
+ 43% 27/63 [00:02<00:03,  9.79it/s]
+ 44% 28/63 [00:02<00:03,  9.84it/s]
+ 48% 30/63 [00:02<00:03,  9.91it/s]
+ 51% 32/63 [00:03<00:03,  9.96it/s]
+ 52% 33/63 [00:03<00:03,  9.89it/s]
+ 54% 34/63 [00:03<00:02,  9.91it/s]
+ 56% 35/63 [00:03<00:02,  9.84it/s]
+ 57% 36/63 [00:03<00:02,  9.83it/s]
+ 59% 37/63 [00:03<00:02,  9.80it/s]
+ 60% 38/63 [00:03<00:02,  9.79it/s]
+ 62% 39/63 [00:03<00:02,  9.75it/s]
+ 63% 40/63 [00:03<00:02,  9.75it/s]
+ 65% 41/63 [00:04<00:02,  9.75it/s]
+ 67% 42/63 [00:04<00:02,  9.78it/s]
+ 68% 43/63 [00:04<00:02,  9.77it/s]
+ 70% 44/63 [00:04<00:01,  9.70it/s]
+ 71% 45/63 [00:04<00:01,  9.73it/s]
+ 73% 46/63 [00:04<00:01,  9.75it/s]
+ 75% 47/63 [00:04<00:01,  9.79it/s]
+ 76% 48/63 [00:04<00:01,  9.84it/s]
+ 78% 49/63 [00:04<00:01,  9.78it/s]
+ 79% 50/63 [00:05<00:01,  9.83it/s]
+ 81% 51/63 [00:05<00:01,  9.80it/s]
+ 84% 53/63 [00:05<00:01,  9.90it/s]
+ 86% 54/63 [00:05<00:00,  9.90it/s]
+ 89% 56/63 [00:05<00:00,  9.90it/s]
+ 90% 57/63 [00:05<00:00,  9.86it/s]
+ 92% 58/63 [00:05<00:00,  9.83it/s]
+ 94% 59/63 [00:05<00:00,  9.86it/s]
+ 97% 61/63 [00:06<00:00,  9.94it/s]
+ 98% 62/63 [00:06<00:00,  9.94it/s]
+100% 63/63 [00:06<00:00,  8.18it/s]
+{'eval_loss': '0.7684', 'eval_accuracy': '0.897', 'eval_runtime': '7.519', 'eval_samples_per_second': '266', 'eval_steps_per_second': '8.379', 'epoch': '1'}
+
+100% 625/625 [01:33<00:00,  5.31it/s]
+{'train_runtime': '93.32', 'train_samples_per_second': '107.2', 'train_steps_per_second': '6.698', 'train_loss': '1.673', 'epoch': '1'}
+100% 625/625 [01:33<00:00,  6.70it/s]
+100% 63/63 [00:06<00:00,  9.08it/s]
+Loading weights: 100% 199/199 [00:00<00:00, 1309.64it/s, Materializing param=vision_model.pre_layrnorm.weight]
+CLIPVisionModel LOAD REPORT from: openai/clip-vit-base-patch16
+Key                                                          | Status     |  | 
+-------------------------------------------------------------+------------+--+-
+text_model.encoder.layers.{0...11}.self_attn.out_proj.weight | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.self_attn.v_proj.bias     | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.layer_norm1.weight        | UNEXPECTED |  | 
+text_model.embeddings.token_embedding.weight                 | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.mlp.fc1.weight            | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.self_attn.out_proj.bias   | UNEXPECTED |  | 
+text_model.embeddings.position_embedding.weight              | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.self_attn.q_proj.bias     | UNEXPECTED |  | 
+visual_projection.weight                                     | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.self_attn.k_proj.weight   | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.mlp.fc2.weight            | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.self_attn.k_proj.bias     | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.mlp.fc1.bias              | UNEXPECTED |  | 
+vision_model.embeddings.position_ids                         | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.mlp.fc2.bias              | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.layer_norm2.weight        | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.self_attn.v_proj.weight   | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.self_attn.q_proj.weight   | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.layer_norm2.bias          | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.layer_norm1.bias          | UNEXPECTED |  | 
+logit_scale                                                  | UNEXPECTED |  | 
+text_projection.weight                                       | UNEXPECTED |  | 
+text_model.final_layer_norm.weight                           | UNEXPECTED |  | 
+text_model.embeddings.position_ids                           | UNEXPECTED |  | 
+text_model.final_layer_norm.bias                             | UNEXPECTED |  | 
+
+Notes:
+- UNEXPECTED	:can be ignored when loading from different task/architecture; not ok if you expect identical arch.
+trainable params: 371,812 || all params: 86,248,136 || trainable%: 0.4311
+Step 2 | current=10000 | replay=400 | total=10400
+
+===== simple_avg_replay_source | step 2/5 | replay_per_class=20 =====
+/usr/local/lib/python3.12/dist-packages/torch/utils/data/dataloader.py:424: UserWarning: This DataLoader will create 4 worker processes in total. Our suggested max number of worker in current system is 2, which is smaller than what this DataLoader is going to create. Please be aware that excessive worker creation might get DataLoader running slow or even freeze, lower the worker number to avoid potential slowness/freeze if necessary.
+  self.check_worker_number_rationality()
+  0% 0/650 [00:00<?, ?it/s]/usr/local/lib/python3.12/dist-packages/torch/utils/data/dataloader.py:432: UserWarning: This DataLoader will create 4 worker processes in total. Our suggested max number of worker in current system is 2, which is smaller than what this DataLoader is going to create. Please be aware that excessive worker creation might get DataLoader running slow or even freeze, lower the worker number to avoid potential slowness/freeze if necessary.
+  self.check_worker_number_rationality()
+{'loss': '4.535', 'grad_norm': '8.257', 'learning_rate': '3.769e-05', 'epoch': '0.07692'}
+{'loss': '3.727', 'grad_norm': '8.118', 'learning_rate': '4.958e-05', 'epoch': '0.1538'}
+{'loss': '2.892', 'grad_norm': '7.825', 'learning_rate': '4.75e-05', 'epoch': '0.2308'}
+{'loss': '2.262', 'grad_norm': '12.24', 'learning_rate': '4.38e-05', 'epoch': '0.3077'}
+{'loss': '1.828', 'grad_norm': '12.9', 'learning_rate': '3.876e-05', 'epoch': '0.3846'}
+{'loss': '1.403', 'grad_norm': '10.01', 'learning_rate': '3.273e-05', 'epoch': '0.4615'}
+{'loss': '1.262', 'grad_norm': '10.18', 'learning_rate': '2.614e-05', 'epoch': '0.5385'}
+{'loss': '1.147', 'grad_norm': '10.21', 'learning_rate': '1.947e-05', 'epoch': '0.6154'}
+{'loss': '1.09', 'grad_norm': '8.759', 'learning_rate': '1.32e-05', 'epoch': '0.6923'}
+{'loss': '1.032', 'grad_norm': '15.35', 'learning_rate': '7.779e-06', 'epoch': '0.7692'}
+{'loss': '0.9544', 'grad_norm': '8.671', 'learning_rate': '3.588e-06', 'epoch': '0.8462'}
+{'loss': '0.946', 'grad_norm': '9.991', 'learning_rate': '9.318e-07', 'epoch': '0.9231'}
+{'loss': '1.014', 'grad_norm': '27.59', 'learning_rate': '3.605e-10', 'epoch': '1'}
+100% 650/650 [01:29<00:00,  5.07it/s]
+  0% 0/63 [00:00<?, ?it/s]
+  3% 2/63 [00:00<00:06,  9.76it/s]
+  5% 3/63 [00:00<00:07,  7.73it/s]
+  6% 4/63 [00:00<00:07,  7.69it/s]
+  8% 5/63 [00:00<00:07,  7.37it/s]
+ 10% 6/63 [00:00<00:07,  7.98it/s]
+ 11% 7/63 [00:00<00:07,  7.60it/s]
+ 13% 8/63 [00:01<00:06,  7.89it/s]
+ 14% 9/63 [00:01<00:06,  8.31it/s]
+ 17% 11/63 [00:01<00:05,  8.98it/s]
+ 19% 12/63 [00:01<00:05,  9.15it/s]
+ 21% 13/63 [00:01<00:05,  9.32it/s]
+ 22% 14/63 [00:01<00:05,  9.47it/s]
+ 24% 15/63 [00:01<00:05,  9.49it/s]
+ 27% 17/63 [00:01<00:04,  9.62it/s]
+ 29% 18/63 [00:02<00:04,  9.67it/s]
+ 30% 19/63 [00:02<00:04,  9.75it/s]
+ 32% 20/63 [00:02<00:04,  9.79it/s]
+ 33% 21/63 [00:02<00:04,  9.76it/s]
+ 37% 23/63 [00:02<00:04,  9.78it/s]
+ 38% 24/63 [00:02<00:03,  9.82it/s]
+ 41% 26/63 [00:02<00:03,  9.89it/s]
+ 43% 27/63 [00:02<00:03,  9.86it/s]
+ 44% 28/63 [00:03<00:03,  9.88it/s]
+ 46% 29/63 [00:03<00:03,  9.86it/s]
+ 48% 30/63 [00:03<00:03,  9.86it/s]
+ 49% 31/63 [00:03<00:03,  9.71it/s]
+ 51% 32/63 [00:03<00:03,  9.67it/s]
+ 52% 33/63 [00:03<00:03,  9.75it/s]
+ 54% 34/63 [00:03<00:02,  9.77it/s]
+ 56% 35/63 [00:03<00:02,  9.72it/s]
+ 57% 36/63 [00:03<00:02,  9.69it/s]
+ 59% 37/63 [00:03<00:02,  9.73it/s]
+ 60% 38/63 [00:04<00:02,  9.71it/s]
+ 62% 39/63 [00:04<00:02,  9.75it/s]
+ 63% 40/63 [00:04<00:02,  9.77it/s]
+ 65% 41/63 [00:04<00:02,  9.79it/s]
+ 68% 43/63 [00:04<00:02,  9.88it/s]
+ 70% 44/63 [00:04<00:01,  9.87it/s]
+ 71% 45/63 [00:04<00:01,  9.82it/s]
+ 73% 46/63 [00:04<00:01,  9.81it/s]
+ 76% 48/63 [00:05<00:01,  9.91it/s]
+ 78% 49/63 [00:05<00:01,  9.84it/s]
+ 79% 50/63 [00:05<00:01,  9.76it/s]
+ 83% 52/63 [00:05<00:01,  9.83it/s]
+ 86% 54/63 [00:05<00:00,  9.91it/s]
+ 87% 55/63 [00:05<00:00,  9.93it/s]
+ 90% 57/63 [00:06<00:00,  9.93it/s]
+ 92% 58/63 [00:06<00:00,  9.93it/s]
+ 94% 59/63 [00:06<00:00,  9.90it/s]
+ 95% 60/63 [00:06<00:00,  9.90it/s]
+ 97% 61/63 [00:06<00:00,  9.88it/s]
+ 98% 62/63 [00:06<00:00,  9.91it/s]
+100% 63/63 [00:06<00:00,  7.83it/s]
+{'eval_loss': '0.8549', 'eval_accuracy': '0.8725', 'eval_runtime': '7.758', 'eval_samples_per_second': '257.8', 'eval_steps_per_second': '8.121', 'epoch': '1'}
+
+100% 650/650 [01:36<00:00,  5.07it/s]
+{'train_runtime': '96.9', 'train_samples_per_second': '107.3', 'train_steps_per_second': '6.708', 'train_loss': '1.853', 'epoch': '1'}
+100% 650/650 [01:36<00:00,  6.71it/s]
+100% 63/63 [00:06<00:00,  9.37it/s]
+Loading weights: 100% 199/199 [00:00<00:00, 903.15it/s, Materializing param=vision_model.pre_layrnorm.weight]
+CLIPVisionModel LOAD REPORT from: openai/clip-vit-base-patch16
+Key                                                          | Status     |  | 
+-------------------------------------------------------------+------------+--+-
+text_model.encoder.layers.{0...11}.self_attn.out_proj.weight | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.self_attn.v_proj.bias     | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.layer_norm1.weight        | UNEXPECTED |  | 
+text_model.embeddings.token_embedding.weight                 | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.mlp.fc1.weight            | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.self_attn.out_proj.bias   | UNEXPECTED |  | 
+text_model.embeddings.position_embedding.weight              | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.self_attn.q_proj.bias     | UNEXPECTED |  | 
+visual_projection.weight                                     | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.self_attn.k_proj.weight   | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.mlp.fc2.weight            | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.self_attn.k_proj.bias     | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.mlp.fc1.bias              | UNEXPECTED |  | 
+vision_model.embeddings.position_ids                         | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.mlp.fc2.bias              | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.layer_norm2.weight        | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.self_attn.v_proj.weight   | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.self_attn.q_proj.weight   | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.layer_norm2.bias          | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.layer_norm1.bias          | UNEXPECTED |  | 
+logit_scale                                                  | UNEXPECTED |  | 
+text_projection.weight                                       | UNEXPECTED |  | 
+text_model.final_layer_norm.weight                           | UNEXPECTED |  | 
+text_model.embeddings.position_ids                           | UNEXPECTED |  | 
+text_model.final_layer_norm.bias                             | UNEXPECTED |  | 
+
+Notes:
+- UNEXPECTED	:can be ignored when loading from different task/architecture; not ok if you expect identical arch.
+trainable params: 371,812 || all params: 86,248,136 || trainable%: 0.4311
+Step 3 | current=10000 | replay=800 | total=10800
+
+===== simple_avg_replay_source | step 3/5 | replay_per_class=20 =====
+/usr/local/lib/python3.12/dist-packages/torch/utils/data/dataloader.py:424: UserWarning: This DataLoader will create 4 worker processes in total. Our suggested max number of worker in current system is 2, which is smaller than what this DataLoader is going to create. Please be aware that excessive worker creation might get DataLoader running slow or even freeze, lower the worker number to avoid potential slowness/freeze if necessary.
+  self.check_worker_number_rationality()
+  0% 0/675 [00:00<?, ?it/s]/usr/local/lib/python3.12/dist-packages/torch/utils/data/dataloader.py:432: UserWarning: This DataLoader will create 4 worker processes in total. Our suggested max number of worker in current system is 2, which is smaller than what this DataLoader is going to create. Please be aware that excessive worker creation might get DataLoader running slow or even freeze, lower the worker number to avoid potential slowness/freeze if necessary.
+  self.check_worker_number_rationality()
+{'loss': '4.706', 'grad_norm': '8.316', 'learning_rate': '3.657e-05', 'epoch': '0.07407'}
+{'loss': '3.968', 'grad_norm': '8.341', 'learning_rate': '4.966e-05', 'epoch': '0.1481'}
+{'loss': '3.044', 'grad_norm': '10.37', 'learning_rate': '4.779e-05', 'epoch': '0.2222'}
+{'loss': '2.502', 'grad_norm': '9.835', 'learning_rate': '4.441e-05', 'epoch': '0.2963'}
+{'loss': '2.016', 'grad_norm': '11.34', 'learning_rate': '3.974e-05', 'epoch': '0.3704'}
+{'loss': '1.815', 'grad_norm': '11.59', 'learning_rate': '3.409e-05', 'epoch': '0.4444'}
+{'loss': '1.57', 'grad_norm': '9.621', 'learning_rate': '2.784e-05', 'epoch': '0.5185'}
+{'loss': '1.48', 'grad_norm': '12.33', 'learning_rate': '2.14e-05', 'epoch': '0.5926'}
+{'loss': '1.441', 'grad_norm': '22.61', 'learning_rate': '1.519e-05', 'epoch': '0.6667'}
+{'loss': '1.345', 'grad_norm': '12.1', 'learning_rate': '9.645e-06', 'epoch': '0.7407'}
+{'loss': '1.319', 'grad_norm': '15.98', 'learning_rate': '5.114e-06', 'epoch': '0.8148'}
+{'loss': '1.243', 'grad_norm': '12.67', 'learning_rate': '1.903e-06', 'epoch': '0.8889'}
+{'loss': '1.294', 'grad_norm': '13.47', 'learning_rate': '2.253e-07', 'epoch': '0.963'}
+100% 675/675 [01:33<00:00,  5.95it/s]
+  0% 0/63 [00:00<?, ?it/s]
+  3% 2/63 [00:00<00:03, 18.12it/s]
+  6% 4/63 [00:00<00:05, 11.55it/s]
+ 10% 6/63 [00:00<00:05, 10.65it/s]
+ 13% 8/63 [00:00<00:05, 10.27it/s]
+ 16% 10/63 [00:00<00:05, 10.04it/s]
+ 19% 12/63 [00:01<00:05,  9.97it/s]
+ 22% 14/63 [00:01<00:04,  9.92it/s]
+ 25% 16/63 [00:01<00:04,  9.93it/s]
+ 29% 18/63 [00:01<00:04,  9.85it/s]
+ 30% 19/63 [00:01<00:04,  9.86it/s]
+ 32% 20/63 [00:01<00:04,  9.87it/s]
+ 33% 21/63 [00:02<00:04,  9.87it/s]
+ 35% 22/63 [00:02<00:04,  9.83it/s]
+ 37% 23/63 [00:02<00:04,  9.87it/s]
+ 38% 24/63 [00:02<00:03,  9.82it/s]
+ 41% 26/63 [00:02<00:03,  9.82it/s]
+ 44% 28/63 [00:02<00:03,  9.89it/s]
+ 46% 29/63 [00:02<00:03,  9.88it/s]
+ 48% 30/63 [00:02<00:03,  9.85it/s]
+ 49% 31/63 [00:03<00:03,  9.84it/s]
+ 51% 32/63 [00:03<00:03,  9.87it/s]
+ 52% 33/63 [00:03<00:03,  9.90it/s]
+ 54% 34/63 [00:03<00:02,  9.87it/s]
+ 56% 35/63 [00:03<00:02,  9.79it/s]
+ 59% 37/63 [00:03<00:02,  9.87it/s]
+ 60% 38/63 [00:03<00:02,  9.84it/s]
+ 62% 39/63 [00:03<00:02,  9.83it/s]
+ 63% 40/63 [00:03<00:02,  9.86it/s]
+ 65% 41/63 [00:04<00:02,  9.84it/s]
+ 67% 42/63 [00:04<00:02,  9.86it/s]
+ 68% 43/63 [00:04<00:02,  9.85it/s]
+ 70% 44/63 [00:04<00:01,  9.85it/s]
+ 71% 45/63 [00:04<00:01,  9.88it/s]
+ 73% 46/63 [00:04<00:01,  9.80it/s]
+ 75% 47/63 [00:04<00:01,  9.77it/s]
+ 76% 48/63 [00:04<00:01,  9.80it/s]
+ 78% 49/63 [00:04<00:01,  9.85it/s]
+ 79% 50/63 [00:05<00:01,  9.84it/s]
+ 81% 51/63 [00:05<00:01,  9.83it/s]
+ 83% 52/63 [00:05<00:01,  9.87it/s]
+ 84% 53/63 [00:05<00:01,  9.85it/s]
+ 86% 54/63 [00:05<00:00,  9.85it/s]
+ 87% 55/63 [00:05<00:00,  9.87it/s]
+ 90% 57/63 [00:05<00:00,  9.91it/s]
+ 92% 58/63 [00:05<00:00,  9.91it/s]
+ 94% 59/63 [00:05<00:00,  9.89it/s]
+ 95% 60/63 [00:06<00:00,  9.88it/s]
+ 97% 61/63 [00:06<00:00,  9.91it/s]
+ 98% 62/63 [00:06<00:00,  9.84it/s]
+100% 63/63 [00:06<00:00,  7.72it/s]
+{'eval_loss': '0.9939', 'eval_accuracy': '0.8345', 'eval_runtime': '7.237', 'eval_samples_per_second': '276.4', 'eval_steps_per_second': '8.705', 'epoch': '1'}
+
+100% 675/675 [01:40<00:00,  5.95it/s]
+{'train_runtime': '100.3', 'train_samples_per_second': '107.7', 'train_steps_per_second': '6.732', 'train_loss': '2.101', 'epoch': '1'}
+100% 675/675 [01:40<00:00,  6.73it/s]
+100% 63/63 [00:06<00:00,  9.17it/s]
+Loading weights: 100% 199/199 [00:00<00:00, 1090.10it/s, Materializing param=vision_model.pre_layrnorm.weight]
+CLIPVisionModel LOAD REPORT from: openai/clip-vit-base-patch16
+Key                                                          | Status     |  | 
+-------------------------------------------------------------+------------+--+-
+text_model.encoder.layers.{0...11}.self_attn.out_proj.weight | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.self_attn.v_proj.bias     | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.layer_norm1.weight        | UNEXPECTED |  | 
+text_model.embeddings.token_embedding.weight                 | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.mlp.fc1.weight            | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.self_attn.out_proj.bias   | UNEXPECTED |  | 
+text_model.embeddings.position_embedding.weight              | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.self_attn.q_proj.bias     | UNEXPECTED |  | 
+visual_projection.weight                                     | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.self_attn.k_proj.weight   | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.mlp.fc2.weight            | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.self_attn.k_proj.bias     | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.mlp.fc1.bias              | UNEXPECTED |  | 
+vision_model.embeddings.position_ids                         | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.mlp.fc2.bias              | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.layer_norm2.weight        | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.self_attn.v_proj.weight   | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.self_attn.q_proj.weight   | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.layer_norm2.bias          | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.layer_norm1.bias          | UNEXPECTED |  | 
+logit_scale                                                  | UNEXPECTED |  | 
+text_projection.weight                                       | UNEXPECTED |  | 
+text_model.final_layer_norm.weight                           | UNEXPECTED |  | 
+text_model.embeddings.position_ids                           | UNEXPECTED |  | 
+text_model.final_layer_norm.bias                             | UNEXPECTED |  | 
+
+Notes:
+- UNEXPECTED	:can be ignored when loading from different task/architecture; not ok if you expect identical arch.
+trainable params: 371,812 || all params: 86,248,136 || trainable%: 0.4311
+Step 4 | current=10000 | replay=1200 | total=11200
+
+===== simple_avg_replay_source | step 4/5 | replay_per_class=20 =====
+/usr/local/lib/python3.12/dist-packages/torch/utils/data/dataloader.py:424: UserWarning: This DataLoader will create 4 worker processes in total. Our suggested max number of worker in current system is 2, which is smaller than what this DataLoader is going to create. Please be aware that excessive worker creation might get DataLoader running slow or even freeze, lower the worker number to avoid potential slowness/freeze if necessary.
+  self.check_worker_number_rationality()
+  0% 0/700 [00:00<?, ?it/s]/usr/local/lib/python3.12/dist-packages/torch/utils/data/dataloader.py:432: UserWarning: This DataLoader will create 4 worker processes in total. Our suggested max number of worker in current system is 2, which is smaller than what this DataLoader is going to create. Please be aware that excessive worker creation might get DataLoader running slow or even freeze, lower the worker number to avoid potential slowness/freeze if necessary.
+  self.check_worker_number_rationality()
+{'loss': '4.594', 'grad_norm': '7.603', 'learning_rate': '3.5e-05', 'epoch': '0.07143'}
+{'loss': '4.001', 'grad_norm': '7.893', 'learning_rate': '4.974e-05', 'epoch': '0.1429'}
+{'loss': '3.364', 'grad_norm': '10.23', 'learning_rate': '4.809e-05', 'epoch': '0.2143'}
+{'loss': '2.834', 'grad_norm': '11.91', 'learning_rate': '4.5e-05', 'epoch': '0.2857'}
+{'loss': '2.444', 'grad_norm': '11.6', 'learning_rate': '4.068e-05', 'epoch': '0.3571'}
+{'loss': '2.211', 'grad_norm': '8.808', 'learning_rate': '3.54e-05', 'epoch': '0.4286'}
+{'loss': '2.024', 'grad_norm': '13.81', 'learning_rate': '2.946e-05', 'epoch': '0.5'}
+{'loss': '1.759', 'grad_norm': '13.96', 'learning_rate': '2.326e-05', 'epoch': '0.5714'}
+{'loss': '1.749', 'grad_norm': '15.42', 'learning_rate': '1.716e-05', 'epoch': '0.6429'}
+{'loss': '1.67', 'grad_norm': '11.39', 'learning_rate': '1.154e-05', 'epoch': '0.7143'}
+{'loss': '1.639', 'grad_norm': '12.75', 'learning_rate': '6.759e-06', 'epoch': '0.7857'}
+{'loss': '1.589', 'grad_norm': '20.76', 'learning_rate': '3.104e-06', 'epoch': '0.8571'}
+{'loss': '1.562', 'grad_norm': '11.73', 'learning_rate': '8.041e-07', 'epoch': '0.9286'}
+{'loss': '1.58', 'grad_norm': '11.28', 'learning_rate': '3.108e-10', 'epoch': '1'}
+100% 700/700 [01:36<00:00,  5.97it/s]
+  0% 0/63 [00:00<?, ?it/s]
+  3% 2/63 [00:00<00:03, 16.55it/s]
+  6% 4/63 [00:00<00:05, 11.28it/s]
+ 10% 6/63 [00:00<00:05, 10.62it/s]
+ 13% 8/63 [00:00<00:05, 10.31it/s]
+ 16% 10/63 [00:00<00:05, 10.24it/s]
+ 19% 12/63 [00:01<00:05, 10.12it/s]
+ 22% 14/63 [00:01<00:04, 10.00it/s]
+ 25% 16/63 [00:01<00:04,  9.95it/s]
+ 29% 18/63 [00:01<00:04,  9.91it/s]
+ 30% 19/63 [00:01<00:04,  9.91it/s]
+ 32% 20/63 [00:01<00:04,  9.91it/s]
+ 33% 21/63 [00:02<00:04,  9.90it/s]
+ 35% 22/63 [00:02<00:04,  9.82it/s]
+ 37% 23/63 [00:02<00:04,  9.86it/s]
+ 38% 24/63 [00:02<00:03,  9.85it/s]
+ 40% 25/63 [00:02<00:03,  9.76it/s]
+ 41% 26/63 [00:02<00:03,  9.77it/s]
+ 43% 27/63 [00:02<00:03,  9.57it/s]
+ 44% 28/63 [00:02<00:03,  8.99it/s]
+ 46% 29/63 [00:02<00:03,  8.89it/s]
+ 48% 30/63 [00:03<00:03,  9.12it/s]
+ 49% 31/63 [00:03<00:03,  8.60it/s]
+ 51% 32/63 [00:03<00:03,  8.68it/s]
+ 52% 33/63 [00:03<00:03,  8.95it/s]
+ 54% 34/63 [00:03<00:03,  9.09it/s]
+ 56% 35/63 [00:03<00:03,  9.32it/s]
+ 57% 36/63 [00:03<00:02,  9.41it/s]
+ 59% 37/63 [00:03<00:02,  9.47it/s]
+ 60% 38/63 [00:03<00:02,  9.51it/s]
+ 62% 39/63 [00:04<00:02,  8.95it/s]
+ 63% 40/63 [00:04<00:02,  9.17it/s]
+ 65% 41/63 [00:04<00:02,  8.95it/s]
+ 67% 42/63 [00:04<00:02,  8.91it/s]
+ 68% 43/63 [00:04<00:02,  9.07it/s]
+ 70% 44/63 [00:04<00:02,  9.33it/s]
+ 71% 45/63 [00:04<00:01,  9.10it/s]
+ 73% 46/63 [00:04<00:01,  9.11it/s]
+ 75% 47/63 [00:04<00:01,  8.60it/s]
+ 76% 48/63 [00:05<00:01,  8.65it/s]
+ 78% 49/63 [00:05<00:01,  8.74it/s]
+ 81% 51/63 [00:05<00:01,  9.16it/s]
+ 83% 52/63 [00:05<00:01,  9.20it/s]
+ 84% 53/63 [00:05<00:01,  9.30it/s]
+ 86% 54/63 [00:05<00:01,  8.98it/s]
+ 87% 55/63 [00:05<00:00,  9.17it/s]
+ 89% 56/63 [00:05<00:00,  9.36it/s]
+ 90% 57/63 [00:05<00:00,  9.53it/s]
+ 94% 59/63 [00:06<00:00,  9.74it/s]
+ 95% 60/63 [00:06<00:00,  9.79it/s]
+ 97% 61/63 [00:06<00:00,  9.77it/s]
+ 98% 62/63 [00:06<00:00,  9.78it/s]
+100% 63/63 [00:06<00:00,  8.31it/s]
+{'eval_loss': '1.188', 'eval_accuracy': '0.802', 'eval_runtime': '7.429', 'eval_samples_per_second': '269.2', 'eval_steps_per_second': '8.481', 'epoch': '1'}
+
+100% 700/700 [01:43<00:00,  5.97it/s]
+{'train_runtime': '103.9', 'train_samples_per_second': '107.8', 'train_steps_per_second': '6.735', 'train_loss': '2.359', 'epoch': '1'}
+100% 700/700 [01:43<00:00,  6.74it/s]
+100% 63/63 [00:06<00:00,  9.88it/s]
+Loading weights: 100% 199/199 [00:00<00:00, 1182.25it/s, Materializing param=vision_model.pre_layrnorm.weight]
+CLIPVisionModel LOAD REPORT from: openai/clip-vit-base-patch16
+Key                                                          | Status     |  | 
+-------------------------------------------------------------+------------+--+-
+text_model.encoder.layers.{0...11}.self_attn.out_proj.weight | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.self_attn.v_proj.bias     | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.layer_norm1.weight        | UNEXPECTED |  | 
+text_model.embeddings.token_embedding.weight                 | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.mlp.fc1.weight            | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.self_attn.out_proj.bias   | UNEXPECTED |  | 
+text_model.embeddings.position_embedding.weight              | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.self_attn.q_proj.bias     | UNEXPECTED |  | 
+visual_projection.weight                                     | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.self_attn.k_proj.weight   | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.mlp.fc2.weight            | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.self_attn.k_proj.bias     | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.mlp.fc1.bias              | UNEXPECTED |  | 
+vision_model.embeddings.position_ids                         | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.mlp.fc2.bias              | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.layer_norm2.weight        | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.self_attn.v_proj.weight   | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.self_attn.q_proj.weight   | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.layer_norm2.bias          | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.layer_norm1.bias          | UNEXPECTED |  | 
+logit_scale                                                  | UNEXPECTED |  | 
+text_projection.weight                                       | UNEXPECTED |  | 
+text_model.final_layer_norm.weight                           | UNEXPECTED |  | 
+text_model.embeddings.position_ids                           | UNEXPECTED |  | 
+text_model.final_layer_norm.bias                             | UNEXPECTED |  | 
+
+Notes:
+- UNEXPECTED	:can be ignored when loading from different task/architecture; not ok if you expect identical arch.
+trainable params: 371,812 || all params: 86,248,136 || trainable%: 0.4311
+Step 5 | current=10000 | replay=1600 | total=11600
+
+===== simple_avg_replay_source | step 5/5 | replay_per_class=20 =====
+/usr/local/lib/python3.12/dist-packages/torch/utils/data/dataloader.py:424: UserWarning: This DataLoader will create 4 worker processes in total. Our suggested max number of worker in current system is 2, which is smaller than what this DataLoader is going to create. Please be aware that excessive worker creation might get DataLoader running slow or even freeze, lower the worker number to avoid potential slowness/freeze if necessary.
+  self.check_worker_number_rationality()
+  0% 0/725 [00:00<?, ?it/s]/usr/local/lib/python3.12/dist-packages/torch/utils/data/dataloader.py:432: UserWarning: This DataLoader will create 4 worker processes in total. Our suggested max number of worker in current system is 2, which is smaller than what this DataLoader is going to create. Please be aware that excessive worker creation might get DataLoader running slow or even freeze, lower the worker number to avoid potential slowness/freeze if necessary.
+  self.check_worker_number_rationality()
+{'loss': '4.716', 'grad_norm': '7.317', 'learning_rate': '3.403e-05', 'epoch': '0.06897'}
+{'loss': '4.144', 'grad_norm': '7.455', 'learning_rate': '4.979e-05', 'epoch': '0.1379'}
+{'loss': '3.464', 'grad_norm': '8.472', 'learning_rate': '4.83e-05', 'epoch': '0.2069'}
+{'loss': '3.003', 'grad_norm': '9.626', 'learning_rate': '4.548e-05', 'epoch': '0.2759'}
+{'loss': '2.695', 'grad_norm': '11.67', 'learning_rate': '4.147e-05', 'epoch': '0.3448'}
+{'loss': '2.291', 'grad_norm': '12.6', 'learning_rate': '3.652e-05', 'epoch': '0.4138'}
+{'loss': '2.134', 'grad_norm': '14.58', 'learning_rate': '3.09e-05', 'epoch': '0.4828'}
+{'loss': '1.908', 'grad_norm': '9.25', 'learning_rate': '2.494e-05', 'epoch': '0.5517'}
+{'loss': '1.782', 'grad_norm': '14.09', 'learning_rate': '1.899e-05', 'epoch': '0.6207'}
+{'loss': '1.721', 'grad_norm': '13.45', 'learning_rate': '1.338e-05', 'epoch': '0.6897'}
+{'loss': '1.583', 'grad_norm': '13.44', 'learning_rate': '8.439e-06', 'epoch': '0.7586'}
+{'loss': '1.609', 'grad_norm': '10.61', 'learning_rate': '4.454e-06', 'epoch': '0.8276'}
+{'loss': '1.72', 'grad_norm': '15.82', 'learning_rate': '1.653e-06', 'epoch': '0.8966'}
+{'loss': '1.675', 'grad_norm': '21.73', 'learning_rate': '1.953e-07', 'epoch': '0.9655'}
+100% 725/725 [01:40<00:00,  6.16it/s]
+  0% 0/63 [00:00<?, ?it/s]
+  3% 2/63 [00:00<00:03, 18.74it/s]
+  6% 4/63 [00:00<00:04, 11.98it/s]
+ 10% 6/63 [00:00<00:05, 10.86it/s]
+ 13% 8/63 [00:00<00:05, 10.36it/s]
+ 16% 10/63 [00:00<00:05, 10.13it/s]
+ 19% 12/63 [00:01<00:05, 10.02it/s]
+ 22% 14/63 [00:01<00:04, 10.00it/s]
+ 25% 16/63 [00:01<00:04,  9.95it/s]
+ 29% 18/63 [00:01<00:04,  9.92it/s]
+ 30% 19/63 [00:01<00:04,  9.92it/s]
+ 32% 20/63 [00:01<00:04,  9.85it/s]
+ 33% 21/63 [00:02<00:04,  9.86it/s]
+ 35% 22/63 [00:02<00:04,  9.85it/s]
+ 37% 23/63 [00:02<00:04,  9.84it/s]
+ 38% 24/63 [00:02<00:03,  9.85it/s]
+ 40% 25/63 [00:02<00:03,  9.87it/s]
+ 41% 26/63 [00:02<00:03,  9.89it/s]
+ 43% 27/63 [00:02<00:03,  9.90it/s]
+ 44% 28/63 [00:02<00:03,  9.90it/s]
+ 46% 29/63 [00:02<00:03,  9.85it/s]
+ 48% 30/63 [00:02<00:03,  9.86it/s]
+ 49% 31/63 [00:03<00:03,  9.88it/s]
+ 51% 32/63 [00:03<00:03,  9.90it/s]
+ 52% 33/63 [00:03<00:03,  9.89it/s]
+ 54% 34/63 [00:03<00:02,  9.87it/s]
+ 56% 35/63 [00:03<00:02,  9.74it/s]
+ 57% 36/63 [00:03<00:02,  9.78it/s]
+ 59% 37/63 [00:03<00:02,  9.82it/s]
+ 60% 38/63 [00:03<00:02,  9.81it/s]
+ 62% 39/63 [00:03<00:02,  9.78it/s]
+ 63% 40/63 [00:03<00:02,  9.74it/s]
+ 65% 41/63 [00:04<00:02,  9.62it/s]
+ 67% 42/63 [00:04<00:02,  9.54it/s]
+ 68% 43/63 [00:04<00:02,  9.64it/s]
+ 70% 44/63 [00:04<00:01,  9.58it/s]
+ 71% 45/63 [00:04<00:01,  9.25it/s]
+ 73% 46/63 [00:04<00:01,  9.17it/s]
+ 75% 47/63 [00:04<00:01,  9.25it/s]
+ 76% 48/63 [00:04<00:01,  9.28it/s]
+ 78% 49/63 [00:04<00:01,  9.42it/s]
+ 79% 50/63 [00:05<00:01,  9.36it/s]
+ 81% 51/63 [00:05<00:01,  9.35it/s]
+ 83% 52/63 [00:05<00:01,  8.91it/s]
+ 84% 53/63 [00:05<00:01,  8.65it/s]
+ 87% 55/63 [00:05<00:00,  9.19it/s]
+ 89% 56/63 [00:05<00:00,  9.33it/s]
+ 90% 57/63 [00:05<00:00,  9.46it/s]
+ 92% 58/63 [00:05<00:00,  9.58it/s]
+ 94% 59/63 [00:06<00:00,  9.67it/s]
+ 95% 60/63 [00:06<00:00,  9.73it/s]
+ 97% 61/63 [00:06<00:00,  9.76it/s]
+ 98% 62/63 [00:06<00:00,  9.80it/s]
+100% 63/63 [00:06<00:00,  6.72it/s]
+{'eval_loss': '1.012', 'eval_accuracy': '0.8755', 'eval_runtime': '7.404', 'eval_samples_per_second': '270.1', 'eval_steps_per_second': '8.509', 'epoch': '1'}
+
+100% 725/725 [01:47<00:00,  6.16it/s]
+{'train_runtime': '107.5', 'train_samples_per_second': '107.9', 'train_steps_per_second': '6.746', 'train_loss': '2.432', 'epoch': '1'}
+100% 725/725 [01:47<00:00,  6.75it/s]
+100% 63/63 [00:06<00:00,  9.72it/s]
+Loading weights: 100% 199/199 [00:00<00:00, 1342.85it/s, Materializing param=vision_model.pre_layrnorm.weight]
+CLIPVisionModel LOAD REPORT from: openai/clip-vit-base-patch16
+Key                                                          | Status     |  | 
+-------------------------------------------------------------+------------+--+-
+text_model.encoder.layers.{0...11}.self_attn.out_proj.weight | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.self_attn.v_proj.bias     | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.layer_norm1.weight        | UNEXPECTED |  | 
+text_model.embeddings.token_embedding.weight                 | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.mlp.fc1.weight            | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.self_attn.out_proj.bias   | UNEXPECTED |  | 
+text_model.embeddings.position_embedding.weight              | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.self_attn.q_proj.bias     | UNEXPECTED |  | 
+visual_projection.weight                                     | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.self_attn.k_proj.weight   | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.mlp.fc2.weight            | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.self_attn.k_proj.bias     | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.mlp.fc1.bias              | UNEXPECTED |  | 
+vision_model.embeddings.position_ids                         | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.mlp.fc2.bias              | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.layer_norm2.weight        | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.self_attn.v_proj.weight   | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.self_attn.q_proj.weight   | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.layer_norm2.bias          | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.layer_norm1.bias          | UNEXPECTED |  | 
+logit_scale                                                  | UNEXPECTED |  | 
+text_projection.weight                                       | UNEXPECTED |  | 
+text_model.final_layer_norm.weight                           | UNEXPECTED |  | 
+text_model.embeddings.position_ids                           | UNEXPECTED |  | 
+text_model.final_layer_norm.bias                             | UNEXPECTED |  | 
+
+Notes:
+- UNEXPECTED	:can be ignored when loading from different task/architecture; not ok if you expect identical arch.
+/usr/local/lib/python3.12/dist-packages/torch/utils/data/dataloader.py:424: UserWarning: This DataLoader will create 4 worker processes in total. Our suggested max number of worker in current system is 2, which is smaller than what this DataLoader is going to create. Please be aware that excessive worker creation might get DataLoader running slow or even freeze, lower the worker number to avoid potential slowness/freeze if necessary.
+  self.check_worker_number_rationality()
+/usr/local/lib/python3.12/dist-packages/torch/utils/data/dataloader.py:432: UserWarning: This DataLoader will create 4 worker processes in total. Our suggested max number of worker in current system is 2, which is smaller than what this DataLoader is going to create. Please be aware that excessive worker creation might get DataLoader running slow or even freeze, lower the worker number to avoid potential slowness/freeze if necessary.
+  self.check_worker_number_rationality()
+100% 63/63 [00:06<00:00,  9.58it/s]
+100% 250/250 [00:24<00:00, 10.10it/s]
+100% 313/313 [00:30<00:00, 10.19it/s]
+              method     eval_set  accuracy      loss
+0  simple_avg_replay   first_step   0.54200  3.190662
+1  simple_avg_replay  later_steps   0.33075  3.527861
+2  simple_avg_replay     all_seen   0.37300  3.460422
+Loading weights: 100% 199/199 [00:00<00:00, 1382.49it/s, Materializing param=vision_model.pre_layrnorm.weight]
+CLIPVisionModel LOAD REPORT from: openai/clip-vit-base-patch16
+Key                                                          | Status     |  | 
+-------------------------------------------------------------+------------+--+-
+text_model.encoder.layers.{0...11}.self_attn.out_proj.weight | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.self_attn.v_proj.bias     | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.layer_norm1.weight        | UNEXPECTED |  | 
+text_model.embeddings.token_embedding.weight                 | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.mlp.fc1.weight            | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.self_attn.out_proj.bias   | UNEXPECTED |  | 
+text_model.embeddings.position_embedding.weight              | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.self_attn.q_proj.bias     | UNEXPECTED |  | 
+visual_projection.weight                                     | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.self_attn.k_proj.weight   | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.mlp.fc2.weight            | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.self_attn.k_proj.bias     | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.mlp.fc1.bias              | UNEXPECTED |  | 
+vision_model.embeddings.position_ids                         | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.mlp.fc2.bias              | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.layer_norm2.weight        | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.self_attn.v_proj.weight   | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.self_attn.q_proj.weight   | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.layer_norm2.bias          | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.layer_norm1.bias          | UNEXPECTED |  | 
+logit_scale                                                  | UNEXPECTED |  | 
+text_projection.weight                                       | UNEXPECTED |  | 
+text_model.final_layer_norm.weight                           | UNEXPECTED |  | 
+text_model.embeddings.position_ids                           | UNEXPECTED |  | 
+text_model.final_layer_norm.bias                             | UNEXPECTED |  | 
+
+Notes:
+- UNEXPECTED	:can be ignored when loading from different task/architecture; not ok if you expect identical arch.
+/usr/local/lib/python3.12/dist-packages/torch/utils/data/dataloader.py:424: UserWarning: This DataLoader will create 4 worker processes in total. Our suggested max number of worker in current system is 2, which is smaller than what this DataLoader is going to create. Please be aware that excessive worker creation might get DataLoader running slow or even freeze, lower the worker number to avoid potential slowness/freeze if necessary.
+  self.check_worker_number_rationality()
+/usr/local/lib/python3.12/dist-packages/torch/utils/data/dataloader.py:432: UserWarning: This DataLoader will create 4 worker processes in total. Our suggested max number of worker in current system is 2, which is smaller than what this DataLoader is going to create. Please be aware that excessive worker creation might get DataLoader running slow or even freeze, lower the worker number to avoid potential slowness/freeze if necessary.
+  self.check_worker_number_rationality()
+100% 63/63 [00:06<00:00, 10.06it/s]
+100% 250/250 [00:24<00:00, 10.17it/s]
+100% 313/313 [00:30<00:00, 10.21it/s]
+              method     eval_set  accuracy      loss
+0  do_merging_simple   first_step  0.496500  3.106602
+1  do_merging_simple  later_steps  0.259375  3.511495
+2  do_merging_simple     all_seen  0.306800  3.430516
+Loading weights: 100% 199/199 [00:00<00:00, 1090.66it/s, Materializing param=vision_model.pre_layrnorm.weight]
+CLIPVisionModel LOAD REPORT from: openai/clip-vit-base-patch16
+Key                                                          | Status     |  | 
+-------------------------------------------------------------+------------+--+-
+text_model.encoder.layers.{0...11}.self_attn.out_proj.weight | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.self_attn.v_proj.bias     | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.layer_norm1.weight        | UNEXPECTED |  | 
+text_model.embeddings.token_embedding.weight                 | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.mlp.fc1.weight            | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.self_attn.out_proj.bias   | UNEXPECTED |  | 
+text_model.embeddings.position_embedding.weight              | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.self_attn.q_proj.bias     | UNEXPECTED |  | 
+visual_projection.weight                                     | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.self_attn.k_proj.weight   | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.mlp.fc2.weight            | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.self_attn.k_proj.bias     | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.mlp.fc1.bias              | UNEXPECTED |  | 
+vision_model.embeddings.position_ids                         | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.mlp.fc2.bias              | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.layer_norm2.weight        | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.self_attn.v_proj.weight   | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.self_attn.q_proj.weight   | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.layer_norm2.bias          | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.layer_norm1.bias          | UNEXPECTED |  | 
+logit_scale                                                  | UNEXPECTED |  | 
+text_projection.weight                                       | UNEXPECTED |  | 
+text_model.final_layer_norm.weight                           | UNEXPECTED |  | 
+text_model.embeddings.position_ids                           | UNEXPECTED |  | 
+text_model.final_layer_norm.bias                             | UNEXPECTED |  | 
+
+Notes:
+- UNEXPECTED	:can be ignored when loading from different task/architecture; not ok if you expect identical arch.
+
+===== orthogonal_loss | step 1/5 =====
+trainable params: 371,812 || all params: 86,248,136 || trainable%: 0.4311
+Step 1 | current=10000 | replay=0 | total=10000
+/usr/local/lib/python3.12/dist-packages/torch/utils/data/dataloader.py:424: UserWarning: This DataLoader will create 4 worker processes in total. Our suggested max number of worker in current system is 2, which is smaller than what this DataLoader is going to create. Please be aware that excessive worker creation might get DataLoader running slow or even freeze, lower the worker number to avoid potential slowness/freeze if necessary.
+  self.check_worker_number_rationality()
+  0% 0/625 [00:00<?, ?it/s]/usr/local/lib/python3.12/dist-packages/torch/utils/data/dataloader.py:432: UserWarning: This DataLoader will create 4 worker processes in total. Our suggested max number of worker in current system is 2, which is smaller than what this DataLoader is going to create. Please be aware that excessive worker creation might get DataLoader running slow or even freeze, lower the worker number to avoid potential slowness/freeze if necessary.
+  self.check_worker_number_rationality()
+{'loss': '4.622', 'grad_norm': '7.822', 'learning_rate': '3.952e-05', 'epoch': '0.08'}
+{'loss': '3.629', 'grad_norm': '8.071', 'learning_rate': '4.947e-05', 'epoch': '0.16'}
+{'loss': '2.685', 'grad_norm': '8.627', 'learning_rate': '4.711e-05', 'epoch': '0.24'}
+{'loss': '1.996', 'grad_norm': '11.58', 'learning_rate': '4.304e-05', 'epoch': '0.32'}
+{'loss': '1.508', 'grad_norm': '9.339', 'learning_rate': '3.758e-05', 'epoch': '0.4'}
+{'loss': '1.175', 'grad_norm': '10.57', 'learning_rate': '3.114e-05', 'epoch': '0.48'}
+{'loss': '0.9914', 'grad_norm': '10.45', 'learning_rate': '2.423e-05', 'epoch': '0.56'}
+{'loss': '0.8525', 'grad_norm': '12.14', 'learning_rate': '1.738e-05', 'epoch': '0.64'}
+{'loss': '0.8349', 'grad_norm': '12.83', 'learning_rate': '1.112e-05', 'epoch': '0.72'}
+{'loss': '0.7595', 'grad_norm': '7.484', 'learning_rate': '5.929e-06', 'epoch': '0.8'}
+{'loss': '0.7362', 'grad_norm': '8.354', 'learning_rate': '2.215e-06', 'epoch': '0.88'}
+{'loss': '0.7377', 'grad_norm': '17.4', 'learning_rate': '2.627e-07', 'epoch': '0.96'}
+100% 625/625 [01:52<00:00,  5.02it/s]
+  0% 0/63 [00:00<?, ?it/s]
+  3% 2/63 [00:00<00:04, 12.87it/s]
+  6% 4/63 [00:00<00:07,  8.03it/s]
+  8% 5/63 [00:00<00:07,  7.70it/s]
+ 10% 6/63 [00:00<00:07,  7.29it/s]
+ 11% 7/63 [00:00<00:08,  6.54it/s]
+ 13% 8/63 [00:01<00:08,  6.53it/s]
+ 14% 9/63 [00:01<00:08,  6.58it/s]
+ 16% 10/63 [00:01<00:07,  6.63it/s]
+ 17% 11/63 [00:01<00:07,  6.54it/s]
+ 19% 12/63 [00:01<00:07,  6.40it/s]
+ 21% 13/63 [00:01<00:07,  6.32it/s]
+ 22% 14/63 [00:02<00:07,  6.44it/s]
+ 24% 15/63 [00:02<00:07,  6.62it/s]
+ 25% 16/63 [00:02<00:06,  6.79it/s]
+ 27% 17/63 [00:02<00:06,  6.86it/s]
+ 29% 18/63 [00:02<00:06,  6.51it/s]
+ 30% 19/63 [00:02<00:06,  6.57it/s]
+ 32% 20/63 [00:02<00:06,  6.56it/s]
+ 33% 21/63 [00:03<00:06,  6.59it/s]
+ 35% 22/63 [00:03<00:06,  6.41it/s]
+ 37% 23/63 [00:03<00:05,  6.86it/s]
+ 38% 24/63 [00:03<00:05,  7.21it/s]
+ 40% 25/63 [00:03<00:05,  7.40it/s]
+ 41% 26/63 [00:03<00:04,  7.59it/s]
+ 43% 27/63 [00:03<00:04,  7.80it/s]
+ 44% 28/63 [00:03<00:04,  7.91it/s]
+ 46% 29/63 [00:04<00:04,  8.01it/s]
+ 48% 30/63 [00:04<00:04,  8.09it/s]
+ 49% 31/63 [00:04<00:03,  8.05it/s]
+ 51% 32/63 [00:04<00:03,  8.15it/s]
+ 52% 33/63 [00:04<00:03,  8.10it/s]
+ 54% 34/63 [00:04<00:03,  8.09it/s]
+ 56% 35/63 [00:04<00:03,  8.08it/s]
+ 57% 36/63 [00:04<00:03,  8.17it/s]
+ 59% 37/63 [00:05<00:03,  8.02it/s]
+ 60% 38/63 [00:05<00:03,  8.01it/s]
+ 62% 39/63 [00:05<00:02,  8.10it/s]
+ 63% 40/63 [00:05<00:02,  7.98it/s]
+ 65% 41/63 [00:05<00:02,  8.11it/s]
+ 67% 42/63 [00:05<00:02,  8.02it/s]
+ 68% 43/63 [00:05<00:02,  8.11it/s]
+ 70% 44/63 [00:05<00:02,  8.05it/s]
+ 71% 45/63 [00:06<00:02,  8.16it/s]
+ 73% 46/63 [00:06<00:02,  8.14it/s]
+ 75% 47/63 [00:06<00:01,  8.14it/s]
+ 76% 48/63 [00:06<00:01,  8.14it/s]
+ 78% 49/63 [00:06<00:01,  8.16it/s]
+ 79% 50/63 [00:06<00:01,  8.18it/s]
+ 81% 51/63 [00:06<00:01,  8.16it/s]
+ 83% 52/63 [00:06<00:01,  8.09it/s]
+ 84% 53/63 [00:07<00:01,  8.07it/s]
+ 86% 54/63 [00:07<00:01,  8.21it/s]
+ 87% 55/63 [00:07<00:00,  8.32it/s]
+ 89% 56/63 [00:07<00:00,  8.41it/s]
+ 90% 57/63 [00:07<00:00,  8.49it/s]
+ 92% 58/63 [00:07<00:00,  8.51it/s]
+ 94% 59/63 [00:07<00:00,  8.50it/s]
+ 95% 60/63 [00:07<00:00,  8.55it/s]
+ 97% 61/63 [00:08<00:00,  8.57it/s]
+ 98% 62/63 [00:08<00:00,  8.61it/s]
+100% 63/63 [00:08<00:00,  6.38it/s]
+{'eval_loss': '0.7683', 'eval_accuracy': '0.897', 'eval_runtime': '9.305', 'eval_samples_per_second': '214.9', 'eval_steps_per_second': '6.77', 'epoch': '1'}
+
+100% 625/625 [02:02<00:00,  5.02it/s]
+{'train_runtime': '122.3', 'train_samples_per_second': '81.79', 'train_steps_per_second': '5.112', 'train_loss': '1.673', 'epoch': '1'}
+100% 625/625 [02:02<00:00,  5.11it/s]
+100% 63/63 [00:08<00:00,  7.49it/s]
+[orth diagnostics] mean over matched q_proj/v_proj layers
+raw_trace            0.000518
+normalized_trace    -0.000014
+squared_penalty      0.000007
+delta_norm           0.299870
+reference_norm      11.775283
+dtype: float64
+
+===== orthogonal_loss | step 2/5 =====
+trainable params: 371,812 || all params: 86,248,136 || trainable%: 0.4311
+Step 2 | current=10000 | replay=0 | total=10000
+/usr/local/lib/python3.12/dist-packages/torch/utils/data/dataloader.py:424: UserWarning: This DataLoader will create 4 worker processes in total. Our suggested max number of worker in current system is 2, which is smaller than what this DataLoader is going to create. Please be aware that excessive worker creation might get DataLoader running slow or even freeze, lower the worker number to avoid potential slowness/freeze if necessary.
+  self.check_worker_number_rationality()
+  0% 0/625 [00:00<?, ?it/s]/usr/local/lib/python3.12/dist-packages/torch/utils/data/dataloader.py:432: UserWarning: This DataLoader will create 4 worker processes in total. Our suggested max number of worker in current system is 2, which is smaller than what this DataLoader is going to create. Please be aware that excessive worker creation might get DataLoader running slow or even freeze, lower the worker number to avoid potential slowness/freeze if necessary.
+  self.check_worker_number_rationality()
+{'loss': '6.912', 'grad_norm': '10.79', 'learning_rate': '3.952e-05', 'epoch': '0.08'}
+{'loss': '4.681', 'grad_norm': '10.3', 'learning_rate': '4.947e-05', 'epoch': '0.16'}
+{'loss': '2.742', 'grad_norm': '10.2', 'learning_rate': '4.711e-05', 'epoch': '0.24'}
+{'loss': '2.019', 'grad_norm': '10.46', 'learning_rate': '4.304e-05', 'epoch': '0.32'}
+{'loss': '1.594', 'grad_norm': '11.77', 'learning_rate': '3.758e-05', 'epoch': '0.4'}
+{'loss': '1.389', 'grad_norm': '14.85', 'learning_rate': '3.114e-05', 'epoch': '0.48'}
+{'loss': '1.225', 'grad_norm': '12.2', 'learning_rate': '2.423e-05', 'epoch': '0.56'}
+{'loss': '1.089', 'grad_norm': '15.37', 'learning_rate': '1.738e-05', 'epoch': '0.64'}
+{'loss': '1.033', 'grad_norm': '16.46', 'learning_rate': '1.112e-05', 'epoch': '0.72'}
+{'loss': '0.9757', 'grad_norm': '13.89', 'learning_rate': '5.929e-06', 'epoch': '0.8'}
+{'loss': '0.9588', 'grad_norm': '9.823', 'learning_rate': '2.215e-06', 'epoch': '0.88'}
+{'loss': '0.9638', 'grad_norm': '14.84', 'learning_rate': '2.627e-07', 'epoch': '0.96'}
+100% 625/625 [01:52<00:00,  4.90it/s]
+  0% 0/63 [00:00<?, ?it/s]
+  3% 2/63 [00:00<00:03, 15.73it/s]
+  6% 4/63 [00:00<00:05, 10.18it/s]
+ 10% 6/63 [00:00<00:06,  9.22it/s]
+ 11% 7/63 [00:00<00:06,  8.91it/s]
+ 13% 8/63 [00:00<00:06,  8.71it/s]
+ 14% 9/63 [00:00<00:06,  8.50it/s]
+ 16% 10/63 [00:01<00:06,  8.46it/s]
+ 17% 11/63 [00:01<00:06,  8.37it/s]
+ 19% 12/63 [00:01<00:06,  8.33it/s]
+ 21% 13/63 [00:01<00:06,  8.09it/s]
+ 22% 14/63 [00:01<00:06,  8.12it/s]
+ 24% 15/63 [00:01<00:05,  8.17it/s]
+ 25% 16/63 [00:01<00:05,  8.10it/s]
+ 27% 17/63 [00:01<00:05,  8.13it/s]
+ 29% 18/63 [00:02<00:05,  7.67it/s]
+ 30% 19/63 [00:02<00:06,  7.30it/s]
+ 32% 20/63 [00:02<00:06,  6.98it/s]
+ 33% 21/63 [00:02<00:05,  7.27it/s]
+ 35% 22/63 [00:02<00:06,  6.71it/s]
+ 37% 23/63 [00:02<00:06,  6.60it/s]
+ 38% 24/63 [00:03<00:05,  6.58it/s]
+ 40% 25/63 [00:03<00:05,  6.63it/s]
+ 41% 26/63 [00:03<00:05,  6.66it/s]
+ 43% 27/63 [00:03<00:05,  6.44it/s]
+ 44% 28/63 [00:03<00:05,  6.44it/s]
+ 46% 29/63 [00:03<00:05,  6.23it/s]
+ 48% 30/63 [00:03<00:05,  6.20it/s]
+ 49% 31/63 [00:04<00:05,  6.22it/s]
+ 51% 32/63 [00:04<00:04,  6.30it/s]
+ 52% 33/63 [00:04<00:04,  6.11it/s]
+ 54% 34/63 [00:04<00:04,  6.33it/s]
+ 56% 35/63 [00:04<00:04,  6.12it/s]
+ 57% 36/63 [00:04<00:04,  6.32it/s]
+ 59% 37/63 [00:05<00:03,  6.77it/s]
+ 60% 38/63 [00:05<00:03,  6.35it/s]
+ 62% 39/63 [00:05<00:03,  6.44it/s]
+ 63% 40/63 [00:05<00:03,  6.33it/s]
+ 65% 41/63 [00:05<00:03,  6.46it/s]
+ 67% 42/63 [00:05<00:03,  6.83it/s]
+ 68% 43/63 [00:05<00:02,  7.11it/s]
+ 70% 44/63 [00:06<00:02,  7.39it/s]
+ 71% 45/63 [00:06<00:02,  7.66it/s]
+ 73% 46/63 [00:06<00:02,  7.75it/s]
+ 75% 47/63 [00:06<00:02,  7.95it/s]
+ 76% 48/63 [00:06<00:01,  7.89it/s]
+ 78% 49/63 [00:06<00:01,  8.01it/s]
+ 79% 50/63 [00:06<00:01,  7.99it/s]
+ 81% 51/63 [00:06<00:01,  8.08it/s]
+ 83% 52/63 [00:07<00:01,  8.07it/s]
+ 84% 53/63 [00:07<00:01,  7.98it/s]
+ 86% 54/63 [00:07<00:01,  8.17it/s]
+ 87% 55/63 [00:07<00:00,  8.30it/s]
+ 89% 56/63 [00:07<00:00,  8.24it/s]
+ 90% 57/63 [00:07<00:00,  8.36it/s]
+ 92% 58/63 [00:07<00:00,  8.35it/s]
+ 94% 59/63 [00:07<00:00,  8.41it/s]
+ 95% 60/63 [00:08<00:00,  8.45it/s]
+ 97% 61/63 [00:08<00:00,  8.52it/s]
+ 98% 62/63 [00:08<00:00,  8.52it/s]
+100% 63/63 [00:08<00:00,  6.16it/s]
+{'eval_loss': '0.9843', 'eval_accuracy': '0.839', 'eval_runtime': '9.425', 'eval_samples_per_second': '212.2', 'eval_steps_per_second': '6.685', 'epoch': '1'}
+
+100% 625/625 [02:02<00:00,  4.90it/s]
+{'train_runtime': '122.3', 'train_samples_per_second': '81.8', 'train_steps_per_second': '5.112', 'train_loss': '2.083', 'epoch': '1'}
+100% 625/625 [02:02<00:00,  5.11it/s]
+100% 63/63 [00:08<00:00,  7.79it/s]
+[orth diagnostics] mean over matched q_proj/v_proj layers
+raw_trace            0.002748
+normalized_trace     0.000865
+squared_penalty      0.000015
+delta_norm           0.255750
+reference_norm      11.780865
+dtype: float64
+
+===== orthogonal_loss | step 3/5 =====
+trainable params: 371,812 || all params: 86,248,136 || trainable%: 0.4311
+Step 3 | current=10000 | replay=0 | total=10000
+/usr/local/lib/python3.12/dist-packages/torch/utils/data/dataloader.py:424: UserWarning: This DataLoader will create 4 worker processes in total. Our suggested max number of worker in current system is 2, which is smaller than what this DataLoader is going to create. Please be aware that excessive worker creation might get DataLoader running slow or even freeze, lower the worker number to avoid potential slowness/freeze if necessary.
+  self.check_worker_number_rationality()
+  0% 0/625 [00:00<?, ?it/s]/usr/local/lib/python3.12/dist-packages/torch/utils/data/dataloader.py:432: UserWarning: This DataLoader will create 4 worker processes in total. Our suggested max number of worker in current system is 2, which is smaller than what this DataLoader is going to create. Please be aware that excessive worker creation might get DataLoader running slow or even freeze, lower the worker number to avoid potential slowness/freeze if necessary.
+  self.check_worker_number_rationality()
+{'loss': '7.484', 'grad_norm': '15.64', 'learning_rate': '3.952e-05', 'epoch': '0.08'}
+{'loss': '4.263', 'grad_norm': '9.441', 'learning_rate': '4.947e-05', 'epoch': '0.16'}
+{'loss': '2.857', 'grad_norm': '11.2', 'learning_rate': '4.711e-05', 'epoch': '0.24'}
+{'loss': '2.436', 'grad_norm': '12.91', 'learning_rate': '4.304e-05', 'epoch': '0.32'}
+{'loss': '2.116', 'grad_norm': '15.38', 'learning_rate': '3.758e-05', 'epoch': '0.4'}
+{'loss': '1.84', 'grad_norm': '17.37', 'learning_rate': '3.114e-05', 'epoch': '0.48'}
+{'loss': '1.645', 'grad_norm': '13.71', 'learning_rate': '2.423e-05', 'epoch': '0.56'}
+{'loss': '1.51', 'grad_norm': '13.29', 'learning_rate': '1.738e-05', 'epoch': '0.64'}
+{'loss': '1.467', 'grad_norm': '20.62', 'learning_rate': '1.112e-05', 'epoch': '0.72'}
+{'loss': '1.453', 'grad_norm': '15.05', 'learning_rate': '5.929e-06', 'epoch': '0.8'}
+{'loss': '1.363', 'grad_norm': '15.17', 'learning_rate': '2.215e-06', 'epoch': '0.88'}
+{'loss': '1.373', 'grad_norm': '16.44', 'learning_rate': '2.627e-07', 'epoch': '0.96'}
+100% 625/625 [01:52<00:00,  4.84it/s]
+  0% 0/63 [00:00<?, ?it/s]
+  3% 2/63 [00:00<00:04, 15.16it/s]
+  6% 4/63 [00:00<00:05, 10.02it/s]
+ 10% 6/63 [00:00<00:06,  9.07it/s]
+ 11% 7/63 [00:00<00:06,  8.77it/s]
+ 13% 8/63 [00:00<00:06,  8.65it/s]
+ 14% 9/63 [00:00<00:06,  8.55it/s]
+ 16% 10/63 [00:01<00:06,  7.96it/s]
+ 17% 11/63 [00:01<00:06,  8.03it/s]
+ 19% 12/63 [00:01<00:06,  8.05it/s]
+ 21% 13/63 [00:01<00:06,  8.07it/s]
+ 22% 14/63 [00:01<00:06,  8.10it/s]
+ 24% 15/63 [00:01<00:05,  8.09it/s]
+ 25% 16/63 [00:01<00:05,  8.04it/s]
+ 27% 17/63 [00:02<00:05,  8.10it/s]
+ 29% 18/63 [00:02<00:05,  8.13it/s]
+ 30% 19/63 [00:02<00:05,  8.14it/s]
+ 32% 20/63 [00:02<00:05,  8.09it/s]
+ 33% 21/63 [00:02<00:05,  7.99it/s]
+ 35% 22/63 [00:02<00:05,  8.05it/s]
+ 37% 23/63 [00:02<00:04,  8.07it/s]
+ 38% 24/63 [00:02<00:04,  8.06it/s]
+ 40% 25/63 [00:02<00:04,  8.07it/s]
+ 41% 26/63 [00:03<00:04,  8.12it/s]
+ 43% 27/63 [00:03<00:04,  7.79it/s]
+ 44% 28/63 [00:03<00:04,  7.94it/s]
+ 46% 29/63 [00:03<00:04,  7.64it/s]
+ 48% 30/63 [00:03<00:04,  7.58it/s]
+ 49% 31/63 [00:03<00:04,  7.57it/s]
+ 51% 32/63 [00:03<00:04,  7.16it/s]
+ 52% 33/63 [00:04<00:04,  7.45it/s]
+ 54% 34/63 [00:04<00:04,  6.79it/s]
+ 56% 35/63 [00:04<00:04,  6.68it/s]
+ 57% 36/63 [00:04<00:04,  6.58it/s]
+ 59% 37/63 [00:04<00:04,  6.38it/s]
+ 60% 38/63 [00:04<00:04,  6.17it/s]
+ 62% 39/63 [00:05<00:04,  5.90it/s]
+ 63% 40/63 [00:05<00:03,  5.99it/s]
+ 65% 41/63 [00:05<00:03,  6.56it/s]
+ 67% 42/63 [00:05<00:03,  6.82it/s]
+ 68% 43/63 [00:05<00:03,  6.54it/s]
+ 70% 44/63 [00:05<00:02,  6.70it/s]
+ 71% 45/63 [00:05<00:02,  6.41it/s]
+ 73% 46/63 [00:06<00:02,  6.49it/s]
+ 75% 47/63 [00:06<00:02,  6.78it/s]
+ 76% 48/63 [00:06<00:02,  6.46it/s]
+ 78% 49/63 [00:06<00:02,  6.33it/s]
+ 79% 50/63 [00:06<00:02,  5.98it/s]
+ 81% 51/63 [00:06<00:02,  5.73it/s]
+ 83% 52/63 [00:07<00:01,  5.87it/s]
+ 84% 53/63 [00:07<00:01,  5.95it/s]
+ 86% 54/63 [00:07<00:01,  6.31it/s]
+ 87% 55/63 [00:07<00:01,  6.83it/s]
+ 89% 56/63 [00:07<00:00,  7.28it/s]
+ 90% 57/63 [00:07<00:00,  7.62it/s]
+ 92% 58/63 [00:07<00:00,  7.89it/s]
+ 94% 59/63 [00:08<00:00,  8.10it/s]
+ 95% 60/63 [00:08<00:00,  8.22it/s]
+ 97% 61/63 [00:08<00:00,  8.25it/s]
+ 98% 62/63 [00:08<00:00,  8.34it/s]
+100% 63/63 [00:08<00:00,  5.96it/s]
+{'eval_loss': '1.41', 'eval_accuracy': '0.6825', 'eval_runtime': '9.566', 'eval_samples_per_second': '209.1', 'eval_steps_per_second': '6.586', 'epoch': '1'}
+
+100% 625/625 [02:02<00:00,  4.84it/s]
+{'train_runtime': '122.4', 'train_samples_per_second': '81.71', 'train_steps_per_second': '5.107', 'train_loss': '2.44', 'epoch': '1'}
+100% 625/625 [02:02<00:00,  5.11it/s]
+100% 63/63 [00:07<00:00,  8.02it/s]
+[orth diagnostics] mean over matched q_proj/v_proj layers
+raw_trace            0.001380
+normalized_trace     0.000610
+squared_penalty      0.000007
+delta_norm           0.231780
+reference_norm      11.784709
+dtype: float64
+
+===== orthogonal_loss | step 4/5 =====
+trainable params: 371,812 || all params: 86,248,136 || trainable%: 0.4311
+Step 4 | current=10000 | replay=0 | total=10000
+/usr/local/lib/python3.12/dist-packages/torch/utils/data/dataloader.py:424: UserWarning: This DataLoader will create 4 worker processes in total. Our suggested max number of worker in current system is 2, which is smaller than what this DataLoader is going to create. Please be aware that excessive worker creation might get DataLoader running slow or even freeze, lower the worker number to avoid potential slowness/freeze if necessary.
+  self.check_worker_number_rationality()
+  0% 0/625 [00:00<?, ?it/s]/usr/local/lib/python3.12/dist-packages/torch/utils/data/dataloader.py:432: UserWarning: This DataLoader will create 4 worker processes in total. Our suggested max number of worker in current system is 2, which is smaller than what this DataLoader is going to create. Please be aware that excessive worker creation might get DataLoader running slow or even freeze, lower the worker number to avoid potential slowness/freeze if necessary.
+  self.check_worker_number_rationality()
+{'loss': '7.417', 'grad_norm': '17.33', 'learning_rate': '3.952e-05', 'epoch': '0.08'}
+{'loss': '3.838', 'grad_norm': '11.92', 'learning_rate': '4.947e-05', 'epoch': '0.16'}
+{'loss': '2.662', 'grad_norm': '16.84', 'learning_rate': '4.711e-05', 'epoch': '0.24'}
+{'loss': '2.34', 'grad_norm': '13.12', 'learning_rate': '4.304e-05', 'epoch': '0.32'}
+{'loss': '2.083', 'grad_norm': '13.83', 'learning_rate': '3.758e-05', 'epoch': '0.4'}
+{'loss': '1.948', 'grad_norm': '15.04', 'learning_rate': '3.114e-05', 'epoch': '0.48'}
+{'loss': '1.797', 'grad_norm': '19.6', 'learning_rate': '2.423e-05', 'epoch': '0.56'}
+{'loss': '1.701', 'grad_norm': '14.37', 'learning_rate': '1.738e-05', 'epoch': '0.64'}
+{'loss': '1.719', 'grad_norm': '23.69', 'learning_rate': '1.112e-05', 'epoch': '0.72'}
+{'loss': '1.611', 'grad_norm': '17.27', 'learning_rate': '5.929e-06', 'epoch': '0.8'}
+{'loss': '1.572', 'grad_norm': '16.21', 'learning_rate': '2.215e-06', 'epoch': '0.88'}
+{'loss': '1.585', 'grad_norm': '15.09', 'learning_rate': '2.627e-07', 'epoch': '0.96'}
+100% 625/625 [01:55<00:00,  4.25it/s]
+  0% 0/63 [00:00<?, ?it/s]
+  3% 2/63 [00:00<00:03, 15.93it/s]
+  6% 4/63 [00:00<00:05, 10.18it/s]
+ 10% 6/63 [00:00<00:06,  8.98it/s]
+ 11% 7/63 [00:00<00:06,  8.78it/s]
+ 13% 8/63 [00:00<00:06,  8.65it/s]
+ 14% 9/63 [00:00<00:06,  8.48it/s]
+ 16% 10/63 [00:01<00:06,  8.26it/s]
+ 17% 11/63 [00:01<00:06,  8.26it/s]
+ 19% 12/63 [00:01<00:06,  8.23it/s]
+ 21% 13/63 [00:01<00:06,  8.24it/s]
+ 22% 14/63 [00:01<00:06,  8.08it/s]
+ 24% 15/63 [00:01<00:05,  8.12it/s]
+ 25% 16/63 [00:01<00:05,  8.21it/s]
+ 27% 17/63 [00:01<00:05,  8.08it/s]
+ 29% 18/63 [00:02<00:05,  8.03it/s]
+ 30% 19/63 [00:02<00:05,  8.03it/s]
+ 32% 20/63 [00:02<00:05,  8.10it/s]
+ 33% 21/63 [00:02<00:05,  8.10it/s]
+ 35% 22/63 [00:02<00:05,  8.08it/s]
+ 37% 23/63 [00:02<00:04,  8.03it/s]
+ 38% 24/63 [00:02<00:04,  8.09it/s]
+ 40% 25/63 [00:02<00:04,  8.04it/s]
+ 41% 26/63 [00:03<00:04,  8.07it/s]
+ 43% 27/63 [00:03<00:04,  8.00it/s]
+ 44% 28/63 [00:03<00:04,  8.07it/s]
+ 46% 29/63 [00:03<00:04,  8.09it/s]
+ 48% 30/63 [00:03<00:04,  8.07it/s]
+ 49% 31/63 [00:03<00:04,  7.96it/s]
+ 51% 32/63 [00:03<00:03,  8.00it/s]
+ 52% 33/63 [00:03<00:03,  8.08it/s]
+ 54% 34/63 [00:04<00:03,  7.76it/s]
+ 56% 35/63 [00:04<00:03,  7.48it/s]
+ 57% 36/63 [00:04<00:03,  7.21it/s]
+ 59% 37/63 [00:04<00:03,  7.33it/s]
+ 60% 38/63 [00:04<00:03,  7.03it/s]
+ 62% 39/63 [00:04<00:03,  6.88it/s]
+ 63% 40/63 [00:04<00:03,  6.86it/s]
+ 65% 41/63 [00:05<00:03,  6.58it/s]
+ 67% 42/63 [00:05<00:03,  6.34it/s]
+ 68% 43/63 [00:05<00:03,  6.51it/s]
+ 70% 44/63 [00:05<00:02,  6.89it/s]
+ 71% 45/63 [00:05<00:02,  6.58it/s]
+ 73% 46/63 [00:05<00:02,  6.66it/s]
+ 75% 47/63 [00:06<00:02,  6.45it/s]
+ 76% 48/63 [00:06<00:02,  6.47it/s]
+ 78% 49/63 [00:06<00:02,  6.41it/s]
+ 79% 50/63 [00:06<00:01,  6.70it/s]
+ 81% 51/63 [00:06<00:01,  6.59it/s]
+ 83% 52/63 [00:06<00:01,  6.64it/s]
+ 84% 53/63 [00:06<00:01,  7.08it/s]
+ 86% 54/63 [00:07<00:01,  7.17it/s]
+ 87% 55/63 [00:07<00:01,  7.44it/s]
+ 89% 56/63 [00:07<00:00,  7.66it/s]
+ 90% 57/63 [00:07<00:00,  7.80it/s]
+ 92% 58/63 [00:07<00:00,  7.99it/s]
+ 94% 59/63 [00:07<00:00,  8.11it/s]
+ 95% 60/63 [00:07<00:00,  8.28it/s]
+ 97% 61/63 [00:07<00:00,  8.35it/s]
+ 98% 62/63 [00:08<00:00,  8.43it/s]
+100% 63/63 [00:08<00:00,  6.23it/s]
+{'eval_loss': '1.62', 'eval_accuracy': '0.5975', 'eval_runtime': '9.216', 'eval_samples_per_second': '217', 'eval_steps_per_second': '6.836', 'epoch': '1'}
+
+100% 625/625 [02:04<00:00,  4.25it/s]
+{'train_runtime': '124.3', 'train_samples_per_second': '80.45', 'train_steps_per_second': '5.028', 'train_loss': '2.484', 'epoch': '1'}
+100% 625/625 [02:04<00:00,  5.03it/s]
+100% 63/63 [00:07<00:00,  8.11it/s]
+[orth diagnostics] mean over matched q_proj/v_proj layers
+raw_trace            0.003554
+normalized_trace     0.002128
+squared_penalty      0.000013
+delta_norm           0.212894
+reference_norm      11.787547
+dtype: float64
+
+===== orthogonal_loss | step 5/5 =====
+trainable params: 371,812 || all params: 86,248,136 || trainable%: 0.4311
+Step 5 | current=10000 | replay=0 | total=10000
+/usr/local/lib/python3.12/dist-packages/torch/utils/data/dataloader.py:424: UserWarning: This DataLoader will create 4 worker processes in total. Our suggested max number of worker in current system is 2, which is smaller than what this DataLoader is going to create. Please be aware that excessive worker creation might get DataLoader running slow or even freeze, lower the worker number to avoid potential slowness/freeze if necessary.
+  self.check_worker_number_rationality()
+  0% 0/625 [00:00<?, ?it/s]/usr/local/lib/python3.12/dist-packages/torch/utils/data/dataloader.py:432: UserWarning: This DataLoader will create 4 worker processes in total. Our suggested max number of worker in current system is 2, which is smaller than what this DataLoader is going to create. Please be aware that excessive worker creation might get DataLoader running slow or even freeze, lower the worker number to avoid potential slowness/freeze if necessary.
+  self.check_worker_number_rationality()
+{'loss': '7.443', 'grad_norm': '14.05', 'learning_rate': '3.952e-05', 'epoch': '0.08'}
+{'loss': '3.998', 'grad_norm': '12.7', 'learning_rate': '4.947e-05', 'epoch': '0.16'}
+{'loss': '2.652', 'grad_norm': '9.895', 'learning_rate': '4.711e-05', 'epoch': '0.24'}
+{'loss': '2.286', 'grad_norm': '12.46', 'learning_rate': '4.304e-05', 'epoch': '0.32'}
+{'loss': '1.987', 'grad_norm': '11.81', 'learning_rate': '3.758e-05', 'epoch': '0.4'}
+{'loss': '1.793', 'grad_norm': '17.85', 'learning_rate': '3.114e-05', 'epoch': '0.48'}
+{'loss': '1.627', 'grad_norm': '15.67', 'learning_rate': '2.423e-05', 'epoch': '0.56'}
+{'loss': '1.473', 'grad_norm': '17.22', 'learning_rate': '1.738e-05', 'epoch': '0.64'}
+{'loss': '1.51', 'grad_norm': '14.38', 'learning_rate': '1.112e-05', 'epoch': '0.72'}
+{'loss': '1.409', 'grad_norm': '21.15', 'learning_rate': '5.929e-06', 'epoch': '0.8'}
+{'loss': '1.377', 'grad_norm': '16.31', 'learning_rate': '2.215e-06', 'epoch': '0.88'}
+{'loss': '1.393', 'grad_norm': '19.56', 'learning_rate': '2.627e-07', 'epoch': '0.96'}
+100% 625/625 [01:54<00:00,  4.96it/s]
+  0% 0/63 [00:00<?, ?it/s]
+  3% 2/63 [00:00<00:03, 15.85it/s]
+  6% 4/63 [00:00<00:05, 10.13it/s]
+ 10% 6/63 [00:00<00:06,  9.13it/s]
+ 11% 7/63 [00:00<00:06,  8.83it/s]
+ 13% 8/63 [00:00<00:06,  8.67it/s]
+ 14% 9/63 [00:01<00:06,  8.21it/s]
+ 16% 10/63 [00:01<00:06,  8.27it/s]
+ 17% 11/63 [00:01<00:06,  8.08it/s]
+ 19% 12/63 [00:01<00:06,  8.14it/s]
+ 21% 13/63 [00:01<00:06,  8.15it/s]
+ 22% 14/63 [00:01<00:05,  8.19it/s]
+ 24% 15/63 [00:01<00:05,  8.14it/s]
+ 25% 16/63 [00:01<00:06,  7.78it/s]
+ 27% 17/63 [00:02<00:05,  7.92it/s]
+ 29% 18/63 [00:02<00:05,  8.00it/s]
+ 30% 19/63 [00:02<00:05,  8.01it/s]
+ 32% 20/63 [00:02<00:05,  8.09it/s]
+ 33% 21/63 [00:02<00:05,  8.11it/s]
+ 35% 22/63 [00:02<00:05,  8.13it/s]
+ 37% 23/63 [00:02<00:04,  8.10it/s]
+ 38% 24/63 [00:02<00:04,  8.03it/s]
+ 40% 25/63 [00:02<00:04,  8.00it/s]
+ 41% 26/63 [00:03<00:04,  8.07it/s]
+ 43% 27/63 [00:03<00:04,  8.06it/s]
+ 44% 28/63 [00:03<00:04,  7.96it/s]
+ 46% 29/63 [00:03<00:04,  8.05it/s]
+ 48% 30/63 [00:03<00:04,  8.06it/s]
+ 49% 31/63 [00:03<00:03,  8.12it/s]
+ 51% 32/63 [00:03<00:03,  8.10it/s]
+ 52% 33/63 [00:03<00:03,  8.10it/s]
+ 54% 34/63 [00:04<00:03,  8.13it/s]
+ 56% 35/63 [00:04<00:03,  8.00it/s]
+ 57% 36/63 [00:04<00:03,  8.10it/s]
+ 59% 37/63 [00:04<00:03,  8.01it/s]
+ 60% 38/63 [00:04<00:03,  8.12it/s]
+ 62% 39/63 [00:04<00:02,  8.06it/s]
+ 63% 40/63 [00:04<00:02,  8.11it/s]
+ 65% 41/63 [00:04<00:02,  7.95it/s]
+ 67% 42/63 [00:05<00:02,  7.92it/s]
+ 68% 43/63 [00:05<00:02,  7.64it/s]
+ 70% 44/63 [00:05<00:02,  7.36it/s]
+ 71% 45/63 [00:05<00:02,  7.47it/s]
+ 73% 46/63 [00:05<00:02,  7.01it/s]
+ 75% 47/63 [00:05<00:02,  6.82it/s]
+ 76% 48/63 [00:05<00:02,  6.84it/s]
+ 78% 49/63 [00:06<00:02,  6.52it/s]
+ 79% 50/63 [00:06<00:02,  6.37it/s]
+ 81% 51/63 [00:06<00:01,  6.81it/s]
+ 83% 52/63 [00:06<00:01,  6.45it/s]
+ 84% 53/63 [00:06<00:01,  6.30it/s]
+ 86% 54/63 [00:06<00:01,  6.31it/s]
+ 87% 55/63 [00:07<00:01,  6.86it/s]
+ 89% 56/63 [00:07<00:00,  7.14it/s]
+ 90% 57/63 [00:07<00:00,  7.41it/s]
+ 92% 58/63 [00:07<00:00,  7.68it/s]
+ 94% 59/63 [00:07<00:00,  7.80it/s]
+ 95% 60/63 [00:07<00:00,  7.96it/s]
+ 97% 61/63 [00:07<00:00,  7.91it/s]
+ 98% 62/63 [00:07<00:00,  7.99it/s]
+100% 63/63 [00:08<00:00,  5.25it/s]
+{'eval_loss': '1.425', 'eval_accuracy': '0.6555', 'eval_runtime': '9.195', 'eval_samples_per_second': '217.5', 'eval_steps_per_second': '6.851', 'epoch': '1'}
+
+100% 625/625 [02:03<00:00,  4.96it/s]
+{'train_runtime': '123.9', 'train_samples_per_second': '80.68', 'train_steps_per_second': '5.042', 'train_loss': '2.373', 'epoch': '1'}
+100% 625/625 [02:03<00:00,  5.04it/s]
+100% 63/63 [00:07<00:00,  8.14it/s]
+[orth diagnostics] mean over matched q_proj/v_proj layers
+raw_trace            0.000249
+normalized_trace     0.000217
+squared_penalty      0.000007
+delta_norm           0.205748
+reference_norm      11.790038
+dtype: float64
+/usr/local/lib/python3.12/dist-packages/torch/utils/data/dataloader.py:424: UserWarning: This DataLoader will create 4 worker processes in total. Our suggested max number of worker in current system is 2, which is smaller than what this DataLoader is going to create. Please be aware that excessive worker creation might get DataLoader running slow or even freeze, lower the worker number to avoid potential slowness/freeze if necessary.
+  self.check_worker_number_rationality()
+/usr/local/lib/python3.12/dist-packages/torch/utils/data/dataloader.py:432: UserWarning: This DataLoader will create 4 worker processes in total. Our suggested max number of worker in current system is 2, which is smaller than what this DataLoader is going to create. Please be aware that excessive worker creation might get DataLoader running slow or even freeze, lower the worker number to avoid potential slowness/freeze if necessary.
+  self.check_worker_number_rationality()
+100% 63/63 [00:06<00:00,  9.45it/s]
+100% 250/250 [00:24<00:00, 10.14it/s]
+100% 313/313 [00:30<00:00, 10.27it/s]
+            method     eval_set  accuracy      loss
+0  orthogonal_loss   first_step   0.00000  7.512000
+1  orthogonal_loss  later_steps   0.16425  5.592301
+2  orthogonal_loss     all_seen   0.13140  5.976242
+Loading weights: 100% 199/199 [00:00<00:00, 1088.89it/s, Materializing param=vision_model.pre_layrnorm.weight]
+CLIPVisionModel LOAD REPORT from: openai/clip-vit-base-patch16
+Key                                                          | Status     |  | 
+-------------------------------------------------------------+------------+--+-
+text_model.encoder.layers.{0...11}.self_attn.out_proj.weight | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.self_attn.v_proj.bias     | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.layer_norm1.weight        | UNEXPECTED |  | 
+text_model.embeddings.token_embedding.weight                 | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.mlp.fc1.weight            | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.self_attn.out_proj.bias   | UNEXPECTED |  | 
+text_model.embeddings.position_embedding.weight              | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.self_attn.q_proj.bias     | UNEXPECTED |  | 
+visual_projection.weight                                     | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.self_attn.k_proj.weight   | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.mlp.fc2.weight            | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.self_attn.k_proj.bias     | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.mlp.fc1.bias              | UNEXPECTED |  | 
+vision_model.embeddings.position_ids                         | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.mlp.fc2.bias              | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.layer_norm2.weight        | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.self_attn.v_proj.weight   | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.self_attn.q_proj.weight   | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.layer_norm2.bias          | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.layer_norm1.bias          | UNEXPECTED |  | 
+logit_scale                                                  | UNEXPECTED |  | 
+text_projection.weight                                       | UNEXPECTED |  | 
+text_model.final_layer_norm.weight                           | UNEXPECTED |  | 
+text_model.embeddings.position_ids                           | UNEXPECTED |  | 
+text_model.final_layer_norm.bias                             | UNEXPECTED |  | 
+
+Notes:
+- UNEXPECTED	:can be ignored when loading from different task/architecture; not ok if you expect identical arch.
+[rank_extension] Step 1
+  total_rank: 8
+  target linear modules: 24
+[rank_extension assertions] step=1 | wrapped_layers=24/24 | total_rank=8 | frozen_rank=0 | new_rank=8
+[rank_extension] trainable params: 371,812 || all params: 86,171,236 || trainable%: 0.4315
+[rank_extension] trainable parameter names/counts
+  vision_model.vision_model.encoder.layers.0.self_attn.v_proj.A_new | 6,144
+  vision_model.vision_model.encoder.layers.0.self_attn.v_proj.B_new | 6,144
+  vision_model.vision_model.encoder.layers.0.self_attn.q_proj.A_new | 6,144
+  vision_model.vision_model.encoder.layers.0.self_attn.q_proj.B_new | 6,144
+  vision_model.vision_model.encoder.layers.1.self_attn.v_proj.A_new | 6,144
+  vision_model.vision_model.encoder.layers.1.self_attn.v_proj.B_new | 6,144
+  vision_model.vision_model.encoder.layers.1.self_attn.q_proj.A_new | 6,144
+  vision_model.vision_model.encoder.layers.1.self_attn.q_proj.B_new | 6,144
+  vision_model.vision_model.encoder.layers.2.self_attn.v_proj.A_new | 6,144
+  vision_model.vision_model.encoder.layers.2.self_attn.v_proj.B_new | 6,144
+  vision_model.vision_model.encoder.layers.2.self_attn.q_proj.A_new | 6,144
+  vision_model.vision_model.encoder.layers.2.self_attn.q_proj.B_new | 6,144
+  vision_model.vision_model.encoder.layers.3.self_attn.v_proj.A_new | 6,144
+  vision_model.vision_model.encoder.layers.3.self_attn.v_proj.B_new | 6,144
+  vision_model.vision_model.encoder.layers.3.self_attn.q_proj.A_new | 6,144
+  vision_model.vision_model.encoder.layers.3.self_attn.q_proj.B_new | 6,144
+  vision_model.vision_model.encoder.layers.4.self_attn.v_proj.A_new | 6,144
+  vision_model.vision_model.encoder.layers.4.self_attn.v_proj.B_new | 6,144
+  vision_model.vision_model.encoder.layers.4.self_attn.q_proj.A_new | 6,144
+  vision_model.vision_model.encoder.layers.4.self_attn.q_proj.B_new | 6,144
+  vision_model.vision_model.encoder.layers.5.self_attn.v_proj.A_new | 6,144
+  vision_model.vision_model.encoder.layers.5.self_attn.v_proj.B_new | 6,144
+  vision_model.vision_model.encoder.layers.5.self_attn.q_proj.A_new | 6,144
+  vision_model.vision_model.encoder.layers.5.self_attn.q_proj.B_new | 6,144
+  vision_model.vision_model.encoder.layers.6.self_attn.v_proj.A_new | 6,144
+  vision_model.vision_model.encoder.layers.6.self_attn.v_proj.B_new | 6,144
+  vision_model.vision_model.encoder.layers.6.self_attn.q_proj.A_new | 6,144
+  vision_model.vision_model.encoder.layers.6.self_attn.q_proj.B_new | 6,144
+  vision_model.vision_model.encoder.layers.7.self_attn.v_proj.A_new | 6,144
+  vision_model.vision_model.encoder.layers.7.self_attn.v_proj.B_new | 6,144
+  vision_model.vision_model.encoder.layers.7.self_attn.q_proj.A_new | 6,144
+  vision_model.vision_model.encoder.layers.7.self_attn.q_proj.B_new | 6,144
+  vision_model.vision_model.encoder.layers.8.self_attn.v_proj.A_new | 6,144
+  vision_model.vision_model.encoder.layers.8.self_attn.v_proj.B_new | 6,144
+  vision_model.vision_model.encoder.layers.8.self_attn.q_proj.A_new | 6,144
+  vision_model.vision_model.encoder.layers.8.self_attn.q_proj.B_new | 6,144
+  vision_model.vision_model.encoder.layers.9.self_attn.v_proj.A_new | 6,144
+  vision_model.vision_model.encoder.layers.9.self_attn.v_proj.B_new | 6,144
+  vision_model.vision_model.encoder.layers.9.self_attn.q_proj.A_new | 6,144
+  vision_model.vision_model.encoder.layers.9.self_attn.q_proj.B_new | 6,144
+  vision_model.vision_model.encoder.layers.10.self_attn.v_proj.A_new | 6,144
+  vision_model.vision_model.encoder.layers.10.self_attn.v_proj.B_new | 6,144
+  vision_model.vision_model.encoder.layers.10.self_attn.q_proj.A_new | 6,144
+  vision_model.vision_model.encoder.layers.10.self_attn.q_proj.B_new | 6,144
+  vision_model.vision_model.encoder.layers.11.self_attn.v_proj.A_new | 6,144
+  vision_model.vision_model.encoder.layers.11.self_attn.v_proj.B_new | 6,144
+  vision_model.vision_model.encoder.layers.11.self_attn.q_proj.A_new | 6,144
+  vision_model.vision_model.encoder.layers.11.self_attn.q_proj.B_new | 6,144
+  classifier.weight | 76,800
+  classifier.bias | 100
+[rank_extension] trainable LoRA parameter names/counts
+  vision_model.vision_model.encoder.layers.0.self_attn.v_proj.A_new | 6,144
+  vision_model.vision_model.encoder.layers.0.self_attn.v_proj.B_new | 6,144
+  vision_model.vision_model.encoder.layers.0.self_attn.q_proj.A_new | 6,144
+  vision_model.vision_model.encoder.layers.0.self_attn.q_proj.B_new | 6,144
+  vision_model.vision_model.encoder.layers.1.self_attn.v_proj.A_new | 6,144
+  vision_model.vision_model.encoder.layers.1.self_attn.v_proj.B_new | 6,144
+  vision_model.vision_model.encoder.layers.1.self_attn.q_proj.A_new | 6,144
+  vision_model.vision_model.encoder.layers.1.self_attn.q_proj.B_new | 6,144
+  vision_model.vision_model.encoder.layers.2.self_attn.v_proj.A_new | 6,144
+  vision_model.vision_model.encoder.layers.2.self_attn.v_proj.B_new | 6,144
+  vision_model.vision_model.encoder.layers.2.self_attn.q_proj.A_new | 6,144
+  vision_model.vision_model.encoder.layers.2.self_attn.q_proj.B_new | 6,144
+  vision_model.vision_model.encoder.layers.3.self_attn.v_proj.A_new | 6,144
+  vision_model.vision_model.encoder.layers.3.self_attn.v_proj.B_new | 6,144
+  vision_model.vision_model.encoder.layers.3.self_attn.q_proj.A_new | 6,144
+  vision_model.vision_model.encoder.layers.3.self_attn.q_proj.B_new | 6,144
+  vision_model.vision_model.encoder.layers.4.self_attn.v_proj.A_new | 6,144
+  vision_model.vision_model.encoder.layers.4.self_attn.v_proj.B_new | 6,144
+  vision_model.vision_model.encoder.layers.4.self_attn.q_proj.A_new | 6,144
+  vision_model.vision_model.encoder.layers.4.self_attn.q_proj.B_new | 6,144
+  vision_model.vision_model.encoder.layers.5.self_attn.v_proj.A_new | 6,144
+  vision_model.vision_model.encoder.layers.5.self_attn.v_proj.B_new | 6,144
+  vision_model.vision_model.encoder.layers.5.self_attn.q_proj.A_new | 6,144
+  vision_model.vision_model.encoder.layers.5.self_attn.q_proj.B_new | 6,144
+  vision_model.vision_model.encoder.layers.6.self_attn.v_proj.A_new | 6,144
+  vision_model.vision_model.encoder.layers.6.self_attn.v_proj.B_new | 6,144
+  vision_model.vision_model.encoder.layers.6.self_attn.q_proj.A_new | 6,144
+  vision_model.vision_model.encoder.layers.6.self_attn.q_proj.B_new | 6,144
+  vision_model.vision_model.encoder.layers.7.self_attn.v_proj.A_new | 6,144
+  vision_model.vision_model.encoder.layers.7.self_attn.v_proj.B_new | 6,144
+  vision_model.vision_model.encoder.layers.7.self_attn.q_proj.A_new | 6,144
+  vision_model.vision_model.encoder.layers.7.self_attn.q_proj.B_new | 6,144
+  vision_model.vision_model.encoder.layers.8.self_attn.v_proj.A_new | 6,144
+  vision_model.vision_model.encoder.layers.8.self_attn.v_proj.B_new | 6,144
+  vision_model.vision_model.encoder.layers.8.self_attn.q_proj.A_new | 6,144
+  vision_model.vision_model.encoder.layers.8.self_attn.q_proj.B_new | 6,144
+  vision_model.vision_model.encoder.layers.9.self_attn.v_proj.A_new | 6,144
+  vision_model.vision_model.encoder.layers.9.self_attn.v_proj.B_new | 6,144
+  vision_model.vision_model.encoder.layers.9.self_attn.q_proj.A_new | 6,144
+  vision_model.vision_model.encoder.layers.9.self_attn.q_proj.B_new | 6,144
+  vision_model.vision_model.encoder.layers.10.self_attn.v_proj.A_new | 6,144
+  vision_model.vision_model.encoder.layers.10.self_attn.v_proj.B_new | 6,144
+  vision_model.vision_model.encoder.layers.10.self_attn.q_proj.A_new | 6,144
+  vision_model.vision_model.encoder.layers.10.self_attn.q_proj.B_new | 6,144
+  vision_model.vision_model.encoder.layers.11.self_attn.v_proj.A_new | 6,144
+  vision_model.vision_model.encoder.layers.11.self_attn.v_proj.B_new | 6,144
+  vision_model.vision_model.encoder.layers.11.self_attn.q_proj.A_new | 6,144
+  vision_model.vision_model.encoder.layers.11.self_attn.q_proj.B_new | 6,144
+[rank_extension diagnostics] saved trainable parameters: /nfsd/lttm4/tesisti/shahrampour/projects/runs/cifar100_5step_n5_main/results/clip_vit_lora_cifar100_full_comparison_with_orth_rankext_FAST_RUN_DEBUG_20260517_212836/tables/rank_extension_step_1_trainable_parameters.csv
+[rank_extension diagnostics] rank structure
+ total_rank  frozen_rank  new_rank A_frozen_requires_grad B_frozen_requires_grad  A_new_requires_grad  B_new_requires_grad
+          8            0         8                   None                   None                 True                 True
+[rank_extension diagnostics] saved rank structure: /nfsd/lttm4/tesisti/shahrampour/projects/runs/cifar100_5step_n5_main/results/clip_vit_lora_cifar100_full_comparison_with_orth_rankext_FAST_RUN_DEBUG_20260517_212836/tables/rank_extension_step_1_rank_structure.csv
+Step 1 | current=10000 | replay=0 | total=10000
+
+===== rank_extension | step 1/5 | rank=8 | frozen_rank=0 | new_rank=8 | replay_per_class=0 | orth=False | alpha=16.0 | scaling=2.00 =====
+[rank_extension] classifier trainable rows: 20 / 100
+/usr/local/lib/python3.12/dist-packages/torch/utils/data/dataloader.py:424: UserWarning: This DataLoader will create 4 worker processes in total. Our suggested max number of worker in current system is 2, which is smaller than what this DataLoader is going to create. Please be aware that excessive worker creation might get DataLoader running slow or even freeze, lower the worker number to avoid potential slowness/freeze if necessary.
+  self.check_worker_number_rationality()
+  0% 0/625 [00:00<?, ?it/s]/usr/local/lib/python3.12/dist-packages/torch/utils/data/dataloader.py:432: UserWarning: This DataLoader will create 4 worker processes in total. Our suggested max number of worker in current system is 2, which is smaller than what this DataLoader is going to create. Please be aware that excessive worker creation might get DataLoader running slow or even freeze, lower the worker number to avoid potential slowness/freeze if necessary.
+  self.check_worker_number_rationality()
+{'loss': '4.617', 'grad_norm': '7.839', 'learning_rate': '7.903e-05', 'epoch': '0.08'}
+{'loss': '3.314', 'grad_norm': '10.18', 'learning_rate': '9.894e-05', 'epoch': '0.16'}
+{'loss': '1.925', 'grad_norm': '8.405', 'learning_rate': '9.422e-05', 'epoch': '0.24'}
+{'loss': '1.169', 'grad_norm': '7.743', 'learning_rate': '8.609e-05', 'epoch': '0.32'}
+{'loss': '0.7794', 'grad_norm': '7.965', 'learning_rate': '7.516e-05', 'epoch': '0.4'}
+{'loss': '0.5631', 'grad_norm': '7.796', 'learning_rate': '6.229e-05', 'epoch': '0.48'}
+{'loss': '0.4712', 'grad_norm': '14.71', 'learning_rate': '4.847e-05', 'epoch': '0.56'}
+{'loss': '0.4064', 'grad_norm': '12.65', 'learning_rate': '3.476e-05', 'epoch': '0.64'}
+{'loss': '0.4067', 'grad_norm': '7.951', 'learning_rate': '2.224e-05', 'epoch': '0.72'}
+{'loss': '0.3419', 'grad_norm': '5.097', 'learning_rate': '1.186e-05', 'epoch': '0.8'}
+{'loss': '0.3387', 'grad_norm': '5.884', 'learning_rate': '4.429e-06', 'epoch': '0.88'}
+{'loss': '0.3495', 'grad_norm': '10.98', 'learning_rate': '5.253e-07', 'epoch': '0.96'}
+100% 625/625 [01:26<00:00,  4.85it/s]
+  0% 0/63 [00:00<?, ?it/s]
+  3% 2/63 [00:00<00:04, 12.69it/s]
+  6% 4/63 [00:00<00:06,  8.56it/s]
+  8% 5/63 [00:00<00:07,  7.69it/s]
+ 10% 6/63 [00:00<00:07,  8.13it/s]
+ 11% 7/63 [00:00<00:06,  8.54it/s]
+ 13% 8/63 [00:00<00:06,  8.85it/s]
+ 14% 9/63 [00:01<00:05,  9.14it/s]
+ 16% 10/63 [00:01<00:05,  9.33it/s]
+ 17% 11/63 [00:01<00:05,  9.44it/s]
+ 21% 13/63 [00:01<00:05,  9.65it/s]
+ 22% 14/63 [00:01<00:05,  9.73it/s]
+ 24% 15/63 [00:01<00:04,  9.79it/s]
+ 25% 16/63 [00:01<00:04,  9.78it/s]
+ 27% 17/63 [00:01<00:04,  9.81it/s]
+ 30% 19/63 [00:02<00:04,  9.83it/s]
+ 32% 20/63 [00:02<00:04,  9.83it/s]
+ 33% 21/63 [00:02<00:04,  9.84it/s]
+ 35% 22/63 [00:02<00:04,  9.87it/s]
+ 37% 23/63 [00:02<00:04,  9.86it/s]
+ 38% 24/63 [00:02<00:03,  9.89it/s]
+ 40% 25/63 [00:02<00:03,  9.81it/s]
+ 41% 26/63 [00:02<00:03,  9.73it/s]
+ 43% 27/63 [00:02<00:03,  9.78it/s]
+ 44% 28/63 [00:02<00:03,  9.79it/s]
+ 46% 29/63 [00:03<00:03,  9.79it/s]
+ 48% 30/63 [00:03<00:03,  9.80it/s]
+ 49% 31/63 [00:03<00:03,  9.80it/s]
+ 51% 32/63 [00:03<00:03,  9.79it/s]
+ 52% 33/63 [00:03<00:03,  9.74it/s]
+ 54% 34/63 [00:03<00:02,  9.72it/s]
+ 56% 35/63 [00:03<00:02,  9.76it/s]
+ 57% 36/63 [00:03<00:02,  9.77it/s]
+ 59% 37/63 [00:03<00:02,  9.78it/s]
+ 60% 38/63 [00:03<00:02,  9.79it/s]
+ 62% 39/63 [00:04<00:02,  9.80it/s]
+ 63% 40/63 [00:04<00:02,  9.80it/s]
+ 65% 41/63 [00:04<00:02,  9.84it/s]
+ 67% 42/63 [00:04<00:02,  9.87it/s]
+ 68% 43/63 [00:04<00:02,  9.85it/s]
+ 70% 44/63 [00:04<00:01,  9.81it/s]
+ 71% 45/63 [00:04<00:01,  9.83it/s]
+ 73% 46/63 [00:04<00:01,  9.83it/s]
+ 75% 47/63 [00:04<00:01,  9.77it/s]
+ 76% 48/63 [00:04<00:01,  9.73it/s]
+ 79% 50/63 [00:05<00:01,  9.76it/s]
+ 83% 52/63 [00:05<00:01,  9.84it/s]
+ 84% 53/63 [00:05<00:01,  9.82it/s]
+ 87% 55/63 [00:05<00:00,  9.90it/s]
+ 89% 56/63 [00:05<00:00,  9.92it/s]
+ 90% 57/63 [00:05<00:00,  9.92it/s]
+ 92% 58/63 [00:06<00:00,  9.87it/s]
+ 94% 59/63 [00:06<00:00,  9.85it/s]
+ 97% 61/63 [00:06<00:00,  9.91it/s]
+ 98% 62/63 [00:06<00:00,  9.91it/s]
+100% 63/63 [00:06<00:00,  7.28it/s]
+{'eval_loss': '0.3471', 'eval_accuracy': '0.928', 'eval_runtime': '7.751', 'eval_samples_per_second': '258', 'eval_steps_per_second': '8.128', 'epoch': '1'}
+
+100% 625/625 [01:34<00:00,  4.85it/s]
+{'train_runtime': '94.44', 'train_samples_per_second': '105.9', 'train_steps_per_second': '6.618', 'train_loss': '1.19', 'epoch': '1'}
+100% 625/625 [01:34<00:00,  6.62it/s]
+100% 63/63 [00:06<00:00,  9.20it/s]
+[rank_extension diagnostics] rank_extension step 1 old rows before final restore: no classifier rows to compare
+[rank_extension diagnostics] protected classifier row max diff after restore: 0.0000562742
+[rank_extension diagnostics] rank_extension step 1 old rows after restore: no classifier rows to compare
+[rank_extension diagnostics] rank_extension step 1: no frozen rank blocks to compare
+Loading weights: 100% 199/199 [00:00<00:00, 1444.10it/s, Materializing param=vision_model.pre_layrnorm.weight]
+CLIPVisionModel LOAD REPORT from: openai/clip-vit-base-patch16
+Key                                                          | Status     |  | 
+-------------------------------------------------------------+------------+--+-
+text_model.encoder.layers.{0...11}.self_attn.out_proj.weight | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.self_attn.v_proj.bias     | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.layer_norm1.weight        | UNEXPECTED |  | 
+text_model.embeddings.token_embedding.weight                 | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.mlp.fc1.weight            | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.self_attn.out_proj.bias   | UNEXPECTED |  | 
+text_model.embeddings.position_embedding.weight              | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.self_attn.q_proj.bias     | UNEXPECTED |  | 
+visual_projection.weight                                     | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.self_attn.k_proj.weight   | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.mlp.fc2.weight            | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.self_attn.k_proj.bias     | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.mlp.fc1.bias              | UNEXPECTED |  | 
+vision_model.embeddings.position_ids                         | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.mlp.fc2.bias              | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.layer_norm2.weight        | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.self_attn.v_proj.weight   | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.self_attn.q_proj.weight   | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.layer_norm2.bias          | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.layer_norm1.bias          | UNEXPECTED |  | 
+logit_scale                                                  | UNEXPECTED |  | 
+text_projection.weight                                       | UNEXPECTED |  | 
+text_model.final_layer_norm.weight                           | UNEXPECTED |  | 
+text_model.embeddings.position_ids                           | UNEXPECTED |  | 
+text_model.final_layer_norm.bias                             | UNEXPECTED |  | 
+
+Notes:
+- UNEXPECTED	:can be ignored when loading from different task/architecture; not ok if you expect identical arch.
+[rank_extension] Step 2
+  total_rank: 16
+  target linear modules: 24
+[rank_extension assertions] step=2 | wrapped_layers=24/24 | total_rank=16 | frozen_rank=8 | new_rank=8
+[rank_extension] trainable params: 371,812 || all params: 86,466,148 || trainable%: 0.4300
+[rank_extension] trainable parameter names/counts
+  vision_model.vision_model.encoder.layers.0.self_attn.v_proj.A_new | 6,144
+  vision_model.vision_model.encoder.layers.0.self_attn.v_proj.B_new | 6,144
+  vision_model.vision_model.encoder.layers.0.self_attn.q_proj.A_new | 6,144
+  vision_model.vision_model.encoder.layers.0.self_attn.q_proj.B_new | 6,144
+  vision_model.vision_model.encoder.layers.1.self_attn.v_proj.A_new | 6,144
+  vision_model.vision_model.encoder.layers.1.self_attn.v_proj.B_new | 6,144
+  vision_model.vision_model.encoder.layers.1.self_attn.q_proj.A_new | 6,144
+  vision_model.vision_model.encoder.layers.1.self_attn.q_proj.B_new | 6,144
+  vision_model.vision_model.encoder.layers.2.self_attn.v_proj.A_new | 6,144
+  vision_model.vision_model.encoder.layers.2.self_attn.v_proj.B_new | 6,144
+  vision_model.vision_model.encoder.layers.2.self_attn.q_proj.A_new | 6,144
+  vision_model.vision_model.encoder.layers.2.self_attn.q_proj.B_new | 6,144
+  vision_model.vision_model.encoder.layers.3.self_attn.v_proj.A_new | 6,144
+  vision_model.vision_model.encoder.layers.3.self_attn.v_proj.B_new | 6,144
+  vision_model.vision_model.encoder.layers.3.self_attn.q_proj.A_new | 6,144
+  vision_model.vision_model.encoder.layers.3.self_attn.q_proj.B_new | 6,144
+  vision_model.vision_model.encoder.layers.4.self_attn.v_proj.A_new | 6,144
+  vision_model.vision_model.encoder.layers.4.self_attn.v_proj.B_new | 6,144
+  vision_model.vision_model.encoder.layers.4.self_attn.q_proj.A_new | 6,144
+  vision_model.vision_model.encoder.layers.4.self_attn.q_proj.B_new | 6,144
+  vision_model.vision_model.encoder.layers.5.self_attn.v_proj.A_new | 6,144
+  vision_model.vision_model.encoder.layers.5.self_attn.v_proj.B_new | 6,144
+  vision_model.vision_model.encoder.layers.5.self_attn.q_proj.A_new | 6,144
+  vision_model.vision_model.encoder.layers.5.self_attn.q_proj.B_new | 6,144
+  vision_model.vision_model.encoder.layers.6.self_attn.v_proj.A_new | 6,144
+  vision_model.vision_model.encoder.layers.6.self_attn.v_proj.B_new | 6,144
+  vision_model.vision_model.encoder.layers.6.self_attn.q_proj.A_new | 6,144
+  vision_model.vision_model.encoder.layers.6.self_attn.q_proj.B_new | 6,144
+  vision_model.vision_model.encoder.layers.7.self_attn.v_proj.A_new | 6,144
+  vision_model.vision_model.encoder.layers.7.self_attn.v_proj.B_new | 6,144
+  vision_model.vision_model.encoder.layers.7.self_attn.q_proj.A_new | 6,144
+  vision_model.vision_model.encoder.layers.7.self_attn.q_proj.B_new | 6,144
+  vision_model.vision_model.encoder.layers.8.self_attn.v_proj.A_new | 6,144
+  vision_model.vision_model.encoder.layers.8.self_attn.v_proj.B_new | 6,144
+  vision_model.vision_model.encoder.layers.8.self_attn.q_proj.A_new | 6,144
+  vision_model.vision_model.encoder.layers.8.self_attn.q_proj.B_new | 6,144
+  vision_model.vision_model.encoder.layers.9.self_attn.v_proj.A_new | 6,144
+  vision_model.vision_model.encoder.layers.9.self_attn.v_proj.B_new | 6,144
+  vision_model.vision_model.encoder.layers.9.self_attn.q_proj.A_new | 6,144
+  vision_model.vision_model.encoder.layers.9.self_attn.q_proj.B_new | 6,144
+  vision_model.vision_model.encoder.layers.10.self_attn.v_proj.A_new | 6,144
+  vision_model.vision_model.encoder.layers.10.self_attn.v_proj.B_new | 6,144
+  vision_model.vision_model.encoder.layers.10.self_attn.q_proj.A_new | 6,144
+  vision_model.vision_model.encoder.layers.10.self_attn.q_proj.B_new | 6,144
+  vision_model.vision_model.encoder.layers.11.self_attn.v_proj.A_new | 6,144
+  vision_model.vision_model.encoder.layers.11.self_attn.v_proj.B_new | 6,144
+  vision_model.vision_model.encoder.layers.11.self_attn.q_proj.A_new | 6,144
+  vision_model.vision_model.encoder.layers.11.self_attn.q_proj.B_new | 6,144
+  classifier.weight | 76,800
+  classifier.bias | 100
+[rank_extension] trainable LoRA parameter names/counts
+  vision_model.vision_model.encoder.layers.0.self_attn.v_proj.A_new | 6,144
+  vision_model.vision_model.encoder.layers.0.self_attn.v_proj.B_new | 6,144
+  vision_model.vision_model.encoder.layers.0.self_attn.q_proj.A_new | 6,144
+  vision_model.vision_model.encoder.layers.0.self_attn.q_proj.B_new | 6,144
+  vision_model.vision_model.encoder.layers.1.self_attn.v_proj.A_new | 6,144
+  vision_model.vision_model.encoder.layers.1.self_attn.v_proj.B_new | 6,144
+  vision_model.vision_model.encoder.layers.1.self_attn.q_proj.A_new | 6,144
+  vision_model.vision_model.encoder.layers.1.self_attn.q_proj.B_new | 6,144
+  vision_model.vision_model.encoder.layers.2.self_attn.v_proj.A_new | 6,144
+  vision_model.vision_model.encoder.layers.2.self_attn.v_proj.B_new | 6,144
+  vision_model.vision_model.encoder.layers.2.self_attn.q_proj.A_new | 6,144
+  vision_model.vision_model.encoder.layers.2.self_attn.q_proj.B_new | 6,144
+  vision_model.vision_model.encoder.layers.3.self_attn.v_proj.A_new | 6,144
+  vision_model.vision_model.encoder.layers.3.self_attn.v_proj.B_new | 6,144
+  vision_model.vision_model.encoder.layers.3.self_attn.q_proj.A_new | 6,144
+  vision_model.vision_model.encoder.layers.3.self_attn.q_proj.B_new | 6,144
+  vision_model.vision_model.encoder.layers.4.self_attn.v_proj.A_new | 6,144
+  vision_model.vision_model.encoder.layers.4.self_attn.v_proj.B_new | 6,144
+  vision_model.vision_model.encoder.layers.4.self_attn.q_proj.A_new | 6,144
+  vision_model.vision_model.encoder.layers.4.self_attn.q_proj.B_new | 6,144
+  vision_model.vision_model.encoder.layers.5.self_attn.v_proj.A_new | 6,144
+  vision_model.vision_model.encoder.layers.5.self_attn.v_proj.B_new | 6,144
+  vision_model.vision_model.encoder.layers.5.self_attn.q_proj.A_new | 6,144
+  vision_model.vision_model.encoder.layers.5.self_attn.q_proj.B_new | 6,144
+  vision_model.vision_model.encoder.layers.6.self_attn.v_proj.A_new | 6,144
+  vision_model.vision_model.encoder.layers.6.self_attn.v_proj.B_new | 6,144
+  vision_model.vision_model.encoder.layers.6.self_attn.q_proj.A_new | 6,144
+  vision_model.vision_model.encoder.layers.6.self_attn.q_proj.B_new | 6,144
+  vision_model.vision_model.encoder.layers.7.self_attn.v_proj.A_new | 6,144
+  vision_model.vision_model.encoder.layers.7.self_attn.v_proj.B_new | 6,144
+  vision_model.vision_model.encoder.layers.7.self_attn.q_proj.A_new | 6,144
+  vision_model.vision_model.encoder.layers.7.self_attn.q_proj.B_new | 6,144
+  vision_model.vision_model.encoder.layers.8.self_attn.v_proj.A_new | 6,144
+  vision_model.vision_model.encoder.layers.8.self_attn.v_proj.B_new | 6,144
+  vision_model.vision_model.encoder.layers.8.self_attn.q_proj.A_new | 6,144
+  vision_model.vision_model.encoder.layers.8.self_attn.q_proj.B_new | 6,144
+  vision_model.vision_model.encoder.layers.9.self_attn.v_proj.A_new | 6,144
+  vision_model.vision_model.encoder.layers.9.self_attn.v_proj.B_new | 6,144
+  vision_model.vision_model.encoder.layers.9.self_attn.q_proj.A_new | 6,144
+  vision_model.vision_model.encoder.layers.9.self_attn.q_proj.B_new | 6,144
+  vision_model.vision_model.encoder.layers.10.self_attn.v_proj.A_new | 6,144
+  vision_model.vision_model.encoder.layers.10.self_attn.v_proj.B_new | 6,144
+  vision_model.vision_model.encoder.layers.10.self_attn.q_proj.A_new | 6,144
+  vision_model.vision_model.encoder.layers.10.self_attn.q_proj.B_new | 6,144
+  vision_model.vision_model.encoder.layers.11.self_attn.v_proj.A_new | 6,144
+  vision_model.vision_model.encoder.layers.11.self_attn.v_proj.B_new | 6,144
+  vision_model.vision_model.encoder.layers.11.self_attn.q_proj.A_new | 6,144
+  vision_model.vision_model.encoder.layers.11.self_attn.q_proj.B_new | 6,144
+[rank_extension diagnostics] saved trainable parameters: /nfsd/lttm4/tesisti/shahrampour/projects/runs/cifar100_5step_n5_main/results/clip_vit_lora_cifar100_full_comparison_with_orth_rankext_FAST_RUN_DEBUG_20260517_212836/tables/rank_extension_step_2_trainable_parameters.csv
+[rank_extension diagnostics] rank structure
+ total_rank  frozen_rank  new_rank  A_frozen_requires_grad  B_frozen_requires_grad  A_new_requires_grad  B_new_requires_grad
+         16            8         8                   False                   False                 True                 True
+[rank_extension diagnostics] saved rank structure: /nfsd/lttm4/tesisti/shahrampour/projects/runs/cifar100_5step_n5_main/results/clip_vit_lora_cifar100_full_comparison_with_orth_rankext_FAST_RUN_DEBUG_20260517_212836/tables/rank_extension_step_2_rank_structure.csv
+Step 2 | current=10000 | replay=0 | total=10000
+
+===== rank_extension | step 2/5 | rank=16 | frozen_rank=8 | new_rank=8 | replay_per_class=0 | orth=False | alpha=32.0 | scaling=2.00 =====
+[rank_extension] classifier trainable rows: 20 / 100
+/usr/local/lib/python3.12/dist-packages/torch/utils/data/dataloader.py:424: UserWarning: This DataLoader will create 4 worker processes in total. Our suggested max number of worker in current system is 2, which is smaller than what this DataLoader is going to create. Please be aware that excessive worker creation might get DataLoader running slow or even freeze, lower the worker number to avoid potential slowness/freeze if necessary.
+  self.check_worker_number_rationality()
+  0% 0/625 [00:00<?, ?it/s]/usr/local/lib/python3.12/dist-packages/torch/utils/data/dataloader.py:432: UserWarning: This DataLoader will create 4 worker processes in total. Our suggested max number of worker in current system is 2, which is smaller than what this DataLoader is going to create. Please be aware that excessive worker creation might get DataLoader running slow or even freeze, lower the worker number to avoid potential slowness/freeze if necessary.
+  self.check_worker_number_rationality()
+{'loss': '6.608', 'grad_norm': '11.56', 'learning_rate': '7.903e-05', 'epoch': '0.08'}
+{'loss': '3.876', 'grad_norm': '10.12', 'learning_rate': '9.894e-05', 'epoch': '0.16'}
+{'loss': '2.177', 'grad_norm': '9.77', 'learning_rate': '9.422e-05', 'epoch': '0.24'}
+{'loss': '1.313', 'grad_norm': '9.012', 'learning_rate': '8.609e-05', 'epoch': '0.32'}
+ 32% 201/625 [00:28<00:55,  7.68it/s]
+Colab paid products - Cancel contracts here
+Could not connect to the reCAPTCHA service. Please check your internet connection and reload to get a reCAPTCHA challenge.

@@ -1,0 +1,6 @@
+method,first_step,later_steps,all_seen
+do_merging_simple,56.05,43.625,46.11
+rank_extension_orth_combined_lam_0.01_ipc_1e-05,0.0,23.95,19.16
+rank_extension_orth_qr_lorac_lam_0.01,0.0,24.099999999999998,19.28
+rank_extension_orth_trace_lam_0,0.0,24.1875,19.35
+rank_extension_orth_trace_lam_0.01,0.0,24.0125,19.21

@@ -1,0 +1,5 @@
+method,first_step,later_steps,all_seen,old_new_gap,min_old_new,avg_old_new,gap_to_joint_all_seen
+rank_extension,2.4,22.95,18.84,-20.55,2.4,12.674999999999999,
+rank_extension_replay,52.300000000000004,49.025,49.68,3.2750000000000057,49.025,50.6625,
+rank_extension_orth,0.1,24.0375,19.25,-23.9375,0.1,12.068750000000001,
+rank_extension_replay_orth,51.949999999999996,48.8125,49.44,3.1374999999999957,48.8125,50.381249999999994,

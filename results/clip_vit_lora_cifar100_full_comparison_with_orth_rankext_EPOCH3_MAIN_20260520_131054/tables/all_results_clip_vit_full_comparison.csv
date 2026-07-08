@@ -1,0 +1,13 @@
+method,eval_set,accuracy,loss
+rank_extension_orth_trace_lam_0_squared_trace,first_step,0.0245,6.707414627075195
+rank_extension_orth_trace_lam_0_squared_trace,later_steps,0.254875,4.783576011657715
+rank_extension_orth_trace_lam_0_squared_trace,all_seen,0.2088,5.168345928192139
+rank_extension_orth_trace_lam_1_auto_ratio_tr_0.001,first_step,0.0055,6.643994331359863
+rank_extension_orth_trace_lam_1_auto_ratio_tr_0.001,later_steps,0.25825,4.800451755523682
+rank_extension_orth_trace_lam_1_auto_ratio_tr_0.001,all_seen,0.2077,5.169160842895508
+rank_extension_orth_trace_lam_1_auto_ratio_tr_0.01,first_step,0.0495,5.817869186401367
+rank_extension_orth_trace_lam_1_auto_ratio_tr_0.01,later_steps,0.292875,4.4212236404418945
+rank_extension_orth_trace_lam_1_auto_ratio_tr_0.01,all_seen,0.2442,4.700555801391602
+rank_extension_orth_trace_lam_1_auto_ratio_tr_0.05,first_step,0.122,5.138503551483154
+rank_extension_orth_trace_lam_1_auto_ratio_tr_0.05,later_steps,0.342875,3.7824630737304688
+rank_extension_orth_trace_lam_1_auto_ratio_tr_0.05,all_seen,0.2987,4.0536699295043945

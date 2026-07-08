@@ -1,0 +1,5 @@
+method,first_step,later_steps,all_seen
+rank_extension,2.0500000000000003,25.525,20.830000000000002
+rank_extension_orth_abs_trace_lam_0p01,0.0,24.212500000000002,19.37
+rank_extension_orth_abs_trace_lam_0p1,0.05,24.087500000000002,19.28
+rank_extension_orth_abs_trace_lam_1p0,0.0,24.099999999999998,19.28

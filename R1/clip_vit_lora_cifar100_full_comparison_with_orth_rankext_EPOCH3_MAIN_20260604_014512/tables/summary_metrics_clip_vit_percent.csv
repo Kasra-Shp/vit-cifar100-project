@@ -1,0 +1,12 @@
+method,first_step,later_steps,all_seen,old_new_gap,method_family,variant_group,first_step_drop_vs_simple_avg,all_seen_delta_vs_simple_avg
+simple_avg,66.8,49.575,53.02,17.224999999999994,simple_avg,simple_avg,0.0,0.0
+rank_extension,0.0,24.224999999999998,19.38,-24.224999999999998,baseline,rank_extension,66.8,-33.64
+rank_extension_zero_old_merge,25.3,25.7125,25.629999999999995,-0.41249999999999787,baseline,zero_old,41.5,-27.390000000000008
+rank_extension_orth_delta_trace_lam_1,0.0,24.099999999999998,19.28,-24.099999999999998,delta_trace,rank_extension,66.8,-33.74
+rank_extension_zero_old_merge_orth_delta_trace_lam_1,25.05,25.7,25.569999999999997,-0.6499999999999986,delta_trace,zero_old,41.75,-27.450000000000006
+rank_extension_orth_delta_trace_lam_1_kd,53.900000000000006,50.81250000000001,51.43,3.0874999999999986,delta_trace_kd,rank_extension,12.899999999999991,-1.5900000000000034
+rank_extension_zero_old_merge_orth_delta_trace_lam_1_kd,47.099999999999994,23.9375,28.57,23.162499999999994,delta_trace_kd,zero_old,19.700000000000003,-24.450000000000003
+rank_extension_orth_factor_lam_50,10.35,40.362500000000004,34.36,-30.012500000000003,factor_orth,rank_extension,56.449999999999996,-18.660000000000004
+rank_extension_zero_old_merge_orth_factor_lam_50,0.0,30.175,24.14,-30.175,factor_orth,zero_old,66.8,-28.880000000000003
+rank_extension_orth_factor_lam_50_kd,74.8,65.975,67.74,8.825000000000003,factor_orth_kd,rank_extension,-8.0,14.719999999999992
+rank_extension_zero_old_merge_orth_factor_lam_50_kd,4.15,57.975,47.21,-53.825,factor_orth_kd,zero_old,62.65,-5.810000000000002

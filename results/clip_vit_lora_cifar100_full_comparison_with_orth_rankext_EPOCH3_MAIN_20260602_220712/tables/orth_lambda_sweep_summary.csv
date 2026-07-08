@@ -1,0 +1,7 @@
+method,orth_mode,lambda_orth,zero_old_merge,use_kd,kd_weight,kd_temperature,old_active_in_forward,first_step,later_steps,all_seen,old_new_gap,avg_forgetting
+rank_extension,none,0.0,False,False,0.0,2.0,True,0.0,0.24225,0.1938,-0.24225,0.92425
+rank_extension_orth_factor_lam_50,factor_orth,50.0,False,False,0.0,2.0,True,0.1035,0.403625,0.3436,-0.30012500000000003,0.748375
+rank_extension_orth_factor_lam_50_oldactive_true,factor_orth,50.0,False,False,0.0,2.0,True,0.1035,0.403625,0.3436,-0.30012500000000003,0.748375
+rank_extension_orth_factor_lam_50_oldactive_false,factor_orth,50.0,True,False,0.0,2.0,False,0.0,0.30175,0.2414,-0.30175,0.8608750000000001
+rank_extension_orth_factor_lam_50_kd_oldactive_true,factor_orth,50.0,False,True,1.0,2.0,True,0.748,0.65975,0.6774,0.08825000000000005,0.205625
+rank_extension_orth_factor_lam_50_kd_oldactive_false,factor_orth,50.0,True,True,1.0,2.0,False,0.0415,0.57975,0.4721,-0.53825,0.563

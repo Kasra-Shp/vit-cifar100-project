@@ -1,0 +1,4 @@
+method,orth_mode,lambda_orth,kd_weight,kd_temperature,ce_loss_mean,orth_loss_mean,weighted_orth_over_CE,kd_loss_mean,kd_over_CE,total_loss_mean
+rank_extension_orth_abs_trace_lam_0p01,abs_trace,0.01,0.0,2.0,0.758699771104758,0.0039629449929739005,0.00031708891469073975,0.0,0.0,0.7587394001486054
+rank_extension_orth_abs_trace_lam_0p1,abs_trace,0.1,0.0,2.0,0.7590775685686991,0.0014540635854224835,0.0011528492323648206,0.0,0.0,0.759222974987472
+rank_extension_orth_abs_trace_lam_1p0,abs_trace,1.0,0.0,2.0,0.7569826743386416,0.00018915454176848242,0.0006561781787746343,0.0,0.0,0.7571718291248593

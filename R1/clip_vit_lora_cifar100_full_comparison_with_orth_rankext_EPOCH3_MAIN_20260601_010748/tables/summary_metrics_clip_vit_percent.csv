@@ -1,0 +1,7 @@
+method,first_step,later_steps,all_seen,old_new_gap
+simple_avg,66.8,49.575,53.02,17.224999999999994
+rank_extension,0.0,24.224999999999998,19.38,-24.224999999999998
+rank_extension_orth_factor_lam_0p5,1.05,26.8375,21.68,-25.787499999999998
+rank_extension_orth_factor_lam_1,2.65,28.575,23.39,-25.925
+rank_extension_orth_factor_lam_10,10.5,36.7,31.46,-26.200000000000003
+rank_extension_orth_factor_lam_50,10.35,40.362500000000004,34.36,-30.012500000000003

@@ -1,0 +1,7 @@
+method,orth_loss_type,orth_scale_mode,orth_target_ratio,lambda_orth,use_ipc,lambda_ipc,ipc_top_p,first_step,later_steps,all_seen,old_new_gap,avg_forgetting
+rank_extension,none,none,0.0,0.0,False,0.0,0.1,2.45,25.4875,20.880000000000003,-23.0375,91.14999999999999
+rank_extension_orth_trace_lam_0.03_normalized_fro,trace,normalized_fro,0.0,0.03,False,0.0,0.1,0.05,24.55,19.650000000000002,-24.5,92.66250000000001
+rank_extension_orth_trace_lam_0.05_normalized_fro,trace,normalized_fro,0.0,0.05,False,0.0,0.1,0.1,24.375,19.52,-24.275,92.60000000000001
+rank_extension_orth_trace_lam_0.1_normalized_fro,trace,normalized_fro,0.0,0.1,False,0.0,0.1,0.2,25.3125,20.29,-25.112499999999997,91.8375
+rank_extension_orth_trace_lam_0.3_normalized_fro,trace,normalized_fro,0.0,0.3,False,0.0,0.1,0.35000000000000003,24.675,19.81,-24.325,92.65
+rank_extension_orth_trace_lam_1_normalized_fro,trace,normalized_fro,0.0,1.0,False,0.0,0.1,0.2,25.4625,20.41,-25.2625,91.91250000000001

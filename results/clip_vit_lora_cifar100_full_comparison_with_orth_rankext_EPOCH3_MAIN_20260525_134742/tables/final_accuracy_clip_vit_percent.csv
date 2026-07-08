@@ -1,0 +1,12 @@
+method,first_step,later_steps,all_seen
+seq_ft_no_replay,0.0,26.55,21.240000000000002
+simple_avg_no_replay,62.74999999999999,50.975,53.33
+simple_avg_orth,79.4,64.6625,67.61
+simple_avg_replay,67.25,55.074999999999996,57.50999999999999
+do_merging_simple,57.75,47.4,49.47
+do_merging_simple_orth,79.95,61.8625,65.48
+rank_extension,0.4,24.375,19.580000000000002
+rank_extension_replay,69.95,70.0,69.99
+rank_extension_orth,16.05,35.3125,31.46
+rank_extension_replay_orth,71.6,70.975,71.1
+joint_upper_bound,86.75,85.575,85.81

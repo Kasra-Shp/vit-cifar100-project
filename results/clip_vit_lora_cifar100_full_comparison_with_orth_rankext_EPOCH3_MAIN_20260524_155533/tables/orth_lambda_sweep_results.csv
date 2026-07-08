@@ -1,0 +1,16 @@
+method,eval_set,accuracy,loss,orth_loss_type,orth_scale_mode,orth_target_ratio,lambda_orth,use_ipc,lambda_ipc,ipc_top_p,avg_forgetting
+rank_extension_orth_trace_lam_0.03_normalized_fro,first_step,0.0005,7.074329853057861,trace,normalized_fro,0.0,0.03,False,0.0,0.1,0.9266250000000001
+rank_extension_orth_trace_lam_0.03_normalized_fro,later_steps,0.2455,5.144740104675293,trace,normalized_fro,0.0,0.03,False,0.0,0.1,0.9266250000000001
+rank_extension_orth_trace_lam_0.03_normalized_fro,all_seen,0.1965,5.530657768249512,trace,normalized_fro,0.0,0.03,False,0.0,0.1,0.9266250000000001
+rank_extension_orth_trace_lam_0.05_normalized_fro,first_step,0.001,7.034996032714844,trace,normalized_fro,0.0,0.05,False,0.0,0.1,0.926
+rank_extension_orth_trace_lam_0.05_normalized_fro,later_steps,0.24375,5.262514114379883,trace,normalized_fro,0.0,0.05,False,0.0,0.1,0.926
+rank_extension_orth_trace_lam_0.05_normalized_fro,all_seen,0.1952,5.617011547088623,trace,normalized_fro,0.0,0.05,False,0.0,0.1,0.926
+rank_extension_orth_trace_lam_0.1_normalized_fro,first_step,0.002,6.735590934753418,trace,normalized_fro,0.0,0.1,False,0.0,0.1,0.918375
+rank_extension_orth_trace_lam_0.1_normalized_fro,later_steps,0.253125,4.999655246734619,trace,normalized_fro,0.0,0.1,False,0.0,0.1,0.918375
+rank_extension_orth_trace_lam_0.1_normalized_fro,all_seen,0.2029,5.346840858459473,trace,normalized_fro,0.0,0.1,False,0.0,0.1,0.918375
+rank_extension_orth_trace_lam_0.3_normalized_fro,first_step,0.0035,6.641600608825684,trace,normalized_fro,0.0,0.3,False,0.0,0.1,0.9265
+rank_extension_orth_trace_lam_0.3_normalized_fro,later_steps,0.24675,4.966802597045898,trace,normalized_fro,0.0,0.3,False,0.0,0.1,0.9265
+rank_extension_orth_trace_lam_0.3_normalized_fro,all_seen,0.1981,5.30176305770874,trace,normalized_fro,0.0,0.3,False,0.0,0.1,0.9265
+rank_extension_orth_trace_lam_1_normalized_fro,first_step,0.002,6.793931007385254,trace,normalized_fro,0.0,1.0,False,0.0,0.1,0.9191250000000001
+rank_extension_orth_trace_lam_1_normalized_fro,later_steps,0.254625,4.938108444213867,trace,normalized_fro,0.0,1.0,False,0.0,0.1,0.9191250000000001
+rank_extension_orth_trace_lam_1_normalized_fro,all_seen,0.2041,5.309277057647705,trace,normalized_fro,0.0,1.0,False,0.0,0.1,0.9191250000000001

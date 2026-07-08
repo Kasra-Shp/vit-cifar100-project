@@ -1,0 +1,7 @@
+method,first_step,later_steps,all_seen
+simple_avg,66.8,49.575,53.02
+rank_extension,0.0,24.224999999999998,19.38
+rank_extension_orth_trace_abs_lam_1,0.0,24.099999999999998,19.28
+rank_extension_orth_norm_lam_500,0.5499999999999999,25.6,20.59
+rank_extension_orth_factor_lam_0p1,1.4500000000000002,25.412499999999998,20.62
+rank_extension_orth_factor_lam_1,2.65,28.575,23.39

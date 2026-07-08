@@ -1,0 +1,9 @@
+method,first_step,later_steps,all_seen
+rank_extension,2.45,25.4875,20.880000000000003
+rank_extension_orth,16.05,35.3125,31.46
+rank_extension_orth_trace_lam_1_auto_ratio_tr_0.002,0.25,25.924999999999997,20.79
+rank_extension_orth_trace_lam_1_auto_ratio_tr_0.005,4.3999999999999995,28.849999999999998,23.96
+rank_extension_orth_trace_lam_1_auto_ratio_tr_0.01,4.95,29.2875,24.42
+rank_extension_orth_trace_lam_1_auto_ratio_tr_0.02,8.35,31.924999999999997,27.21
+rank_extension_orth_trace_lam_1_auto_ratio_tr_0.05,12.2,34.2875,29.87
+rank_extension_orth_trace_lam_1_auto_ratio_tr_0.08,16.05,35.3125,31.46

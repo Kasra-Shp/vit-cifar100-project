@@ -1,0 +1,4 @@
+method,first_step,later_steps,all_seen,rank_all_seen
+simple_avg,66.8,49.575,53.02,1
+lorac_ipc,0.0,24.4125,19.53,2
+rank_extension,0.0,24.224999999999998,19.38,3

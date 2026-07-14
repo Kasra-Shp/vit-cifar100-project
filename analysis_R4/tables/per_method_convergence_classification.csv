@@ -1,0 +1,9 @@
+method_name,display_name,steps_still_improving_train,steps_total,mean_final_epoch_rel_train_improvement_pct,classification
+rank_extension,RankExt,5,5,17.93,still under-trained
+simple_avg,SimpleAvg,5,5,15.97,still under-trained
+rank_extension_orth_factor_lam_50,RankExt+FactorOrth,5,5,15.8,still under-trained
+simple_avg_factor_orth,SimpleAvg+FactorOrth,5,5,13.6,still under-trained
+simple_avg_factor_orth_kd_T2,SimpleAvg+FactorOrth+KD,1,5,6.19,marginally converged
+simple_avg_kd_T2,SimpleAvg+KD,1,5,5.83,marginally converged
+rank_extension_kd_only_T2,RankExt+KD,1,5,5.4,marginally converged
+rank_extension_orth_factor_lam_50_kd_T2,RankExt+FactorOrth+KD,1,5,5.18,marginally converged

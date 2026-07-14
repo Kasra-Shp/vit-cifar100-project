@@ -1,0 +1,36 @@
+{
+  "n_total_new": 40,
+  "n_still_new": 24,
+  "n_converged_new": 16,
+  "n_diverging_new": 0,
+  "mean_rel_new": 10.737649999999999,
+  "n_total_old": 40,
+  "n_still_old": 40,
+  "n_val_still_new": 6,
+  "n_val_converged_new": 27,
+  "n_val_diverging_new": 7,
+  "median_extra_new": 2,
+  "p75_extra_new": 4,
+  "max_extra_new": 9,
+  "n_worse": 1,
+  "n_better": 7,
+  "mean_delta": 3.0024999999999973,
+  "n_overfit_new": 44,
+  "n_transitions_new": 200,
+  "n_overfit_old": 4,
+  "n_transitions_old": 80,
+  "n_best_lt_final": 24,
+  "n_best_total": 40,
+  "spearman_rho": 1.0,
+  "spearman_p": 0.0,
+  "n_rank_changes": 0,
+  "top2_stable": true,
+  "top2_old": [
+    "rank_extension_orth_factor_lam_50_kd_T2",
+    "simple_avg_factor_orth_kd_T2"
+  ],
+  "top2_new": [
+    "rank_extension_orth_factor_lam_50_kd_T2",
+    "simple_avg_factor_orth_kd_T2"
+  ]
+}

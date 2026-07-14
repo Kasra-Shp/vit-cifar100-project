@@ -1,0 +1,456 @@
+==============================================================================
+RIGOROUS ASSESSMENT: NEW RUN (EPOCH6) vs OLD RUN (EPOCH3) -- CLIP-ViT LoRA
+continual-learning comparison, CIFAR-100, 5 CL steps
+==============================================================================
+
+RUNS ANALYZED (resolved paths):
+  OLD (baseline): R3/results_MAIN_20260709_light/
+    clip_vit_lora_cifar100_full_comparison_with_orth_rankext_EPOCH3_MAIN_20260709_083052
+    -> EPOCHS=3/step, 10 methods, LORA_DROPOUT=0.05, seed=42
+  NEW:            R3/results_EPOCH6_20260711_light/
+    clip_vit_lora_cifar100_full_comparison_with_orth_rankext_EPOCH3_MAIN_20260711_214100
+    -> EPOCHS=6/step, 8 methods, LORA_DROPOUT=0.1, seed=42
+    (RUN_NAME says "EPOCH3" -- confirmed stale hardcoded string; run_config.json,
+    hyperparameter_consistency_check.csv and the loss-history epoch column all
+    independently confirm 6 epochs/step were actually run.)
+
+Both runs use seed=42 (single seed each, and the SAME seed -- see Weaknesses).
+All numbers below are computed directly from the saved CSVs in R3/; no
+retraining or live model access was used. Full supporting tables are in
+analysis_R4/tables/, figures in analysis_R4/plots/.
+
+==============================================================================
+EXECUTIVE SUMMARY -- BLUNT VERSION
+==============================================================================
+
+CONVERGED?  NO, NOT FULLY. Going from 3->6 epochs/step roughly halved the
+under-training problem (100% -> 60% of (method,step) pairs still improving
+>=3% on train CE at the final epoch; mean final-epoch relative improvement
+dropped from 34.4% to 10.7%), but it did NOT fix it. The 4 methods WITHOUT
+knowledge distillation (SimpleAvg, RankExt, SimpleAvg+FactorOrth,
+RankExt+FactorOrth) are still clearly under-trained at epoch 6 (10-23%
+relative train-CE improvement in the last epoch, every step). The 4 KD
+methods are close to converged (mostly 0-3% in steps 2-5, but +21-23% in
+step 1 for every method/every step-1, which is structural -- see below).
+Extrapolating the current decay rate, the under-trained methods need
+roughly 2 (median) to 4 (75th pct) more epochs on top of 6, with one
+(method,step) outlier needing ~9 more. A flat EPOCHS=8-9 for all methods,
+or better, a per-family budget (KD methods: 6 is enough; non-KD methods:
+9-10), is the honest next step -- not "ship it."
+
+BETTER THAN THE OLD RUN? MOSTLY YES, on accuracy: 7/8 methods improved
+(mean +3.0pp all_seen accuracy), and the method ranking is IDENTICAL
+between runs (Spearman rho = 1.000, 0/8 rank changes, top-2 unchanged and
+in the same order: RankExt+FactorOrth+KD #1, SimpleAvg+FactorOrth+KD #2).
+BUT the #1 method (RankExt+FactorOrth+KD, the headline result) got
+marginally WORSE (68.15% -> 67.98%, -0.17pp) and the run is now showing
+real overfitting behavior it did not show before: the epoch-over-epoch
+"train down / val up" event rate quadrupled (5.0% -> 22.0% of transitions).
+Net verdict: the NEW run is a better dataset to report from, but it bought
+its accuracy gains partly by training longer into an overfitting regime
+that the OLD run never entered, and the epoch/dropout/best-epoch-selection
+changes were made SIMULTANEOUSLY, so "why exactly it got better" cannot be
+fully isolated from these logs alone (see below).
+
+READY FOR THE THESIS? NOT AS-IS. Concretely missing/needed before you can
+defend these numbers cleanly:
+  1. A run with EPOCHS ~8-9 (or a KD=6 / non-KD=9 split budget) so the
+     under-trained methods actually converge, OR an explicit acknowledgment
+     in the writeup that SimpleAvg/RankExt/+FactorOrth (non-KD) numbers are
+     a lower bound, not a fair comparison point against the KD methods.
+  2. Verification (from full logs / code, not the light export) of whether
+     "best-epoch selection" is actually wired into which checkpoint gets
+     merged/evaluated -- the diagnostic evidence in this export suggests it
+     is NOT (final_train_ce/final_validation_ce in
+     validation_diagnostics_by_method.csv match the literal last epoch
+     exactly, in every case checked, even though the true per-step best
+     epoch is earlier in 24/40 (60%) of (method,step) pairs). If true, the
+     "mitigation" that was supposed to make longer training safe was not
+     actually protecting accuracy computation, which is consistent with the
+     rise in overfitting signatures.
+  3. At least 2-3 more seeds. Both runs use seed=42 and only seed=42 --
+     every number in this report (deltas, rank stability, "convergence")
+     is a single-seed observation with no error bars. A -0.17pp regression
+     on the #1 method and a +0.87pp gain on the #7 method are both well
+     within plausible seed noise; they cannot currently be distinguished
+     from noise.
+  4. Real per-CL-step (1-5) accuracy trajectories. Both runs only export 3
+     aggregated eval groups (first_step / later_steps / all_seen); the NEW
+     run added `per_step_accuracy`, `backward_transfer`, `forward_transfer`
+     columns to its schema but left them entirely empty (0/8 populated) --
+     this is a genuine forgetting-curve gap, not just a "light export"
+     omission, since the column now exists but is unused.
+
+==============================================================================
+1. CONVERGENCE VERDICT
+==============================================================================
+
+Test (identical to the one that justified moving OLD's EPOCHS 3->6, see
+analysis_R3/reports/convergence_analysis_R3.txt): relative CE improvement
+in the final epoch vs the previous epoch. >=3.0% relative improvement =
+still improving (under-trained); <=-1.0% = diverging; otherwise = converged.
+
+TRAIN CE, all 8 shared methods x 5 steps = 40 (method, step) checks:
+  24/40 (60%) STILL IMPROVING >=3% at epoch 6 (down from 40/40 = 100% at
+  epoch 3 in the OLD run's identical 8-method subset).
+  16/40 (40%) converged. 0/40 diverging.
+  Mean final-epoch relative train-CE improvement across all 40: 10.7%
+  (down from 34.4% in OLD, same subset -- real progress, but 10.7% mean
+  and 60% still-improving is not "converged" by this test's own bar.)
+
+VAL CE, same 40 checks:
+  6/40 (15%) still improving, 27/40 (67%) converged, 7/40 (17%) DIVERGING
+  (val CE got >1% worse in the final epoch -- a new signal that did not
+  exist in the OLD run's val-CE picture; see Section 3, this is the
+  overfitting signature showing through the same test).
+
+PER-METHOD CLASSIFICATION (5/5 steps still-improving = clearly under-
+trained; 1-2/5 = marginally converged; 0/5 = fully converged):
+
+  method                      steps_still_improving   mean_final_rel_%   verdict
+  RankExt                     5/5                      17.9%              still under-trained
+  SimpleAvg                   5/5                      16.0%              still under-trained
+  RankExt+FactorOrth          5/5                      15.8%              still under-trained
+  SimpleAvg+FactorOrth        5/5                      13.6%              still under-trained
+  SimpleAvg+FactorOrth+KD     1/5                       6.2%              marginally converged
+  SimpleAvg+KD                1/5                       5.8%              marginally converged
+  RankExt+KD                  1/5                       5.4%              marginally converged
+  RankExt+FactorOrth+KD       1/5                       5.2%              marginally converged
+
+CLEAN, CONSISTENT SPLIT: every method WITHOUT knowledge distillation is
+still under-trained at epoch 6 in every one of its 5 steps; every method
+WITH KD (T=2) is only still-improving in step 1 (see below -- structural)
+and is converged/near-converged in steps 2-5. See
+analysis_R4/plots/2_convergence_heatmap_new_run.png.
+
+STEP-1 CAVEAT: every method, KD or not, shows +21.7% to +22.5% relative
+train-CE improvement in step 1's final epoch. Step 1 is the first CL step
+(20 classes, no prior model to build on, largest single jump in train CE
+at epoch 1), so this is expected and not evidence of under-training in the
+same sense as steps 2-5 -- flagging it so step-1 numbers are not
+double-counted as "the run needs way more epochs everywhere."
+
+EPOCHS NEEDED (extrapolation, geometric decay of the last two observed
+per-epoch relative-improvement transitions, epoch4->5 vs epoch5->6, same
+method as OLD's epoch1->2 vs epoch2->3 extrapolation -- OLD's 3-epoch
+curve only HAD one pair of transitions, which were also its most recent,
+so this is a like-for-like "current decay rate" comparison, not a change
+in methodology):
+  Median extra epochs needed beyond 6, across all 40 (method,step): 2
+  75th-percentile extra epochs needed: 4
+  Worst-case single (method,step) outlier: 9 extra epochs
+  -> RECOMMENDATION: EPOCHS = 8-9 per step if a single flat budget is kept,
+     OR a per-family budget: KD methods can likely stop at 6-7; non-KD
+     methods (SimpleAvg, RankExt, +FactorOrth without KD) need ~9-10 to
+     cross this run's own 3% convergence bar.
+
+Full per-(method,step) numbers: analysis_R4/tables/convergence_verdict_new_run.csv
+Per-method classification: analysis_R4/tables/per_method_convergence_classification.csv
+Epoch extrapolation detail: analysis_R4/tables/extra_epochs_needed_extrapolation.csv
+
+==============================================================================
+2. DID MORE EPOCHS ACTUALLY HELP? (accuracy, 8 shared methods)
+==============================================================================
+
+  method                     all_seen OLD   all_seen NEW   delta (pp)   old rank   new rank
+  RankExt+FactorOrth+KD      68.15          67.98          -0.17        #1         #1   <- REGRESSED
+  SimpleAvg+FactorOrth+KD    61.19          63.80          +2.61        #2         #2
+  SimpleAvg+FactorOrth       58.57          61.63          +3.06        #3         #3
+  RankExt+KD                 54.33          59.29          +4.96        #4         #4
+  SimpleAvg                  41.88          48.52          +6.64        #5         #5
+  SimpleAvg+KD               35.70          39.15          +3.45        #6         #6
+  RankExt+FactorOrth         34.23          35.10          +0.87        #7         #7
+  RankExt                    20.96          23.56          +2.60        #8         #8
+
+Mean delta: +3.00pp. 7/8 methods improved; 1/8 (the #1-ranked method)
+regressed.
+
+WHY DID RankExt+FactorOrth+KD (the best method) get WORSE?
+This is the only method to regress, and it is the run's headline result,
+so it deserves scrutiny rather than a shrug. Candidate explanations, and
+what the data can/cannot tell us:
+  - Overfitting from more epochs: PLAUSIBLE and best-supported. This
+    method's own per-step diagnostics (Section 3) show its step-1 val CE
+    is minimized at LOCAL epoch 4 (val CE 0.1380) and gets worse by epoch
+    6 (val CE 0.1457, +0.0077) -- i.e. within step 1, 2 of the 6 epochs
+    are actively counter-productive for validation loss on this method.
+    Since accuracy appears to be computed from the literal final epoch
+    (see Section 3's best-epoch-selection finding), this directly costs
+    accuracy on the class group learned in step 1, which is exactly the
+    group (first_step accuracy) most sensitive to a step-1-specific
+    checkpoint choice.
+  - Higher dropout (0.05->0.1) hurting a method that was already doing
+    fairly well: PLAUSIBLE but not separable from the epoch-count effect
+    with only these two runs -- both changed at once (see Section 6).
+  - Random noise (single seed): CANNOT BE RULED OUT. -0.17pp on a 68%
+    baseline is small; it is well within the range that could flip sign
+    under a different seed. Given only one seed per run exists, this
+    explanation cannot be distinguished from the two above using this
+    data.
+  HONEST ATTRIBUTION: the regression is real in this run, its direction is
+  consistent with the method's own overfitting diagnostics (val CE rising
+  in the exact CL step -- step 1 -- most responsible for this method's
+  accuracy), but the magnitude is small enough, and the confound
+  (epochs+dropout+best-epoch-selection all changed together, on 1 seed) is
+  large enough, that "more epochs made this method modestly worse, likely
+  via step-1 overfitting" is the best-supported claim -- not a proven one.
+
+Full table: analysis_R4/tables/accuracy_comparison_old_vs_new.csv
+Figure: analysis_R4/plots/1_accuracy_old_vs_new.png
+
+==============================================================================
+3. OVERFITTING AUDIT (stricter than the OLD-run pass)
+==============================================================================
+
+Overfitting signature = an epoch where train CE decreased from the
+previous epoch (still learning the train split) while val CE increased
+(generalization got worse), same definition as OLD's analysis_R3 pass.
+
+  OLD (8-method subset, 3 epochs/step, dropout 0.05): 4/80 transitions
+    (5.0%) show the overfitting signature.
+  NEW (8 methods, 6 epochs/step, dropout 0.1):        44/200 transitions
+    (22.0%) show the overfitting signature.
+
+The overfitting-signature RATE more than quadrupled. The extra dropout
+(0.05->0.1) was clearly not enough to fully offset doubling the epoch
+budget. Per-method breakdown (25 transitions each: 5 steps x 5
+epoch-to-epoch transitions):
+
+  method                      overfit events   rate    max single-epoch
+                                                        val-CE regression
+  SimpleAvg                   10/25            40.0%   0.0281
+  RankExt                      8/25            32.0%   0.0137
+  RankExt+KD                   8/25            32.0%   0.0340
+  SimpleAvg+KD                 7/25            28.0%   0.0177
+  RankExt+FactorOrth           4/25            16.0%   0.0137
+  RankExt+FactorOrth+KD        3/25            12.0%   0.0137
+  SimpleAvg+FactorOrth         2/25             8.0%   0.0019
+  SimpleAvg+FactorOrth+KD      2/25             8.0%   0.0173
+
+Severity: all "max single-epoch val-CE regressions" are small in absolute
+terms (<0.035 CE), so this is not catastrophic blow-up -- it is frequent,
+mild overfitting, consistent across most methods, not a severe failure in
+one or two of them. The train/val gap also grows steadily within most
+steps rather than spiking (see analysis_R4/plots/3_train_val_gap_new_run.png).
+Interestingly, FactorOrth methods (with or without KD) show the LOWEST
+overfitting rates (8-16%) despite also being among the methods still
+flagged "under-trained" in Section 1 -- the orthogonality regularizer
+appears to have some genuine regularizing effect on validation stability,
+independent of whether training CE has plateaued.
+
+BEST-EPOCH SELECTION -- DID IT TRIGGER?
+Per-step LOCAL best-epoch (argmin val CE within that step's 6 epochs,
+computed directly from the loss history) differs from the final (6th)
+epoch in 24/40 (60%) of (method,step) pairs -- i.e. if a best-epoch
+checkpoint-selection mechanism were active, it WOULD have picked a
+different, earlier epoch more often than not. Examples:
+  RankExt+FactorOrth+KD, step 1: best=epoch 4 (val CE 0.1380), final=epoch
+    6 (val CE 0.1457) -- selecting epoch 4 would save 0.0077 val CE.
+  RankExt+KD, step 4: best=epoch 3 (val CE 0.7646), final=epoch 6 (val CE
+    0.7814) -- selecting epoch 3 would save 0.0168 val CE, the largest gap
+    found among the 40 (method,step) pairs.
+
+HOWEVER: cross-checking validation_diagnostics_by_method.csv's
+`final_train_ce` / `final_validation_ce` columns against the raw loss
+history shows they are EXACT MATCHES to the literal last (step 5, epoch 6)
+values for every method checked (e.g. SimpleAvg: both report train_ce=
+0.015294, val_ce=0.094579; RankExt+KD: both report train_ce=0.519292,
+val_ce=0.656874). This is evidence -- not conclusive proof, since the
+light export does not show what checkpoint was actually merged forward
+between CL steps -- that the reported "final" metrics (and, by extension,
+the accuracy numbers in Section 2, which are computed once after all 5
+steps complete) reflect the literal final-epoch weights of each step, NOT
+a best-epoch-selected checkpoint. If so, the "best-epoch selection"
+mitigation described as a planned code change (see
+R3/.../reports/hyperparameter_consistency_notes.txt and the OLD run's
+analysis_R3/reports/overfitting_analysis_R3.txt) exists as a MONITORING
+diagnostic in this run's tables but does not appear to have been wired
+into which weights actually get evaluated. This would directly explain
+why the overfitting-signature rate quadrupled instead of being suppressed
+by the mitigation that was supposed to catch it.
+
+Separately: validation_diagnostics_by_method.csv's own "best_validation_ce"
+/ "global_epoch_of_best_validation_ce" columns are computed as a GLOBAL
+minimum across all 30 concatenated (step, epoch) pairs per method, not a
+per-step local minimum. Because CL step 1 has fewer classes and
+structurally lower val CE than later steps, this global minimum is biased
+toward step 1 for every method with material step-1 improvement, and
+should not be read as "the model overall was best at global epoch X" --
+use the per-step local table (Section above) for anything about
+early-stopping/checkpoint choice.
+
+Full diagnostic table: analysis_R4/tables/overfitting_diagnostic_table_new.csv
+Per-method summary: analysis_R4/tables/overfitting_summary_by_method_new.csv
+Per-step best-epoch table: analysis_R4/tables/per_step_local_best_epoch_new.csv
+Figures: analysis_R4/plots/3_train_val_gap_new_run.png,
+         analysis_R4/plots/5_best_epoch_vs_final_epoch.png
+
+==============================================================================
+4. RANKING STABILITY
+==============================================================================
+
+Comparing NEW's 8-method ranking against OLD's ranking restricted to the
+same 8 methods (i.e. excluding OLD's 2 delta-trace-only methods, which are
+absent from NEW and were removed by supervisor request, not because of any
+result):
+
+  Spearman rank correlation: rho = 1.000 (p < 0.0001)
+  Rank changes: 0/8 methods changed rank position
+  Top-2 stable: YES -- RankExt+FactorOrth+KD is #1 and SimpleAvg+FactorOrth+KD
+    is #2 in BOTH runs, matching the user-supplied reference values
+    (68.15% / 61.19% old vs 67.98% / 63.80% new).
+
+This is a genuinely strong result: with 8 methods spanning a >40pp accuracy
+range, getting the exact same total order across two runs with materially
+different epoch/dropout/selection settings is a real signal that the
+RELATIVE comparison between methods is robust, even though the ABSOLUTE
+numbers moved (Section 2) and the training itself is not fully converged
+(Section 1).
+
+CAVEAT -- SINGLE SEED: both runs use seed=42 and ONLY seed=42. A perfect
+rank correlation across two runs of the SAME seed with different
+hyperparameters is reassuring but is not the same claim as "this ranking
+is robust to random initialization/data order." It is entirely possible
+that this particular seed happens to produce a stable ordering while other
+seeds would not; with n=1 seed per configuration there is no way to
+estimate the variance of the ranking itself, only observe that it did not
+move between these two specific runs. Do not present rho=1.0 as "the
+ranking is proven stable" in the thesis without this caveat, and ideally
+without at least 2-3 more seeds to actually estimate rank variance.
+
+Full table: analysis_R4/tables/ranking_comparison_old_vs_new.csv
+Figure: analysis_R4/plots/4_ranking_stability_slopechart.png
+
+==============================================================================
+5. SANITY & CONSISTENCY CHECKS
+==============================================================================
+
+  [PASS] Row count: all_methods_convergence_table.csv has exactly
+         8 methods x 5 steps x 6 epochs = 240 rows (240 actual).
+  [PASS] Cross-check against training_loss_history_by_epoch.csv (deduped
+         on method/step/epoch, non-null train_ce_loss): also 240 rows.
+  [PASS] KD temperature: only {0.0, 2.0} present across the 8 methods'
+         hyperparameter_consistency_check.csv -- KD only at T=2, confirmed.
+  [PASS] lambda_orth: only {0.0, 50.0} present -- confirmed.
+  [PASS] No delta-trace methods: 0 methods with "delta_trace"/"delta_orth"
+         in their name found in the NEW run's method set.
+  [PASS] Method set is exactly the expected 8: simple_avg, simple_avg_kd_T2,
+         simple_avg_factor_orth, simple_avg_factor_orth_kd_T2,
+         rank_extension, rank_extension_kd_only_T2,
+         rank_extension_orth_factor_lam_50,
+         rank_extension_orth_factor_lam_50_kd_T2.
+  [PASS] Live convergence plots: 8 live_convergence_*.png files exist, one
+         per method (plots/live_convergence_{method}.png), all present.
+  [PASS] output_checklist.txt in the run itself reports "OVERALL PASS" for
+         every requested table/plot/report.
+  [FAIL / GAP] Per-step (1-5) accuracy: the NEW run ADDS the schema columns
+         `per_step_accuracy`, `backward_transfer`, `forward_transfer` to
+         supervisor_selected_accuracy_comparison.csv and
+         final_metrics_all_methods.csv (columns that did not exist at all
+         in the OLD run's export) but leaves them EMPTY -- 0/8 methods
+         populated for all three columns. So: the schema improved, but the
+         underlying per-CL-step accuracy trajectory (which is what you
+         actually need for a proper forgetting curve / backward-transfer
+         plot) is still not being retained by either run's export. Only
+         the same 3 aggregated eval groups (first_step / later_steps /
+         all_seen) that OLD had are populated in NEW.
+  [NOTE] missing_outputs_or_metrics.txt (shipped with the NEW run) itself
+         flags per-task/class-group accuracy as not retained for every
+         method -- this matches the finding above; it is a known,
+         self-reported gap, not something this analysis is the first to
+         notice.
+
+Full detail: analysis_R4/reports/sanity_checks.txt
+
+==============================================================================
+6. HONEST WEAKNESSES (what a thesis committee would flag)
+==============================================================================
+
+  1. SINGLE SEED, SAME SEED. Both runs use seed=42 exclusively. This means
+     (a) no error bars/confidence intervals exist for any number in this
+     report, (b) the ranking-stability result (Section 4) and the
+     regression on the #1 method (Section 2) cannot be distinguished from
+     seed noise, and (c) using the identical seed across the two runs
+     means any genuine seed-driven difference did NOT get a chance to
+     appear, which could make the runs look MORE similar/stable than they
+     would be across independent seeds -- rho=1.0 could partly be an
+     artifact of sharing a seed, not evidence of true robustness.
+
+  2. SIMULTANEOUS CONFIGURATION CHANGES. Between OLD and NEW, at least
+     THREE things changed at once: EPOCHS (3->6), LORA_DROPOUT (0.05->0.1),
+     and (nominally) best-epoch checkpoint selection. Any accuracy or
+     convergence delta in this report is a delta across all three changes
+     combined -- it is NOT possible, from these two runs alone, to say
+     "epochs did X, dropout did Y, best-epoch-selection did Z." Isolating
+     these would need at least 2 more runs (e.g. 6 epochs/dropout 0.05,
+     and 6 epochs/dropout 0.1/no best-epoch-selection) as an ablation.
+
+  3. BEST-EPOCH SELECTION APPEARS NOT TO BE ACTUALLY APPLIED (Section 3).
+     If accuracy truly is computed from the literal final epoch rather
+     than a best-val-CE epoch, then the run's documented mitigation for
+     "more epochs -> more overfitting risk" was not actually protecting
+     the numbers reported, and the observed quadrupling of the overfitting
+     -signature rate (5.0% -> 22.0%) is the predictable consequence. This
+     should be verified directly against the training code (not just this
+     light CSV export) before the next run.
+
+  4. TWO METHODS DROPPED, NOT RE-RUN. The delta-trace methods
+     (simple_avg_delta_orth, rank_extension_orth_delta_trace_lam_50) that
+     existed in OLD are absent from NEW by supervisor request, not because
+     of a result -- fine for the current 8-method comparison, but means
+     NEW cannot be used to check whether delta-trace's OLD ranking
+     (#4 and #10) would have held up under 6 epochs/dropout 0.1.
+
+  5. STEP-1 EFFECTS ARE STRUCTURAL, NOT A CONVERGENCE FAILURE, BUT ARE
+     COUNTED THE SAME WAY. Every method's step-1 final-epoch relative
+     improvement is +21.7% to +22.5% (Section 1) simply because step 1 has
+     the largest single training-CE drop of the whole run (cold start).
+     The blunt "24/40 still improving" headline number includes these 8
+     step-1 rows; excluding them would give 16/32 (50%) for steps 2-5
+     only -- still a majority, but the raw 60% figure slightly overstates
+     how many steps are genuinely under-trained in the CL sense that
+     matters (steps 2-5, where forgetting/transfer happen).
+
+  6. NO GENUINE PER-CL-STEP ACCURACY TRAJECTORY (Section 5). Neither run
+     retains real 5-point forgetting/backward-transfer curves; the NEW
+     run's added schema columns for this are unpopulated. Any forgetting-
+     curve claims in the thesis need either a re-run that actually
+     populates these fields, or need to be scoped down to what IS
+     available (first_step vs later_steps vs all_seen, i.e. old_new_gap).
+
+  7. OVERFITTING IS REAL BUT MILD, NOT YET A CRISIS. The quadrupled
+     overfitting rate (Section 3) is a real trend worth acting on before
+     pushing epochs further (e.g. to the 8-9 recommended in Section 1),
+     but the max single-epoch val-CE regressions are all small (<0.035),
+     so this is not (yet) a "the model is memorizing the val-adjacent
+     split" level of concern -- more a "the current mitigations
+     (dropout=0.1) are under-strength for the epoch budget, scale them
+     together" signal.
+
+  8. "LIGHT" EXPORTS LIMIT WHAT CAN BE VERIFIED. Several findings above
+     (best-epoch selection not applied, no per-step accuracy) are
+     inferred from column-level evidence in the light CSV export, not
+     from the full training logs/checkpoints. They should be confirmed
+     against the actual training code/full logs before being stated as
+     fact in a defense.
+
+==============================================================================
+RECOMMENDED SETTINGS FOR THE NEXT RUN
+==============================================================================
+
+  1. EPOCHS: raise to 8-9/step for a flat budget, or split by family:
+     KD methods (T=2) can likely stop at 6-7; non-KD methods (SimpleAvg,
+     RankExt, and their FactorOrth variants without KD) need ~9-10 to
+     cross this run's own 3% convergence bar (Section 1).
+  2. Verify (in code, not just logs) that best-epoch checkpoint selection
+     is actually wired into the weights that get merged/evaluated per CL
+     step -- current evidence suggests it is not (Section 3).
+  3. If EPOCHS goes to 8-9, raise regularization further (dropout beyond
+     0.1 and/or add or increase weight decay) given the overfitting-rate
+     trend already observed going 3->6 epochs (Section 3).
+  4. Actually populate per-step (1-5) accuracy / backward_transfer /
+     forward_transfer -- the columns exist in the schema now, just wire up
+     the data (Section 5).
+  5. Run at least 2-3 additional seeds before treating any of the
+     rankings, deltas, or "converged" verdicts in this report as final for
+     a thesis defense (Section 6, weakness #1).

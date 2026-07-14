@@ -1,0 +1,53 @@
+==============================================================================
+OVERFITTING / VALIDATION-LOSS ANALYSIS -- R3
+==============================================================================
+
+Overfitting signature = an epoch where train CE decreased from the previous
+epoch (model still learning the training distribution) while val CE
+increased (generalization got worse) in the same step.
+
+Total (method, step, epoch) rows checked: 150
+Overfitting-signature epochs found: 4 (2.7% of rows)
+
+Per-method summary (sorted by number of overfitting-signature epochs):
+                            method_name  n_overfit_events  max_severity  mean_gap  final_gap
+              rank_extension_kd_only_T2                 2      0.008963 -0.399320   0.084415
+                             simple_avg                 1      0.001431 -0.313039   0.042692
+                       simple_avg_kd_T2                 1      0.010016 -0.279202   0.055165
+                         rank_extension                 0      0.000000 -0.486396   0.084350
+ rank_extension_orth_delta_trace_lam_50                 0      0.000000 -0.493318   0.054413
+      rank_extension_orth_factor_lam_50                 0      0.000000 -1.086079   0.010225
+rank_extension_orth_factor_lam_50_kd_T2                 0      0.000000 -0.793247   0.047837
+                  simple_avg_delta_orth                 0      0.000000 -0.423362   0.053851
+                 simple_avg_factor_orth                 0      0.000000 -0.542594   0.029278
+           simple_avg_factor_orth_kd_T2                 0      0.000000 -0.450900   0.078429
+
+------------------------------------------------------------------------------
+SEVERITY ASSESSMENT
+------------------------------------------------------------------------------
+Worst offender: RankExt+KD with 2 overfitting-signature
+epoch(s), max single-epoch val-CE regression = 0.0090, mean train-val gap = -0.3993.
+
+  RankExt+KD: 2 event(s), max severity 0.0090, mean gap -0.3993, final-epoch gap 0.0844
+  SimpleAvg: 1 event(s), max severity 0.0014, mean gap -0.3130, final-epoch gap 0.0427
+  SimpleAvg+KD: 1 event(s), max severity 0.0100, mean gap -0.2792, final-epoch gap 0.0552
+
+Overall severity verdict: MILD -- val CE regressions are small (<0.02) single-epoch blips, not sustained overfitting.
+
+------------------------------------------------------------------------------
+MITIGATIONS APPLIED IN CODE (see vit_lora_cifar100_full5step_n5.py)
+------------------------------------------------------------------------------
+Given the verdict above and that Task 1 recommends roughly doubling the
+epoch budget (3 -> 6), the following mitigations were added so that more
+epochs of training do not translate into more overfitting:
+  1. LORA_DROPOUT increased (see code comment for exact old/new values) --
+     more epochs = more chances to memorize the small (25 img/class) val-adjacent
+     train split, dropout directly counteracts that.
+  2. AdamW weight_decay added/increased on the LoRA + head parameters, providing
+     a second, complementary regularizer independent of dropout.
+  3. Best-epoch (val-CE) checkpoint selection per CL step: the merge step now
+     uses the LoRA weights from the epoch with the lowest validation CE within
+     that step, instead of unconditionally taking the last epoch -- this makes
+     the extra epochs from Task 1's recommendation safe even in the (rare in R3,
+     but plausible with more epochs) case that a method starts overfitting late
+     in a step.

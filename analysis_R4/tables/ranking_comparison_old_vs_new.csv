@@ -1,0 +1,9 @@
+method,display_name,rank_old_8method_subset,rank_new,all_seen_old,all_seen_new,delta_all_seen,rank_change
+rank_extension_orth_factor_lam_50_kd_T2,RankExt+FactorOrth+KD,1,1,68.15,67.97999999999999,-0.17000000000001592,0
+simple_avg_factor_orth_kd_T2,SimpleAvg+FactorOrth+KD,2,2,61.19,63.8,2.6099999999999994,0
+simple_avg_factor_orth,SimpleAvg+FactorOrth,3,3,58.57,61.63,3.0600000000000023,0
+rank_extension_kd_only_T2,RankExt+KD,4,4,54.33,59.29,4.960000000000001,0
+simple_avg,SimpleAvg,5,5,41.88,48.52,6.640000000000001,0
+simple_avg_kd_T2,SimpleAvg+KD,6,6,35.7,39.15,3.4499999999999957,0
+rank_extension_orth_factor_lam_50,RankExt+FactorOrth,7,7,34.23,35.099999999999994,0.8699999999999974,0
+rank_extension,RankExt,8,8,20.96,23.56,2.599999999999998,0

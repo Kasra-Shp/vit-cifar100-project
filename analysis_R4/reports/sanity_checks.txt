@@ -1,0 +1,21 @@
+SANITY & CONSISTENCY CHECKS -- NEW RUN
+==============================================================================
+
+[ROW COUNT] all_methods_convergence_table.csv: expected 8 methods x 5 steps x 6 epochs = 240 rows; actual = 240 rows -> PASS
+
+[ROW COUNT cross-check] training_loss_history_by_epoch.csv (deduped method_name/step_id/epoch, non-null train_ce_loss): 240 unique rows -> PASS
+
+[KD TEMPERATURE] distinct kd_temperature values across 8 methods: [0.0, 2.0] -> PASS (only 0.0 / 2.0)
+
+[LAMBDA_ORTH] distinct lambda_orth values across 8 methods: [0.0, 50.0] -> PASS (only 0.0 / 50.0)
+
+[DELTA-TRACE ABSENCE] methods with delta-trace in name found in NEW run: [] -> PASS (none present)
+
+[METHOD SET] NEW run methods (8): ['rank_extension', 'rank_extension_kd_only_T2', 'rank_extension_orth_factor_lam_50', 'rank_extension_orth_factor_lam_50_kd_T2', 'simple_avg', 'simple_avg_factor_orth', 'simple_avg_factor_orth_kd_T2', 'simple_avg_kd_T2']
+    matches expected 8-method set: PASS
+
+[LIVE CONVERGENCE PLOTS] found 8 live_convergence_*.png files (expected 8, one per method) -> PASS: ['live_convergence_rank_extension.png', 'live_convergence_rank_extension_kd_only_T2.png', 'live_convergence_rank_extension_orth_factor_lam_50.png', 'live_convergence_rank_extension_orth_factor_lam_50_kd_T2.png', 'live_convergence_simple_avg.png', 'live_convergence_simple_avg_factor_orth.png', 'live_convergence_simple_avg_factor_orth_kd_T2.png', 'live_convergence_simple_avg_kd_T2.png']
+
+[PER-STEP ACCURACY] 'per_step_accuracy' column EXISTS in supervisor_selected_accuracy_comparison.csv (schema improvement over OLD run, which lacks the column entirely) but is POPULATED for 0/8 methods -> FAIL (schema added, data not delivered). Same for backward_transfer (0/8 populated) and forward_transfer (0/8 populated). Only first_step / later_steps / all_seen (3 aggregated eval groups) are populated, identical in kind to the OLD run's export -- true 5-step-by-5-step accuracy is still not retained in either run.
+
+[best-epoch selection global-diagnostic] validation_diagnostics_by_method.csv reports a 'best_validation_ce' computed as the GLOBAL minimum val CE across all 30 concatenated (cl_step, local_epoch) pairs per method, not a per-step local minimum. Because early CL steps (fewer classes seen) have structurally lower val CE than later steps, this global minimum is biased toward cl_step 1 and should NOT be read as 'the model was best at global epoch X' in a comparable-difficulty sense. A separate per-step local best-epoch computation is done below (Q3) for the meaningful within-step early-stopping question.

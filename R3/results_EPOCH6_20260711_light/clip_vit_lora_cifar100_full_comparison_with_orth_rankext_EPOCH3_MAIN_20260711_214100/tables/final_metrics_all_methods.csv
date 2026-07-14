@@ -1,0 +1,9 @@
+method,display_method_name,first_step_accuracy,later_steps_accuracy,all_seen_accuracy,average_accuracy,final_accuracy,forgetting_metric,backward_transfer,forward_transfer
+simple_avg,SimpleAvg,53.05,47.387499999999996,48.52,49.6525,48.52,,,
+simple_avg_kd_T2,SimpleAvg + KD T2,80.10000000000001,28.9125,39.15,49.38750000000001,39.15,,,
+simple_avg_factor_orth,SimpleAvg + FactorOrth,0.8,76.8375,61.629999999999995,46.42249999999999,61.629999999999995,,,
+simple_avg_factor_orth_kd_T2,SimpleAvg + FactorOrth + KD T2,13.200000000000001,76.44999999999999,63.800000000000004,51.15,63.800000000000004,,,
+rank_extension,RankExt,3.75,28.512500000000003,23.56,18.6075,23.56,0.893625,,
+rank_extension_kd_only_T2,RankExt + KD T2,69.39999999999999,56.7625,59.29,61.817499999999995,59.29,0.28875,,
+rank_extension_orth_factor_lam_50,RankExt + FactorOrth,8.35,41.7875,35.099999999999994,28.412499999999998,35.099999999999994,0.751625,,
+rank_extension_orth_factor_lam_50_kd_T2,RankExt + FactorOrth + KD T2,80.30000000000001,64.9,67.97999999999999,71.06,67.97999999999999,0.163,,

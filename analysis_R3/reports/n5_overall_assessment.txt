@@ -1,0 +1,49 @@
+==============================================================================
+N5 OVERALL PERFORMANCE ASSESSMENT -- R3
+==============================================================================
+
+Run: EPOCH3_MAIN_20260709_083052  (3 epochs/step x 5 CL steps, 10 methods)
+
+FINAL RANKING (by all_seen accuracy):
+  # 1  RankExt+FactorOrth+KD        all_seen= 68.15%  first_step= 80.05%  later_steps= 65.18%  old_new_gap= +14.87  <-- TOP-2
+  # 2  SimpleAvg+FactorOrth+KD      all_seen= 61.19%  first_step= 10.40%  later_steps= 73.89%  old_new_gap= -63.49  <-- TOP-2
+  # 3  SimpleAvg+FactorOrth         all_seen= 58.57%  first_step=  1.35%  later_steps= 72.88%  old_new_gap= -71.53
+  # 4  SimpleAvg+DeltaTrace         all_seen= 56.95%  first_step= 29.20%  later_steps= 63.89%  old_new_gap= -34.69
+  # 5  RankExt+KD                   all_seen= 54.33%  first_step= 59.00%  later_steps= 53.16%  old_new_gap=  +5.84
+  # 6  SimpleAvg                    all_seen= 41.88%  first_step= 50.30%  later_steps= 39.77%  old_new_gap= +10.53
+  # 7  SimpleAvg+KD                 all_seen= 35.70%  first_step= 71.00%  later_steps= 26.88%  old_new_gap= +44.12
+  # 8  RankExt+FactorOrth           all_seen= 34.23%  first_step= 10.70%  later_steps= 40.11%  old_new_gap= -29.41
+  # 9  RankExt                      all_seen= 20.96%  first_step=  2.95%  later_steps= 25.46%  old_new_gap= -22.51
+  #10  RankExt+DeltaTrace           all_seen= 20.38%  first_step=  1.60%  later_steps= 25.07%  old_new_gap= -23.47
+
+WINNER: RankExt+FactorOrth+KD (rank_extension_orth_factor_lam_50_kd_T2) at 68.15% all_seen accuracy.
+RUNNER-UP: SimpleAvg+FactorOrth+KD (simple_avg_factor_orth_kd_T2) at 61.19% all_seen accuracy.
+
+Both combine KD (T=2) with an orthogonality-style regularizer (factor_orth,
+lambda=50) on top of a merging strategy (RankExt vs SimpleAvg respectively) --
+the pattern in the data is that KD + factor_orth together are what drive the
+large first_step retention (80.05% / 10.4%) trade against later_steps accuracy;
+RankExt's growing-rank schedule additionally lets the #1 method balance the
+old/new gap far better (+14.9 pp) than the #2 method (-63.5 pp).
+
+------------------------------------------------------------------------------
+CONVERGENCE VERDICT (full detail in reports/convergence_analysis_R3.txt)
+------------------------------------------------------------------------------
+50/50 (method, step) train-CE curves are still improving materially
+(>= 3.0% relative gain) at the last (3rd) epoch of the step -- i.e. the
+3-epoch/step budget under-trains almost every method every step. Recommended
+new budget: EPOCHS = 6 per step.
+
+------------------------------------------------------------------------------
+OVERFITTING VERDICT (full detail in reports/overfitting_analysis_R3.txt)
+------------------------------------------------------------------------------
+4 overfitting-signature epoch(s) detected out of 150; worst method: RankExt+KD. Mitigations applied in code (dropout, weight
+decay, best-epoch selection) -- see overfitting_analysis_R3.txt for detail.
+
+------------------------------------------------------------------------------
+RECOMMENDED SETTING FOR THE NEXT RUN
+------------------------------------------------------------------------------
+EPOCHS = 6 for every stage (LORA_EPOCHS, RANKEXT_EPOCHS, ORTH_EPOCHS,
+JOINT_EPOCHS, FT_EPOCHS and their FULL_ variants), combined with the overfitting
+mitigations and best-epoch selection described above, plus the live convergence
+plots/tables (Task 2) to confirm convergence during the run rather than after it.

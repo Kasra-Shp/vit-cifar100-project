@@ -1,0 +1,8 @@
+Missing outputs or metrics
+==========================
+
+- output: plots/per_task_accuracy_heatmap.png
+  method: all
+  metric/column/file: per-task/class-group accuracy
+  why: Final per-task/class-group accuracy is not retained for every method; available groups are first_step/later_steps/all_seen.
+  required_or_optional: conditional

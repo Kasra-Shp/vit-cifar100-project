@@ -1,0 +1,126 @@
+==============================================================================
+CONVERGENCE ANALYSIS -- R3 (EPOCH3 run, 3 LoRA epochs/step x 5 CL steps)
+==============================================================================
+
+Methods analyzed: 10
+Epochs/step in R3: 3, CL steps: 5
+Convergence threshold: relative CE improvement in final epoch vs previous < 3.0% = converged;
+  >= 3.0% = still improving; <= -1.0% (i.e. loss got worse) = diverging.
+
+Out of 50 (method, step) train-CE checks: 50 (100%) are STILL IMPROVING at epoch 3.
+Mean relative train-CE improvement in the final epoch across all (method, step): 34.4%.
+-> The overwhelming majority of runs have NOT converged within 3 epochs/step.
+
+Per-method / per-step verdicts (train CE convergence, final-epoch relative improvement):
+
+  SimpleAvg (simple_avg):
+    step 1: train +47.2% -> still_improving  | val +1.2% -> converged
+    step 2: train +52.9% -> still_improving  | val +5.7% -> still_improving
+    step 3: train +42.3% -> still_improving  | val -0.9% -> converged
+    step 4: train +44.9% -> still_improving  | val +19.1% -> still_improving
+    step 5: train +52.4% -> still_improving  | val +14.3% -> still_improving
+
+  SimpleAvg+KD (simple_avg_kd_T2):
+    step 1: train +47.3% -> still_improving  | val +6.2% -> still_improving
+    step 2: train +8.8% -> still_improving  | val -1.3% -> diverging
+    step 3: train +14.6% -> still_improving  | val +0.2% -> converged
+    step 4: train +17.0% -> still_improving  | val +5.0% -> still_improving
+    step 5: train +13.0% -> still_improving  | val +2.6% -> converged
+
+  SimpleAvg+DeltaTrace (simple_avg_delta_orth):
+    step 1: train +47.3% -> still_improving  | val +6.2% -> still_improving
+    step 2: train +51.0% -> still_improving  | val +0.3% -> converged
+    step 3: train +37.4% -> still_improving  | val +8.6% -> still_improving
+    step 4: train +41.1% -> still_improving  | val +13.8% -> still_improving
+    step 5: train +44.7% -> still_improving  | val +4.0% -> still_improving
+
+  SimpleAvg+FactorOrth (simple_avg_factor_orth):
+    step 1: train +47.3% -> still_improving  | val +6.2% -> still_improving
+    step 2: train +57.3% -> still_improving  | val +23.1% -> still_improving
+    step 3: train +45.2% -> still_improving  | val +23.2% -> still_improving
+    step 4: train +46.3% -> still_improving  | val +23.7% -> still_improving
+    step 5: train +57.2% -> still_improving  | val +29.8% -> still_improving
+
+  SimpleAvg+FactorOrth+KD (simple_avg_factor_orth_kd_T2):
+    step 1: train +47.3% -> still_improving  | val +6.2% -> still_improving
+    step 2: train +29.1% -> still_improving  | val +6.8% -> still_improving
+    step 3: train +31.0% -> still_improving  | val +13.1% -> still_improving
+    step 4: train +33.0% -> still_improving  | val +13.6% -> still_improving
+    step 5: train +34.8% -> still_improving  | val +12.8% -> still_improving
+
+  RankExt (rank_extension):
+    step 1: train +37.7% -> still_improving  | val +11.5% -> still_improving
+    step 2: train +44.2% -> still_improving  | val +8.7% -> still_improving
+    step 3: train +35.1% -> still_improving  | val +10.6% -> still_improving
+    step 4: train +37.7% -> still_improving  | val +10.9% -> still_improving
+    step 5: train +44.0% -> still_improving  | val +14.6% -> still_improving
+
+  RankExt+KD (rank_extension_kd_only_T2):
+    step 1: train +37.7% -> still_improving  | val +11.5% -> still_improving
+    step 2: train +7.5% -> still_improving  | val -0.9% -> converged
+    step 3: train +8.7% -> still_improving  | val +0.4% -> converged
+    step 4: train +12.4% -> still_improving  | val +1.2% -> converged
+    step 5: train +9.2% -> still_improving  | val -0.3% -> converged
+
+  RankExt+DeltaTrace (rank_extension_orth_delta_trace_lam_50):
+    step 1: train +37.7% -> still_improving  | val +11.5% -> still_improving
+    step 2: train +43.2% -> still_improving  | val +10.5% -> still_improving
+    step 3: train +33.8% -> still_improving  | val +10.2% -> still_improving
+    step 4: train +36.4% -> still_improving  | val +13.7% -> still_improving
+    step 5: train +43.0% -> still_improving  | val +17.1% -> still_improving
+
+  RankExt+FactorOrth (rank_extension_orth_factor_lam_50):
+    step 1: train +37.7% -> still_improving  | val +11.5% -> still_improving
+    step 2: train +41.6% -> still_improving  | val +14.2% -> still_improving
+    step 3: train +31.3% -> still_improving  | val +14.4% -> still_improving
+    step 4: train +34.7% -> still_improving  | val +7.6% -> still_improving
+    step 5: train +34.1% -> still_improving  | val +2.3% -> converged
+
+  RankExt+FactorOrth+KD (rank_extension_orth_factor_lam_50_kd_T2):
+    step 1: train +37.7% -> still_improving  | val +11.5% -> still_improving
+    step 2: train +8.3% -> still_improving  | val +1.0% -> converged
+    step 3: train +10.1% -> still_improving  | val +1.5% -> converged
+    step 4: train +13.6% -> still_improving  | val +3.0% -> converged
+    step 5: train +11.3% -> still_improving  | val +2.5% -> converged
+
+------------------------------------------------------------------------------
+TOP-2 METHODS BY FINAL (all_seen) ACCURACY -- detailed convergence check
+------------------------------------------------------------------------------
+
+RankExt+FactorOrth+KD  (all_seen accuracy = 68.15%, rank #1)
+  Still improving on train CE at epoch 3 in 5/5 steps.
+    step 1: train rel. improvement at final epoch = +37.7% (still_improving), val = +11.5% (still_improving)
+    step 2: train rel. improvement at final epoch = +8.3% (still_improving), val = +1.0% (converged)
+    step 3: train rel. improvement at final epoch = +10.1% (still_improving), val = +1.5% (converged)
+    step 4: train rel. improvement at final epoch = +13.6% (still_improving), val = +3.0% (converged)
+    step 5: train rel. improvement at final epoch = +11.3% (still_improving), val = +2.5% (converged)
+  VERDICT: NEEDS MORE EPOCHS
+
+SimpleAvg+FactorOrth+KD  (all_seen accuracy = 61.19%, rank #2)
+  Still improving on train CE at epoch 3 in 5/5 steps.
+    step 1: train rel. improvement at final epoch = +47.3% (still_improving), val = +6.2% (still_improving)
+    step 2: train rel. improvement at final epoch = +29.1% (still_improving), val = +6.8% (still_improving)
+    step 3: train rel. improvement at final epoch = +31.0% (still_improving), val = +13.1% (still_improving)
+    step 4: train rel. improvement at final epoch = +33.0% (still_improving), val = +13.6% (still_improving)
+    step 5: train rel. improvement at final epoch = +34.8% (still_improving), val = +12.8% (still_improving)
+  VERDICT: NEEDS MORE EPOCHS
+
+------------------------------------------------------------------------------
+EPOCH RECOMMENDATION
+------------------------------------------------------------------------------
+Median extra epochs needed (geometric-decay extrapolation of the train-CE
+relative improvement curve) to fall below the 3.0% convergence threshold: 3
+75th-percentile extra epochs needed across all (method, step): 4
+
+RECOMMENDATION: EPOCHS = 6 per CL step (up from 3).
+  - This roughly doubles training compute (30 vs 15 global epochs)
+    which is affordable given each step's current wall-clock cost, and the
+    extrapolation above shows both top-2 methods and most others still have
+    material (>8%) train-CE improvement left at epoch 3.
+  - simple_avg_factor_orth_kd_T2 (the #2 method) shows the slowest decay
+    (29-35% relative train-CE improvement even at epoch 3) of all 10 methods,
+    so it is the long pole; 6 epochs gets it much closer to convergence
+    without being wasteful for the faster-converging SimpleAvg/RankExt baselines.
+  - The new live convergence plots (Task 2) and best-epoch/early-stopping
+    logic (Task 3) let the next run confirm whether 6 is enough or a
+    per-method epoch budget is warranted.

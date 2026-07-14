@@ -132,19 +132,36 @@ CLASSES_PER_STEP = 20
 # top-2 methods) without doubling compute again beyond what R3's evidence supports.
 # See analysis_R3/reports/convergence_analysis_R3.txt for the full per-method,
 # per-step numbers behind this recommendation.
-FULL_FT_EPOCHS = 6
-FULL_LORA_EPOCHS = 6
-FULL_JOINT_EPOCHS = 6
-FULL_ORTH_EPOCHS = 6
-FULL_RANKEXT_EPOCHS = 6
+#
+# PRE-THESIS FIX 3 (6 -> 9): the EPOCH6 run's own convergence re-check
+# (analysis_R4/reports/rigorous_assessment_new_vs_old.txt, Section 1) applied the
+# identical >=3%-relative-improvement test at epoch 6 and found the split is NOT
+# uniform: the 4 non-KD methods (SimpleAvg, RankExt, and their FactorOrth variants
+# without KD) are still under-trained in every one of their 5 steps at epoch 6
+# (10-23% relative train-CE improvement in the final epoch), while the 4 KD (T=2)
+# methods are already marginally converged by epoch 6 (mostly <3% in steps 2-5).
+# The same geometric-decay extrapolation used for the 3->6 jump above puts the
+# median additional epochs needed beyond 6 at +2 (75th pct +4, worst-case single
+# (method,step) outlier +9). We keep EPOCHS uniform across all methods at 9 (a flat
+# budget keeps the 8-method comparison protocol clean -- no method gets a
+# compute-budget advantage the others didn't), even though the KD methods
+# individually converge earlier: empirically they plateau by ~epoch 6, so epochs
+# 7-9 for KD methods are mostly "free" extra training that best-epoch selection
+# (PRE-THESIS FIX 1 below) will now correctly avoid over-fitting into, while the
+# non-KD methods use the additional epochs to keep closing their convergence gap.
+FULL_FT_EPOCHS = 9
+FULL_LORA_EPOCHS = 9
+FULL_JOINT_EPOCHS = 9
+FULL_ORTH_EPOCHS = 9
+FULL_RANKEXT_EPOCHS = 9
 
-SCRATCH_EPOCHS = 6
+SCRATCH_EPOCHS = 9
 
-FT_EPOCHS = 6
-LORA_EPOCHS = 6
-JOINT_EPOCHS = 6
-ORTH_EPOCHS = 6
-RANKEXT_EPOCHS = 6
+FT_EPOCHS = 9
+LORA_EPOCHS = 9
+JOINT_EPOCHS = 9
+ORTH_EPOCHS = 9
+RANKEXT_EPOCHS = 9
 
 
 BATCH_FT = 8
@@ -175,13 +192,28 @@ USE_FP16 = torch.cuda.is_available()
 
 LORA_R = 80
 LORA_ALPHA = 2 * LORA_R
-# Bumped 0.05 -> 0.1: R3's overfitting was mild (see WEIGHT_DECAY comment above),
-# but EPOCHS is doubling (3 -> 6, see epoch-budget comment above) which roughly
+# Bumped 0.05 -> 0.1 for the EPOCH6 run: R3's overfitting was mild (see
+# WEIGHT_DECAY comment above), but EPOCHS was doubling (3 -> 6) which roughly
 # doubles the number of gradient updates each LoRA adapter sees per CL step, so a
-# slightly stronger dropout is a cheap, low-risk hedge against the extra epochs
-# turning today's mild overfitting into something worse -- without needing to
-# touch WEIGHT_DECAY, for which R3 gave no direct evidence of insufficiency.
-LORA_DROPOUT = 0.1
+# slightly stronger dropout was meant as a cheap, low-risk hedge against the extra
+# epochs turning today's mild overfitting into something worse.
+#
+# PRE-THESIS FIX 4 (0.1 -> back to 0.05): the EPOCH6 run's rigorous re-check
+# (analysis_R4/reports/rigorous_assessment_new_vs_old.txt, Section 3) found the
+# hedge did not pay off as intended -- the epoch-over-epoch "train down / val up"
+# overfitting-signature rate quadrupled (5.0% -> 22.0% of transitions) despite the
+# extra dropout, and the one method that got measurably WORSE than the EPOCH3
+# baseline (rank_extension_orth_factor_lam_50_kd_T2, the #1-ranked method, 68.15%
+# -> 67.98%) regressed via exactly this pattern: its own step-1 val CE was best at
+# local epoch 4 and got worse by epoch 6. Two things changed between R3 and this
+# run at once (epochs AND dropout), so dropout's specific contribution to that
+# regression can't be fully isolated -- but with best-epoch (val-CE) checkpoint
+# selection now GENUINELY wired in (PRE-THESIS FIX 1: an epoch that overfits no
+# longer gets kept, it just won't be selected as the per-step checkpoint), a
+# second, blunter regularizer on top is redundant and only adds a confound to the
+# epoch-budget comparison (FIX 3, 6->9). Reverting to 0.05 isolates "more epochs +
+# working best-epoch selection" as the change under test for this run.
+LORA_DROPOUT = 0.05
 TARGET_MODULES = ["q_proj", "v_proj"]
 
 
@@ -529,6 +561,18 @@ all_results = []
 method_summary_rows = []
 train_diagnostic_rows = []
 epoch_loss_rows = []
+# PRE-THESIS FIX 1: one row per (method, step) logging which epoch's weights were
+# actually kept after best-epoch selection (see USE_BEST_EPOCH_SELECTION comment).
+best_epoch_selection_rows = []
+# PRE-THESIS FIX 2: per-CL-step (1..NUM_STEPS) accuracy of each method's FINAL
+# model, plus the raw ingredients for backward_transfer/forward_transfer (see
+# evaluate_per_step_accuracy() and the run_*_variant functions below).
+per_step_accuracy_rows = []
+# PRE-THESIS FIX 2: {method_name: {step_idx: {task_step: accuracy_fraction}}} --
+# only populated for rank_extension family (the only family with a genuinely
+# evolving model to checkpoint mid-training); used to draw a true forgetting
+# curve (accuracy on task i as training progresses through later steps).
+rank_extension_stepwise_accuracy_by_method = {}
 
 # =============================================================================
 # Task 2: live convergence plotting + tables, generated DURING the run.
@@ -1141,10 +1185,44 @@ from transformers import TrainerCallback
 # was mild overall (see WEIGHT_DECAY comment), but it was not zero -- a handful of
 # (method, step) runs did have their last epoch be a small step backwards on val
 # CE. Since EPOCHS is doubling (3 -> 6), that "last epoch is worst epoch" case is
-# more likely to occur somewhere in the sweep. Rather than guessing a stronger
-# regularizer, we let HF Trainer's native load_best_model_at_end machinery pick
-# the actual best-val-loss checkpoint *within each CL step* and hand that back to
-# the merge/eval code, instead of unconditionally using the last epoch's weights.
+# more likely to occur somewhere in the sweep.
+#
+# PRE-THESIS FIX 1: the EPOCH6 run's rigorous re-check
+# (analysis_R4/reports/rigorous_assessment_new_vs_old.txt, Section 3) audited this
+# end to end and found it was NOT actually taking effect, for two independent
+# reasons in the original (pre-fix) implementation:
+#
+#   (a) WRONG METRIC. `metric_for_best_model="eval_loss"` was pointed at HF
+#       Trainer's built-in `eval_loss`, which for IndependentLoraOrthTrainer /
+#       DeltaOrthRankExtensionTrainer is `ce_loss + lambda_orth*orth_loss +
+#       kd_weight*kd_loss` (compute_loss() returns the TOTAL weighted loss, and
+#       Trainer's default prediction_step reuses compute_loss() for eval). For
+#       lambda_orth=50 methods this total is dominated by the orth penalty (not
+#       CE), and for KD methods it is contaminated by the KD term -- so "best
+#       eval_loss" silently meant "best total regularized loss", not "best
+#       validation CE" as documented and intended, for 6 of the 8 methods.
+#
+#   (b) UNVERIFIABLE RELOAD PATH. Even where the metric was correct (the 2 plain
+#       methods, lambda_orth=0/kd_weight=0), correctness depended on HF Trainer's
+#       internal load_best_model_at_end machinery correctly round-tripping a
+#       PeftModel with modules_to_save=["classifier"] through
+#       save_strategy="epoch" checkpoints and back -- a PEFT/Trainer interaction
+#       that varies across transformers versions and was never independently
+#       verified for this model wrapping.
+#
+# Fix: stop depending on HF Trainer's built-in best-model machinery entirely.
+# EpochValidationCallback (below) already computes the one metric we actually
+# want -- pure validation CE via compute_dataset_ce_loss(), which calls
+# model(**batch) directly and is NOT affected by compute_loss() overrides -- once
+# per epoch. It now ALSO keeps an in-memory CPU snapshot of just the trainable
+# (LoRA + classifier) parameters whenever that snapshot's val CE improves on the
+# best seen so far, and train_with_trainer() explicitly copies that snapshot back
+# into `model` after trainer.train() finishes (see the snapshot/reload code in
+# EpochValidationCallback and train_with_trainer below). This is simple enough to
+# verify by reading the code, is independent of any Trainer/PEFT checkpoint I/O
+# version quirk, and is keyed on the exact metric ("lowest validation CE within
+# this CL step") the mitigation was always supposed to use. Every (method, step)'s
+# selected epoch is logged to tables/best_epoch_selected_by_method_step.csv.
 USE_BEST_EPOCH_SELECTION = True
 
 
@@ -1156,13 +1234,19 @@ def get_training_args(
     accum_steps,
     train_dataset_len=None,
     eval_strategy="epoch",
-    load_best_model_at_end=False,
 ):
     """
     Trainer settings.
 
     We use warmup_steps instead of warmup_ratio because warmup_ratio is deprecated
     in newer Transformers versions.
+
+    PRE-THESIS FIX 1: no longer accepts/wires load_best_model_at_end /
+    metric_for_best_model / save_total_limit -- best-epoch selection is now done
+    explicitly in train_with_trainer()/EpochValidationCallback using an in-memory
+    trainable-parameter snapshot keyed on true validation CE (see the
+    USE_BEST_EPOCH_SELECTION comment above). We therefore never need Trainer to
+    write epoch checkpoints to disk; save_strategy is always "no".
     """
 
     if train_dataset_len is not None:
@@ -1172,14 +1256,10 @@ def get_training_args(
     else:
         warmup_steps = 0
 
-    # Best-epoch selection needs a matching save_strategy/eval_strategy (both
-    # "epoch") so the Trainer has a checkpoint to fall back to for every eval.
-    use_best_epoch = bool(load_best_model_at_end and eval_strategy == "epoch")
-
     kwargs = dict(
         output_dir=output_dir,
         remove_unused_columns=False,
-        save_strategy=("epoch" if use_best_epoch else "no"),
+        save_strategy="no",
         num_train_epochs=epochs,
         learning_rate=lr,
         weight_decay=WEIGHT_DECAY,
@@ -1194,11 +1274,6 @@ def get_training_args(
         report_to="none",
         max_grad_norm=1.0,
     )
-    if use_best_epoch:
-        kwargs["load_best_model_at_end"] = True
-        kwargs["metric_for_best_model"] = "eval_loss"
-        kwargs["greater_is_better"] = False
-        kwargs["save_total_limit"] = 1
 
     sig = inspect.signature(TrainingArguments.__init__)
 
@@ -1248,7 +1323,8 @@ def compute_dataset_ce_loss(model, eval_ds, batch_size=32):
 
 
 class EpochValidationCallback(TrainerCallback):
-    def __init__(self, method_name, display_name, step_idx, eval_dataset, eval_batch_size=32):
+    def __init__(self, method_name, display_name, step_idx, eval_dataset, eval_batch_size=32,
+                 track_best_epoch=False):
         self.method_name = str(method_name)
         self.display_name = str(display_name)
         self.step_idx = int(step_idx)
@@ -1256,9 +1332,26 @@ class EpochValidationCallback(TrainerCallback):
         self.eval_batch_size = int(eval_batch_size)
         self.epoch_rows = []
         self.trainer = None
+        # PRE-THESIS FIX 1: explicit best-epoch (val-CE) tracking. See the
+        # USE_BEST_EPOCH_SELECTION comment above get_training_args for why this
+        # replaced HF Trainer's built-in load_best_model_at_end mechanism.
+        self.track_best_epoch = bool(track_best_epoch)
+        self.best_val_ce = float("inf")
+        self.best_epoch = None
+        self.best_state_dict = None
 
     def bind_trainer(self, trainer):
         self.trainer = trainer
+
+    def _snapshot_trainable_params(self, model):
+        # Only LoRA + classifier (modules_to_save) params require_grad; the frozen
+        # CLIP-ViT backbone does not, so this snapshot is small (a few MB at most)
+        # regardless of how many epochs are checked.
+        return {
+            name: param.detach().to("cpu").clone()
+            for name, param in model.named_parameters()
+            if param.requires_grad
+        }
 
     def on_epoch_end(self, args, state, control, model=None, **kwargs):
         if model is None or self.eval_dataset is None:
@@ -1273,6 +1366,11 @@ class EpochValidationCallback(TrainerCallback):
             eval_ds=self.eval_dataset,
             batch_size=int(args.per_device_eval_batch_size),
         )
+
+        if self.track_best_epoch and not np.isnan(val_ce_loss) and val_ce_loss < self.best_val_ce:
+            self.best_val_ce = float(val_ce_loss)
+            self.best_epoch = epoch_int
+            self.best_state_dict = self._snapshot_trainable_params(model)
 
         learning_rate = np.nan
         if self.trainer is not None and getattr(self.trainer, "optimizer", None) is not None:
@@ -1309,6 +1407,7 @@ def train_with_trainer(
     trainer_cls=Trainer,
     display_name=None,
     epoch_loss_records=None,
+    best_epoch_selection_records=None,
     **trainer_kwargs,
 ):
     args = get_training_args(
@@ -1319,10 +1418,6 @@ def train_with_trainer(
         accum_steps=accum_steps,
         train_dataset_len=len(train_ds),
         eval_strategy="epoch",
-        # Task 3 mitigation: reload the best-val-CE epoch's weights within this CL
-        # step instead of always keeping the last epoch (see USE_BEST_EPOCH_SELECTION
-        # comment above get_training_args). Requires an eval_ds to have a metric.
-        load_best_model_at_end=(USE_BEST_EPOCH_SELECTION and eval_ds is not None),
     )
 
     trainer = trainer_cls(
@@ -1334,6 +1429,10 @@ def train_with_trainer(
         compute_metrics=compute_metrics,
         **trainer_kwargs,
     )
+
+    # PRE-THESIS FIX 1: best-epoch selection is only meaningful with an eval_ds to
+    # measure val CE against (same gate the old load_best_model_at_end flag used).
+    track_best_epoch = bool(USE_BEST_EPOCH_SELECTION and eval_ds is not None)
 
     epoch_callback = None
     if eval_ds is not None:
@@ -1347,11 +1446,69 @@ def train_with_trainer(
             step_idx=int(trainer_kwargs.get("step_idx", -1)),
             eval_dataset=eval_ds,
             eval_batch_size=int(args.per_device_eval_batch_size),
+            track_best_epoch=track_best_epoch,
         )
         trainer.add_callback(epoch_callback)
         epoch_callback.bind_trainer(trainer)
 
     trainer.train()
+
+    # PRE-THESIS FIX 1: explicitly reload the best-val-CE epoch's trainable-param
+    # snapshot into `model` (same object trainer.train() just updated in place),
+    # instead of trusting HF Trainer's built-in load_best_model_at_end (see the
+    # USE_BEST_EPOCH_SELECTION comment above get_training_args for why that was
+    # unreliable). `model` is mutated in place so every caller downstream of
+    # train_with_trainer (extract_lora_state, extract_rank_extension_state,
+    # merge/eval code, etc.) sees the reload without any other code changes.
+    final_epoch_int = int(epochs)
+    if (
+        track_best_epoch
+        and epoch_callback is not None
+        and epoch_callback.best_state_dict is not None
+    ):
+        model_state = dict(model.named_parameters())
+        with torch.no_grad():
+            for name, snapshot_tensor in epoch_callback.best_state_dict.items():
+                if name in model_state:
+                    model_state[name].copy_(
+                        snapshot_tensor.to(
+                            device=model_state[name].device,
+                            dtype=model_state[name].dtype,
+                        )
+                    )
+        selected_epoch = int(epoch_callback.best_epoch)
+        selected_val_ce = float(epoch_callback.best_val_ce)
+    else:
+        selected_epoch = final_epoch_int
+        selected_val_ce = (
+            float(epoch_callback.epoch_rows[-1]["val_ce_loss"])
+            if epoch_callback is not None and len(epoch_callback.epoch_rows) > 0
+            else np.nan
+        )
+
+    if epoch_callback is not None and best_epoch_selection_records is not None:
+        final_epoch_val_ce = (
+            float(epoch_callback.epoch_rows[-1]["val_ce_loss"])
+            if len(epoch_callback.epoch_rows) > 0
+            else np.nan
+        )
+        best_epoch_selection_records.append({
+            "method_name": epoch_callback.method_name,
+            "display_name": epoch_callback.display_name,
+            "step_id": epoch_callback.step_idx + 1,
+            "epochs_configured": final_epoch_int,
+            "best_epoch_selection_enabled": bool(track_best_epoch),
+            "selected_epoch": selected_epoch,
+            "selected_val_ce": selected_val_ce,
+            "final_epoch_val_ce": final_epoch_val_ce,
+            "selected_epoch_lt_final": bool(selected_epoch < final_epoch_int),
+        })
+        print(
+            f"[best-epoch selection] method={epoch_callback.method_name} | "
+            f"step={epoch_callback.step_idx + 1} | selected_epoch={selected_epoch}/{final_epoch_int} | "
+            f"selected_val_ce={selected_val_ce:.6f} | final_epoch_val_ce={final_epoch_val_ce:.6f}"
+        )
+
     eval_out = trainer.evaluate() if eval_ds is not None else {}
 
     if epoch_callback is not None and epoch_loss_records is not None and len(epoch_callback.epoch_rows) > 0:
@@ -1407,6 +1564,133 @@ def evaluate_model(model, method_name):
 
     print(pd.DataFrame(rows))
     return rows
+
+
+# PRE-THESIS FIX 2: true per-CL-step (1..NUM_STEPS) accuracy, plus
+# backward_transfer / forward_transfer. These were previously hardcoded to NaN in
+# supervisor_selected_accuracy_comparison.csv / final_metrics_all_methods.csv --
+# only the 3 aggregated eval groups (first_step/later_steps/all_seen) were ever
+# populated, for either family. See the run_simple_avg_variant() /
+# run_rank_extension_variant() call sites below for how these are wired in.
+FORWARD_TRANSFER_RANDOM_BASELINE = 1.0 / float(CLASSES_PER_STEP)
+
+
+def evaluate_single_step_accuracy(model, step_idx):
+    """Evaluate `model`'s accuracy on exactly one CL step's own 20-class group."""
+    args = get_training_args(
+        output_dir=os.path.join(MODELS_DIR, "tmp_single_step_eval"),
+        epochs=1,
+        lr=LR_LORA,
+        batch_size=BATCH_LORA,
+        accum_steps=ACCUM_LORA,
+        train_dataset_len=None,
+        eval_strategy="no",
+    )
+    trainer = Trainer(
+        model=model,
+        args=args,
+        data_collator=collate_fn,
+        compute_metrics=compute_metrics,
+    )
+    eval_ds = make_eval_dataset(classes_for_step(step_idx))
+    out = trainer.evaluate(eval_dataset=eval_ds)
+    return float(out["eval_accuracy"])
+
+
+def evaluate_per_step_accuracy(model, method_name):
+    """
+    Evaluate `model` (intended to be each method's FINAL merged/final model,
+    called once after that method's whole training is complete) on each of the
+    NUM_STEPS individual CL-step class groups separately, and log the result
+    into the module-global per_step_accuracy_rows accumulator (long format:
+    method, step_id, accuracy -- this is what the 8-methods x 5-steps accuracy
+    heatmap and the CSV `per_step_accuracy` column are built from).
+
+    Self-contained (builds its own eval-only Trainer) rather than reusing
+    evaluate_seen_step_accuracies(), which is defined later in this script but
+    needs to be callable here since the simple_avg family's training loop runs
+    (and calls this function) before that later definition is reached.
+
+    Returns a {step_idx: accuracy_fraction} map (0..1, NOT percent) for the
+    caller to also use in backward_transfer/forward_transfer computations.
+    """
+    args = get_training_args(
+        output_dir=os.path.join(MODELS_DIR, "tmp_per_step_eval"),
+        epochs=1,
+        lr=LR_LORA,
+        batch_size=BATCH_LORA,
+        accum_steps=ACCUM_LORA,
+        train_dataset_len=None,
+        eval_strategy="no",
+    )
+    trainer = Trainer(
+        model=model,
+        args=args,
+        data_collator=collate_fn,
+        compute_metrics=compute_metrics,
+    )
+    per_step_map = {}
+    for step_idx in range(NUM_STEPS):
+        eval_ds = make_eval_dataset(classes_for_step(step_idx))
+        out = trainer.evaluate(eval_dataset=eval_ds)
+        per_step_map[step_idx] = float(out["eval_accuracy"])
+
+    for step_idx in range(NUM_STEPS):
+        acc = per_step_map.get(step_idx, np.nan)
+        per_step_accuracy_rows.append({
+            "method": method_name,
+            "step_id": int(step_idx + 1),
+            "accuracy": float(acc) * 100.0 if not np.isnan(acc) else np.nan,
+        })
+    return per_step_map
+
+
+def compute_backward_transfer(diagonal_map, final_map):
+    """
+    Standard GEM-style backward transfer (Lopez-Paz & Ranzato 2017): mean over
+    tasks i=1..T-1 of (final accuracy on task i - accuracy on task i measured
+    right when it was learned). Task T (the last-learned step) is excluded --
+    there is no "later" checkpoint to compare it against. Positive = later
+    training helped earlier tasks; negative = forgetting.
+
+    `diagonal_map`/`final_map` are {step_idx: accuracy_fraction} maps (0..1).
+    Returns NaN (never a fabricated 0.0) if fewer than 1 comparable step pair is
+    available.
+    """
+    if not diagonal_map or not final_map:
+        return np.nan
+    common_steps = sorted(set(diagonal_map.keys()) & set(final_map.keys()))
+    last_step = max(final_map.keys())
+    deltas = [
+        final_map[s] - diagonal_map[s]
+        for s in common_steps
+        if s != last_step and not np.isnan(diagonal_map[s]) and not np.isnan(final_map[s])
+    ]
+    if len(deltas) == 0:
+        return np.nan
+    return float(np.mean(deltas))
+
+
+def compute_forward_transfer(probe_map):
+    """
+    Standard-style forward transfer: mean over tasks i=2..T of (zero-shot
+    accuracy on task i's class group, using the model as it stood right BEFORE
+    training on task i, minus the random-chance baseline for a
+    CLASSES_PER_STEP-way classification subset). Only meaningful for a model
+    that genuinely carries state forward between steps (rank_extension); the
+    caller should pass an empty/None probe_map (-> NaN, not a fabricated
+    number) for merge-based families like simple_avg, where every step starts
+    from the same fresh pretrained backbone and there is no well-defined
+    "model before training step i" that differs across i.
+
+    `probe_map` is a {step_idx: accuracy_fraction} map (0..1).
+    """
+    if not probe_map:
+        return np.nan
+    vals = [v - FORWARD_TRANSFER_RANDOM_BASELINE for v in probe_map.values() if not np.isnan(v)]
+    if len(vals) == 0:
+        return np.nan
+    return float(np.mean(vals))
 
 
 # In[ ]:
@@ -2112,6 +2396,15 @@ def train_independent_loras(
     orth_train_records=None,
 ):
     step_states = []
+    # PRE-THESIS FIX 2: {step_idx: accuracy_fraction} -- the accuracy of THIS
+    # step's own independently-trained specialist LoRA, evaluated on its own
+    # class group right after training and before it gets merged/averaged with
+    # the other steps' specialists. This is the simple_avg-family analog of
+    # "accuracy on task i measured right after learning it" (the diagonal a_i,i
+    # backward_transfer needs) -- the closest honestly-available equivalent,
+    # since simple_avg's steps are trained independently rather than
+    # incrementally, so there is no single evolving "model at step i".
+    specialist_diagonal_accuracy = {}
     active_orth_mode = None if orth_mode is None else str(orth_mode)
 
     for step_idx in range(NUM_STEPS):
@@ -2171,6 +2464,7 @@ def train_independent_loras(
             trainer_cls=trainer_cls,
             display_name=METHOD_DISPLAY_NAME_MAP.get(method_name, method_name),
             epoch_loss_records=epoch_loss_rows,
+            best_epoch_selection_records=best_epoch_selection_rows,
             **trainer_kwargs,
         )
 
@@ -2184,6 +2478,13 @@ def train_independent_loras(
         # in the module-global accumulator lists).
         refresh_live_convergence(method_name)
 
+        # PRE-THESIS FIX 2: evaluate this step's specialist on its own class
+        # group BEFORE extracting/discarding it -- `model` here already holds
+        # the best-epoch-selected weights (FIX 1), so this measures the
+        # specialist at its own best checkpoint, consistent with what actually
+        # gets merged into step_states below.
+        specialist_diagonal_accuracy[int(step_idx)] = evaluate_single_step_accuracy(model, step_idx)
+
         state = extract_lora_state(model)
         step_states.append(state)
 
@@ -2192,7 +2493,7 @@ def train_independent_loras(
         del model
         cleanup()
 
-    return step_states
+    return step_states, specialist_diagonal_accuracy
 
 
 # In[ ]:
@@ -2205,7 +2506,7 @@ step_states_simple_factor_orth = None
 step_states_simple_factor_orth_kd = None
 simple_avg_step_states = {}
 
-def append_simple_method_summary(method_name, eval_rows):
+def append_simple_method_summary(method_name, eval_rows, backward_transfer=np.nan, forward_transfer=np.nan):
     method_cfg = ACTIVE_METHOD_MAP[method_name]
     eval_map = {row["eval_set"]: float(row["accuracy"]) for row in eval_rows}
     method_summary_rows.append({
@@ -2226,13 +2527,24 @@ def append_simple_method_summary(method_name, eval_rows):
         "later_steps": eval_map.get("later_steps", np.nan),
         "all_seen": eval_map.get("all_seen", np.nan),
         "old_new_gap": eval_map.get("first_step", np.nan) - eval_map.get("later_steps", np.nan),
+        # PRE-THESIS FIX 2: avg_forgetting stays NaN for simple_avg -- that
+        # column's formula (compute_average_forgetting) needs a full stepwise
+        # "model at step i evaluated on task j<=i" matrix that only the
+        # incrementally-evolving rank_extension family has. backward_transfer
+        # IS honestly computable for simple_avg (see run_simple_avg_variant);
+        # forward_transfer is not (no well-defined "model before step i" for a
+        # merge-based family) and is left NaN, never fabricated.
+        # backward_transfer/forward_transfer use the SAME fraction (0..1, not
+        # percent) convention as avg_forgetting elsewhere in this table/CSV.
         "avg_forgetting": np.nan,
+        "backward_transfer": float(backward_transfer) if not np.isnan(backward_transfer) else np.nan,
+        "forward_transfer": float(forward_transfer) if not np.isnan(forward_transfer) else np.nan,
     })
 
 
 def run_simple_avg_variant(method_name):
     method_cfg = ACTIVE_METHOD_MAP[method_name]
-    step_states = train_independent_loras(
+    step_states, specialist_diagonal_accuracy = train_independent_loras(
         method_name=method_name,
         method_prefix=f"{method_name}_source",
         replay_per_class=0,
@@ -2256,7 +2568,19 @@ def run_simple_avg_variant(method_name):
     )
 
     eval_rows = evaluate_model(merged_model, method_name)
-    append_simple_method_summary(method_name, eval_rows)
+
+    # PRE-THESIS FIX 2: per-CL-step accuracy of the FINAL (merged) model, plus
+    # backward_transfer against the specialist diagonal computed during
+    # training. forward_transfer is not well-defined for this merge-based
+    # family (see append_simple_method_summary docstring note) so it stays NaN.
+    final_per_step_accuracy = evaluate_per_step_accuracy(merged_model, method_name)
+    backward_transfer = compute_backward_transfer(specialist_diagonal_accuracy, final_per_step_accuracy)
+    print(
+        f"[simple_avg summary] method={method_name} | "
+        f"backward_transfer={backward_transfer} | forward_transfer=NaN (not defined for this family)"
+    )
+
+    append_simple_method_summary(method_name, eval_rows, backward_transfer=backward_transfer, forward_transfer=np.nan)
 
     del merged_model
     cleanup()
@@ -3531,6 +3855,13 @@ def run_rank_extension_variant(
 ):
     previous_rank_state = None
     stepwise_task_accuracies = {}
+    # PRE-THESIS FIX 2: {step_idx: accuracy_fraction} zero-shot forward-transfer
+    # probes -- accuracy on step_idx's OWN class group, measured with the model
+    # as it stood right before step_idx's training began (i.e. after step_idx-1,
+    # carrying forward everything learned so far but with an untrained new rank
+    # slice for step_idx). Only rank_extension has a genuinely evolving model to
+    # probe this way; see compute_forward_transfer()'s docstring.
+    forward_transfer_probe = {}
     active_orth_mode = "none" if not use_orth else (None if orth_mode is None else str(orth_mode))
     active_lambda_orth = float(lambda_orth)
     active_kd_weight = float(kd_weight)
@@ -3581,6 +3912,15 @@ def run_rank_extension_variant(
                 f"{method_name}_step_{step_idx + 1}_trainable_parameters.csv",
             ),
         )
+
+        # PRE-THESIS FIX 2: forward-transfer probe -- `model` at this point
+        # carries forward all previously learned steps but has NOT yet trained
+        # on step_idx's data (that happens below), so evaluating it now on
+        # step_idx's own class group is a genuine zero-shot transfer measurement.
+        # Step 0 has no prior model to transfer from, so it is skipped (matches
+        # the standard FWT definition, which averages over tasks 2..T).
+        if step_idx > 0:
+            forward_transfer_probe[int(step_idx)] = evaluate_single_step_accuracy(model, step_idx)
 
         hooks = add_classifier_row_gradient_mask(
             model=model,
@@ -3637,6 +3977,7 @@ def run_rank_extension_variant(
             trainer_cls=trainer_cls,
             display_name=METHOD_DISPLAY_NAME_MAP.get(method_name, method_name),
             epoch_loss_records=epoch_loss_rows,
+            best_epoch_selection_records=best_epoch_selection_rows,
             **trainer_kwargs,
         )
 
@@ -3694,8 +4035,28 @@ def run_rank_extension_variant(
     )
     eval_rows = evaluate_model(final_rank_model, method_name)
 
+    # PRE-THESIS FIX 2: keep the full stepwise accuracy matrix for the
+    # forgetting-curve plot (see the "supervisor automation cell" section).
+    rank_extension_stepwise_accuracy_by_method[method_name] = dict(stepwise_task_accuracies)
+
     avg_forgetting = compute_average_forgetting(stepwise_task_accuracies)
-    print(f"[rank_extension summary] method={method_name} | avg_forgetting={avg_forgetting}")
+
+    # PRE-THESIS FIX 2: per-CL-step accuracy of the FINAL model (feeds the
+    # 8-methods x 5-steps heatmap), plus backward_transfer computed against the
+    # diagonal a_i,i already collected in stepwise_task_accuracies during
+    # training, plus forward_transfer from the zero-shot probes collected above.
+    final_per_step_accuracy = evaluate_per_step_accuracy(final_rank_model, method_name)
+    diagonal_accuracy = {
+        step_idx: stepwise_task_accuracies[step_idx].get(step_idx, np.nan)
+        for step_idx in stepwise_task_accuracies
+    }
+    backward_transfer = compute_backward_transfer(diagonal_accuracy, final_per_step_accuracy)
+    forward_transfer = compute_forward_transfer(forward_transfer_probe)
+
+    print(
+        f"[rank_extension summary] method={method_name} | avg_forgetting={avg_forgetting} | "
+        f"backward_transfer={backward_transfer} | forward_transfer={forward_transfer}"
+    )
 
     if (use_orth or use_kd) and orth_eval_records is not None:
         for row in eval_rows:
@@ -3732,6 +4093,10 @@ def run_rank_extension_variant(
             "all_seen": eval_map.get("all_seen", np.nan),
             "old_new_gap": eval_map.get("first_step", np.nan) - eval_map.get("later_steps", np.nan),
             "avg_forgetting": float(avg_forgetting) if not np.isnan(avg_forgetting) else np.nan,
+            # backward_transfer/forward_transfer use the SAME fraction (0..1,
+            # not percent) convention as avg_forgetting in this table.
+            "backward_transfer": float(backward_transfer) if not np.isnan(backward_transfer) else np.nan,
+            "forward_transfer": float(forward_transfer) if not np.isnan(forward_transfer) else np.nan,
         })
 
     del final_rank_model
@@ -3938,7 +4303,7 @@ if len(method_summary_df) > 0:
     method_summary_df = method_summary_df[method_summary_df["method"].isin(active_method_order)].copy()
     method_summary_df = method_summary_df.drop_duplicates(subset=["method"], keep="last")
 else:
-    method_summary_df = pd.DataFrame(columns=["method", "first_step", "later_steps", "all_seen", "old_new_gap", "avg_forgetting", "old_active_in_forward"])
+    method_summary_df = pd.DataFrame(columns=["method", "first_step", "later_steps", "all_seen", "old_new_gap", "avg_forgetting", "old_active_in_forward", "backward_transfer", "forward_transfer"])
 
 train_diag_df = pd.DataFrame(train_diagnostic_rows)
 epoch_val_df = pd.DataFrame(epoch_loss_rows)
@@ -4081,6 +4446,34 @@ training_loss_history_df.to_csv(training_loss_history_path, index=False)
 print("Saved training loss history:", training_loss_history_path)
 print(loss_fill_note)
 
+# PRE-THESIS FIX 1: which epoch's weights were actually kept per (method, step)
+# after best-epoch (val-CE) selection -- see USE_BEST_EPOCH_SELECTION comment and
+# train_with_trainer(). One row per (method, step) that went through
+# train_with_trainer with an eval_ds (i.e. every step of every active method).
+best_epoch_selection_df = pd.DataFrame(best_epoch_selection_rows)
+if len(best_epoch_selection_df) > 0:
+    best_epoch_selection_df = best_epoch_selection_df[
+        best_epoch_selection_df["method_name"].isin(active_method_order)
+    ].copy()
+    best_epoch_selection_df = best_epoch_selection_df.sort_values(
+        ["method_name", "step_id"]
+    ).reset_index(drop=True)
+else:
+    best_epoch_selection_df = pd.DataFrame(columns=[
+        "method_name", "display_name", "step_id", "epochs_configured",
+        "best_epoch_selection_enabled", "selected_epoch", "selected_val_ce",
+        "final_epoch_val_ce", "selected_epoch_lt_final",
+    ])
+best_epoch_selection_path = os.path.join(TABLES_DIR, "best_epoch_selected_by_method_step.csv")
+best_epoch_selection_df.to_csv(best_epoch_selection_path, index=False)
+print("Saved best-epoch selection log:", best_epoch_selection_path)
+if len(best_epoch_selection_df) > 0:
+    n_selected_lt_final = int(best_epoch_selection_df["selected_epoch_lt_final"].sum())
+    print(
+        f"[best-epoch selection] {n_selected_lt_final}/{len(best_epoch_selection_df)} "
+        f"(method, step) pairs selected an epoch earlier than the configured final epoch."
+    )
+
 loss_summary_rows = []
 for method_name in active_method_order:
     method_cfg = ACTIVE_METHOD_MAP[method_name]
@@ -4191,7 +4584,11 @@ final_table_percent["old_new_gap"] = final_table_percent["first_step"] - final_t
 
 summary_table = method_config_df.merge(final_table_percent, on="method", how="left")
 summary_table = summary_table.merge(
-    method_summary_df[[col for col in ["method", "avg_forgetting", "old_active_in_forward"] if col in method_summary_df.columns]],
+    method_summary_df[[
+        col for col in
+        ["method", "avg_forgetting", "old_active_in_forward", "backward_transfer", "forward_transfer"]
+        if col in method_summary_df.columns
+    ]],
     on="method",
     how="left",
 )
@@ -4717,16 +5114,37 @@ if "train_diag_df" in globals() and len(train_diag_df)>0:
     B=train_diag_df[train_diag_df.method.isin(REQ)].copy() if "method" in train_diag_df else pd.DataFrame()
     if len(B)>0: B.to_csv(Path(LOGS_DIR)/"training_loss_history_by_batch.csv", index=False)
 
+# PRE-THESIS FIX 2: long-format per-CL-step accuracy table (method, step_id,
+# accuracy in %), the ingredient for both the `per_step_accuracy` column below
+# and the 8-methods x 5-steps heatmap / forgetting-curve plots further down.
+per_step_acc_df = pd.DataFrame(per_step_accuracy_rows)
+if len(per_step_acc_df) > 0:
+    per_step_acc_df = per_step_acc_df[per_step_acc_df["method"].isin(REQ)].copy()
+    per_step_acc_df = per_step_acc_df.sort_values(["method", "step_id"]).reset_index(drop=True)
+else:
+    per_step_acc_df = pd.DataFrame(columns=["method", "step_id", "accuracy"])
+per_step_acc_path = Path(TABLES_DIR) / "per_step_accuracy_by_method.csv"
+per_step_acc_df.to_csv(per_step_acc_path, index=False)
+print("Saved per-step accuracy:", per_step_acc_path)
+
+
+def per_step_accuracy_json(method_name):
+    sub = per_step_acc_df[per_step_acc_df.method == method_name].sort_values("step_id")
+    if len(sub) == 0:
+        return np.nan
+    return json.dumps([None if pd.isna(v) else round(float(v), 4) for v in sub["accuracy"]])
+
+
 def metrics_tables():
     s=summary_table.copy() if "summary_table" in globals() and len(summary_table)>0 else CFG.copy(); s=s[s.method.isin(REQ)].copy(); s["method"]=pd.Categorical(s.method, REQ, ordered=True); s=s.sort_values("method")
-    for c in ["first_step","later_steps","all_seen","avg_forgetting"]:
+    for c in ["first_step","later_steps","all_seen","avg_forgetting","backward_transfer","forward_transfer"]:
         if c not in s: s[c]=np.nan
-    out=pd.DataFrame({"method":s.method.astype(str),"display_method_name":s.get("display_name",s.method.astype(str)),"first_step_accuracy":s.first_step,"later_steps_accuracy":s.later_steps,"all_seen_accuracy":s.all_seen,"average_accuracy":s[["first_step","later_steps","all_seen"]].mean(axis=1),"final_accuracy":s.all_seen,"per_step_accuracy":np.nan,"forgetting_metric":s.avg_forgetting,"backward_transfer":np.nan,"forward_transfer":np.nan})
+    out=pd.DataFrame({"method":s.method.astype(str),"display_method_name":s.get("display_name",s.method.astype(str)),"first_step_accuracy":s.first_step,"later_steps_accuracy":s.later_steps,"all_seen_accuracy":s.all_seen,"average_accuracy":s[["first_step","later_steps","all_seen"]].mean(axis=1),"final_accuracy":s.all_seen,"per_step_accuracy":s.method.astype(str).map(per_step_accuracy_json),"forgetting_metric":s.avg_forgetting,"backward_transfer":s.backward_transfer,"forward_transfer":s.forward_transfer})
     out.to_csv(Path(TABLES_DIR)/"supervisor_selected_accuracy_comparison.csv", index=False)
     allm=summary_table.copy() if "summary_table" in globals() and len(summary_table)>0 else s.copy()
-    for c in ["first_step","later_steps","all_seen","avg_forgetting"]:
+    for c in ["first_step","later_steps","all_seen","avg_forgetting","backward_transfer","forward_transfer"]:
         if c not in allm: allm[c]=np.nan
-    allout=pd.DataFrame({"method":allm.method.astype(str),"display_method_name":allm.get("display_name",allm.method.astype(str)),"first_step_accuracy":allm.first_step,"later_steps_accuracy":allm.later_steps,"all_seen_accuracy":allm.all_seen,"average_accuracy":allm[["first_step","later_steps","all_seen"]].mean(axis=1),"final_accuracy":allm.all_seen,"forgetting_metric":allm.avg_forgetting,"backward_transfer":np.nan,"forward_transfer":np.nan})
+    allout=pd.DataFrame({"method":allm.method.astype(str),"display_method_name":allm.get("display_name",allm.method.astype(str)),"first_step_accuracy":allm.first_step,"later_steps_accuracy":allm.later_steps,"all_seen_accuracy":allm.all_seen,"average_accuracy":allm[["first_step","later_steps","all_seen"]].mean(axis=1),"final_accuracy":allm.all_seen,"per_step_accuracy":allm.method.astype(str).map(per_step_accuracy_json),"forgetting_metric":allm.avg_forgetting,"backward_transfer":allm.backward_transfer,"forward_transfer":allm.forward_transfer})
     allout.to_csv(Path(TABLES_DIR)/"final_metrics_all_methods.csv", index=False); return out
 M=metrics_tables()
 for m in REQ:
@@ -4746,8 +5164,81 @@ def heat(df, cols, name, title):
     fig.colorbar(im, ax=ax); figsave(name)
 heat(M,["first_step_accuracy","later_steps_accuracy","all_seen_accuracy"],"supervisor_method_step_accuracy_heatmap.png","Available Accuracy Groups Heatmap")
 heat(M,["first_step_accuracy","later_steps_accuracy","all_seen_accuracy","average_accuracy","forgetting_metric"],"supervisor_method_metric_heatmap.png","Method x Metric Heatmap")
-missing_outputs.append({"output":"plots/per_task_accuracy_heatmap.png","method":"all","metric_or_column":"per-task/class-group accuracy","why":"Final per-task/class-group accuracy is not retained for every method; available groups are first_step/later_steps/all_seen.","required_or_optional":"conditional"})
-plt.figure(figsize=(10,3)); plt.axis("off"); plt.text(.5,.5,"Per-task/class-group accuracy unavailable.\nSee reports/missing_outputs_or_metrics.txt.",ha="center",va="center"); figsave("per_task_accuracy_heatmap.png")
+
+# PRE-THESIS FIX 2: real 8-methods x 5-steps per-CL-step accuracy heatmap
+# (previously a placeholder -- per-task/class-group accuracy was not retained).
+if len(per_step_acc_df) > 0:
+    _pt = per_step_acc_df.copy()
+    _pt["display_method_name"] = _pt["method"].map(METHOD_DISPLAY_NAME_MAP).fillna(_pt["method"])
+    _pt_mat = _pt.pivot(index="display_method_name", columns="step_id", values="accuracy")
+    _pt_mat = _pt_mat.reindex(SUPERVISOR_SELECTED_DISPLAY_NAMES)
+    _pt_mat.columns = [f"step_{c}" for c in _pt_mat.columns]
+    fig, ax = plt.subplots(figsize=(max(8, 1.4 * len(_pt_mat.columns) + 5), max(5, .55 * len(_pt_mat) + 2)))
+    im = ax.imshow(_pt_mat.values, aspect="auto", cmap="YlGnBu")
+    ax.set_xticks(range(len(_pt_mat.columns))); ax.set_xticklabels(_pt_mat.columns, rotation=25, ha="right")
+    ax.set_yticks(range(len(_pt_mat))); ax.set_yticklabels(_pt_mat.index)
+    ax.set_title("Per-CL-step accuracy (%) of each method's FINAL model", fontweight="bold")
+    for i in range(_pt_mat.shape[0]):
+        for j in range(_pt_mat.shape[1]):
+            v = _pt_mat.iloc[i, j]
+            ax.text(j, i, "NA" if pd.isna(v) else f"{v:.1f}", ha="center", va="center", fontsize=9)
+    fig.colorbar(im, ax=ax)
+    figsave("per_task_accuracy_heatmap.png")
+else:
+    missing_outputs.append({"output":"plots/per_task_accuracy_heatmap.png","method":"all","metric_or_column":"per-task/class-group accuracy","why":"per_step_accuracy_rows was empty after training (see evaluate_per_step_accuracy call sites).","required_or_optional":"conditional"})
+    plt.figure(figsize=(10,3)); plt.axis("off"); plt.text(.5,.5,"Per-task/class-group accuracy unavailable.\nSee reports/missing_outputs_or_metrics.txt.",ha="center",va="center"); figsave("per_task_accuracy_heatmap.png")
+
+# PRE-THESIS FIX 2: forgetting curve per method. rank_extension methods get a
+# TRUE forgetting curve (accuracy on task i re-measured after each later step,
+# from the full stepwise matrix collected during training); simple_avg methods
+# only ever have one checkpoint (the final merged model) so they get a single
+# per-step-accuracy point per task instead -- plotted in a separate panel and
+# clearly labeled, rather than faking an intermediate trajectory that family
+# does not have.
+fig, axes = plt.subplots(1, 2, figsize=(16, 6))
+
+ax = axes[0]
+rankext_methods_present = [m for m in REQ if ACTIVE_METHOD_MAP.get(m, {}).get("family") == "rank_extension" and m in rank_extension_stepwise_accuracy_by_method]
+for method_name in rankext_methods_present:
+    matrix = rank_extension_stepwise_accuracy_by_method[method_name]
+    for task_step in range(NUM_STEPS):
+        xs, ys = [], []
+        for later_step in range(task_step, NUM_STEPS):
+            if later_step in matrix and task_step in matrix[later_step]:
+                xs.append(later_step + 1)
+                ys.append(matrix[later_step][task_step] * 100.0)
+        if len(xs) >= 2:
+            ax.plot(xs, ys, marker="o", ms=4, lw=1.6,
+                    color=VCOL.get(variant(method_name), "#333333"),
+                    linestyle=VSTYLE.get(variant(method_name), "-"),
+                    label=f"{disp(method_name)} / task {task_step + 1}" if task_step == 0 else None,
+                    alpha=0.85)
+ax.set_xlabel("CL step at evaluation time")
+ax.set_ylabel("Accuracy on task i (%)")
+ax.set_title("RankExt family: true forgetting curves\n(one line per method, resampling task i after each later step)", fontsize=10)
+ax.grid(axis="y", color="#e6e6e6", linewidth=0.8)
+handles = [Line2D([0], [0], color=VCOL[v], linestyle=VSTYLE[v], lw=2, label=v) for v in SUPERVISOR_VARIANT_ORDER]
+ax.legend(handles=handles, loc="lower left", fontsize=8, frameon=False)
+
+ax = axes[1]
+simple_methods_present = [m for m in REQ if ACTIVE_METHOD_MAP.get(m, {}).get("family") == "simple_avg"]
+_pt_simple = per_step_acc_df[per_step_acc_df["method"].isin(simple_methods_present)]
+for method_name in simple_methods_present:
+    sub = _pt_simple[_pt_simple["method"] == method_name].sort_values("step_id")
+    if len(sub) == 0:
+        continue
+    ax.plot(sub["step_id"], sub["accuracy"], marker="o", ms=5, lw=1.6,
+            color=VCOL.get(variant(method_name), "#333333"),
+            linestyle=VSTYLE.get(variant(method_name), "-"),
+            label=disp(method_name))
+ax.set_xlabel("Task (CL step) index")
+ax.set_ylabel("Accuracy on task i, FINAL model only (%)")
+ax.set_title("SimpleAvg family: final-model accuracy per task\n(no intermediate checkpoints exist for this merge-based family)", fontsize=10)
+ax.grid(axis="y", color="#e6e6e6", linewidth=0.8)
+ax.legend(loc="lower left", fontsize=8, frameon=False)
+
+fig.suptitle("Forgetting curves by method family", fontweight="bold")
+figsave("forgetting_curve_by_method.png")
 
 def lossgrid(metric,ylabel,name,title,methods=None,log=False,pos=False):
     d=E.copy();
@@ -4852,7 +5343,7 @@ for root in [TABLES_DIR,PLOTS_DIR,REPORTS_DIR,LOGS_DIR,CONFIGS_DIR]: files += [s
 summary=f"""Supervisor summary report\n=========================\n\nOfficial methods:\n{chr(10).join('- '+m for m in REQ)}\n\nMissing-method confirmation:\n- simple_avg_factor_orth included: {'simple_avg_factor_orth' in REQ}\n- simple_avg_factor_orth_kd_T2 included: {'simple_avg_factor_orth_kd_T2' in REQ}\n\nFinal accuracy ranking:\n{M.sort_values('all_seen_accuracy',ascending=False).to_string(index=False)}\n\nValidation ranking:\n{D.sort_values('final_validation_ce').to_string(index=False) if len(D)>0 else 'No validation rows.'}\n\nCE, KD, factor-orth, and total losses are logged/plotted with CL-step separation. Hyperparameter consistency answer: {hp_note}\n\nGenerated files:\n{chr(10).join('- '+f for f in files)}\n\nSupervisor requests are satisfied unless listed in reports/missing_outputs_or_metrics.txt.\n"""
 txt(Path(REPORTS_DIR)/"supervisor_summary_report.txt", summary)
 # Checklist
-required=["tables/training_loss_history_by_epoch.csv","tables/supervisor_selected_accuracy_comparison.csv","tables/final_metrics_all_methods.csv","tables/validation_diagnostics_by_method.csv","tables/validation_ranking_by_best_val_ce.csv","tables/validation_ranking_by_final_val_ce.csv","tables/train_val_gap_by_method.csv","tables/hyperparameter_consistency_check.csv","plots/train_ce_loss_by_method.png","plots/validation_ce_loss_by_method.png","plots/train_val_ce_loss_by_method.png","plots/kd_loss_by_method.png","plots/factor_orth_loss_by_method.png","plots/total_loss_by_method.png","plots/combined_loss_decomposition.png","plots/supervisor_method_step_accuracy_heatmap.png","plots/supervisor_method_metric_heatmap.png","plots/accuracy_vs_validation_ce.png","plots/train_val_ce_gap_by_method.png","reports/validation_based_result_report.txt","reports/hyperparameter_consistency_notes.txt","reports/supervisor_summary_report.txt"]
+required=["tables/training_loss_history_by_epoch.csv","tables/supervisor_selected_accuracy_comparison.csv","tables/final_metrics_all_methods.csv","tables/validation_diagnostics_by_method.csv","tables/validation_ranking_by_best_val_ce.csv","tables/validation_ranking_by_final_val_ce.csv","tables/train_val_gap_by_method.csv","tables/hyperparameter_consistency_check.csv","tables/best_epoch_selected_by_method_step.csv","tables/per_step_accuracy_by_method.csv","plots/train_ce_loss_by_method.png","plots/validation_ce_loss_by_method.png","plots/train_val_ce_loss_by_method.png","plots/kd_loss_by_method.png","plots/factor_orth_loss_by_method.png","plots/total_loss_by_method.png","plots/combined_loss_decomposition.png","plots/supervisor_method_step_accuracy_heatmap.png","plots/supervisor_method_metric_heatmap.png","plots/per_task_accuracy_heatmap.png","plots/forgetting_curve_by_method.png","plots/accuracy_vs_validation_ce.png","plots/train_val_ce_gap_by_method.png","reports/validation_based_result_report.txt","reports/hyperparameter_consistency_notes.txt","reports/supervisor_summary_report.txt"]
 lines=["Final supervisor-output checklist","=================================",""]; all_ok=True
 for r in required:
     good=ok(Path(BASE_OUTPUT_DIR)/r); all_ok=all_ok and good; lines.append(("PASS " if good else "FAIL ")+r)

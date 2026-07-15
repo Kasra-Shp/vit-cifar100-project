@@ -10,7 +10,8 @@
 # - Split CIFAR-100 continual learning
 # - 5 steps, 20 classes per step
 # - Replay, zero-old ablations, joint training, full finetuning, DO-merging, and other extra ablations are disabled in this focused run.
-# - LoRA target modules are `q_proj` and `v_proj`.
+# - LoRA target modules are `q_proj`, `k_proj`, `v_proj`, `out_proj` (all four
+#   CLIP attention projections; previously `q_proj`/`v_proj` only).
 # 
 # Method notes:
 # 
@@ -214,7 +215,35 @@ LORA_ALPHA = 2 * LORA_R
 # epoch-budget comparison (FIX 3, 6->9). Reverting to 0.05 isolates "more epochs +
 # working best-epoch selection" as the change under test for this run.
 LORA_DROPOUT = 0.05
-TARGET_MODULES = ["q_proj", "v_proj"]
+# ACCURACY-PUSH CHANGE 1: expanded q_proj/v_proj -> q_proj/k_proj/v_proj/out_proj
+# for more adaptation capacity per CL step. Mechanically safe to extend (verified
+# by reading the code, not assumed): extract_lora_state(), the factor-orth
+# component computation, compute_delta_orth_components(), and
+# find_clip_target_linear_modules()/GrowingRankLoRALinear wrapping all iterate
+# named_modules() keyed on TARGET_MODULES generically -- none of them are
+# hardcoded to q/v, so factor-orth, delta-trace, and rank-extension all cover the
+# expanded set automatically with no further code changes. factor_total_mean is a
+# .mean() over layers (not a .sum()), so LAMBDA_ORTH=50 stays comparably
+# calibrated whether it's averaging over 2 or 4 module-types per layer. All four
+# CLIP attention projections are hidden_size->hidden_size Linear layers, so there
+# is no shape mismatch. Main real risk is overfitting / compute cost: this
+# roughly doubles trainable LoRA params per step (and roughly doubles
+# rank_extension's per-step compute) against the same small per-step dataset,
+# on top of R3/R4 already flagging mild overfitting signatures at the smaller
+# 2-module setting -- worth watching in the results, not just assuming a win.
+# Revert to ["q_proj", "v_proj"] to disable (and update the pinned assert below).
+TARGET_MODULES = ["q_proj", "k_proj", "v_proj", "out_proj"]
+
+# ACCURACY-PUSH CHANGE 2 (flag): rehearsal-free, post-merge-only classifier
+# row-norm calibration (WA-style weight alignment, Zhao et al. 2020) applied
+# identically to all 8 methods right before final evaluation. See
+# calibrate_classifier_row_norms() below for the mechanism and rationale.
+USE_CLASSIFIER_CALIBRATION = True
+
+# ACCURACY-PUSH CHANGE 3 (flag): classifier-head LR = LR_LORA/LR_RANKEXT times
+# this multiplier, via HeadLRTrainerMixin.create_optimizer() below. Set to 1.0 to
+# fully disable (falls back to the untouched stock Trainer.create_optimizer()).
+HEAD_LR_MULTIPLIER = 10.0
 
 
 REPLAY_PER_CLASS = 20
@@ -519,7 +548,10 @@ assert LORA_R == 80
 assert LORA_ALPHA == 160
 assert LORA_R == RANKEXT_RANK_SCHEDULE[-1]
 assert float(RANKEXT_ALPHA_PER_RANK * RANKEXT_RANK_SCHEDULE[-1]) == float(LORA_ALPHA)
-assert TARGET_MODULES == ["q_proj", "v_proj"]
+# ACCURACY-PUSH CHANGE 1: pinned set updated from ["q_proj", "v_proj"] to include
+# k_proj/out_proj. Keep this assert in sync with TARGET_MODULES above -- it exists
+# to catch silent drift between the two, not to gate the value itself.
+assert TARGET_MODULES == ["q_proj", "k_proj", "v_proj", "out_proj"]
 assert set(ENABLED_METHOD_FAMILIES) == EXPECTED_ENABLED_METHOD_FAMILIES
 assert not any(cfg["uses_replay"] for cfg in ACTIVE_METHOD_CONFIGS)
 assert not any(cfg["uses_zero_old"] for cfg in ACTIVE_METHOD_CONFIGS)
@@ -1054,6 +1086,8 @@ def add_lora(model):
     return model
 
 print("LoRA target modules:", TARGET_MODULES)
+print("Classifier calibration enabled (USE_CLASSIFIER_CALIBRATION):", USE_CLASSIFIER_CALIBRATION)
+print("Head LR multiplier (HEAD_LR_MULTIPLIER):", HEAD_LR_MULTIPLIER)
 
 
 # In[ ]:
@@ -2002,6 +2036,51 @@ def apply_deltas_to_base(merged_deltas, step_states):
 
     return model
 
+def calibrate_classifier_row_norms(model, eps=1e-8):
+    """
+    ACCURACY-PUSH CHANGE 2: rehearsal-free, post-merge-only classifier
+    calibration (WA-style weight alignment, Zhao et al. 2020, "Maintaining
+    Discrimination and Fairness in Class Incremental Learning").
+
+    Rescales each CL step's 20-class weight-row block so its mean row norm
+    matches the global (all 100 rows) mean row norm, then evaluates. This is a
+    pure post-hoc correction on the already-merged/stitched classifier -- no
+    retraining, no rehearsal data, applied identically to every method.
+
+    Rationale specific to this codebase: for the simple_avg family,
+    apply_deltas_to_base() stitches together 5 classifier row-blocks that each
+    came from a SEPARATE freshly-initialized nn.Linear (fresh_pretrained_model()
+    is called fresh per step in train_independent_loras()), trained under
+    different conditions (KD vs not, orth vs not) and, in every case, trained
+    with a 100-way softmax where 80 of the 100 classes are permanently absent
+    that step (pure negatives, never positive) -- a well-known recipe for
+    severe cross-group row-norm imbalance. For rank_extension the classifier is
+    shared/incremental rather than independently re-initialized, but the same
+    row-norm-driven scale bias can still arise across step-groups trained at
+    different points in the schedule, so the identical correction is applied
+    there too (uniform protocol across all 8 methods).
+
+    Only the weight rows are rescaled, not the bias, matching the original WA
+    formulation (bias reflects class prior/frequency, not representation
+    scale, so rescaling it is not part of the correction).
+    """
+    with torch.no_grad():
+        W = model.classifier.weight
+        row_norms = W.norm(dim=1)
+        target_norm = float(row_norms.mean().item())
+
+        for step_idx in range(NUM_STEPS):
+            idx = torch.tensor(
+                list(classes_for_step(step_idx)),
+                device=W.device,
+                dtype=torch.long,
+            )
+            group_norm = float(row_norms[idx].mean().clamp_min(eps).item())
+            scale = target_norm / group_norm
+            W[idx] *= scale
+
+    return model
+
 def cleanup():
     gc.collect()
     if torch.cuda.is_available():
@@ -2234,7 +2313,88 @@ def compute_independent_lora_factor_orth_components(model, factor_reference_stat
         "mean_B_overlap": torch.stack(b_overlap_terms).mean(),
     }
 
-class IndependentLoraOrthTrainer(Trainer):
+def build_head_lr_param_groups(model, decay_parameter_names, base_lr, head_lr_multiplier, weight_decay):
+    """
+    ACCURACY-PUSH CHANGE 3: split trainable params into classifier-head vs
+    other (LoRA/rank-extension) groups, giving the head base_lr *
+    head_lr_multiplier while everything else keeps base_lr. Mirrors stock
+    Trainer.create_optimizer()'s decay/no-decay split (bias and norm params get
+    weight_decay=0.0) so this only changes the LR split, nothing else about how
+    AdamW is configured.
+
+    "classifier" as a substring safely identifies the head in both families:
+    simple_avg wraps it via PEFT modules_to_save (name contains
+    "classifier.modules_to_save.default.weight/bias"; the frozen
+    "classifier.original_module.*" copy has requires_grad=False and is filtered
+    out below), while rank_extension's classifier is a plain nn.Linear
+    ("classifier.weight"/"classifier.bias"). No LoRA/rank-extension parameter
+    name (lora_A/lora_B/.A_new/.B_new) ever contains "classifier".
+    """
+    head_decay, head_no_decay, other_decay, other_no_decay = [], [], [], []
+
+    for name, param in model.named_parameters():
+        if not param.requires_grad:
+            continue
+        is_head = "classifier" in name
+        is_decay = name in decay_parameter_names
+        if is_head and is_decay:
+            head_decay.append(param)
+        elif is_head and not is_decay:
+            head_no_decay.append(param)
+        elif is_decay:
+            other_decay.append(param)
+        else:
+            other_no_decay.append(param)
+
+    groups = []
+    if other_decay:
+        groups.append({"params": other_decay, "weight_decay": weight_decay, "lr": base_lr})
+    if other_no_decay:
+        groups.append({"params": other_no_decay, "weight_decay": 0.0, "lr": base_lr})
+    if head_decay:
+        groups.append({"params": head_decay, "weight_decay": weight_decay, "lr": base_lr * head_lr_multiplier})
+    if head_no_decay:
+        groups.append({"params": head_no_decay, "weight_decay": 0.0, "lr": base_lr * head_lr_multiplier})
+
+    return groups
+
+
+class HeadLRTrainerMixin:
+    """
+    ACCURACY-PUSH CHANGE 3: overrides create_optimizer() to give the classifier
+    head HEAD_LR_MULTIPLIER times the base LR. When HEAD_LR_MULTIPLIER == 1.0
+    this is a no-op that defers to the untouched stock
+    Trainer.create_optimizer() (single global LR, identical to before this
+    change), so the flag fully disables the change, not just neutralizes it.
+
+    This project never uses SageMaker model-parallel training, so (unlike stock
+    Trainer.create_optimizer()) this always reads self.model directly rather
+    than branching on is_sagemaker_mp_enabled().
+    """
+
+    def create_optimizer(self):
+        if self.optimizer is not None:
+            return self.optimizer
+
+        if float(HEAD_LR_MULTIPLIER) == 1.0:
+            return super().create_optimizer()
+
+        opt_model = self.model
+        decay_parameter_names = set(self.get_decay_parameter_names(opt_model))
+        grouped_params = build_head_lr_param_groups(
+            model=opt_model,
+            decay_parameter_names=decay_parameter_names,
+            base_lr=float(self.args.learning_rate),
+            head_lr_multiplier=float(HEAD_LR_MULTIPLIER),
+            weight_decay=float(self.args.weight_decay),
+        )
+
+        optimizer_cls, optimizer_kwargs = self.get_optimizer_cls_and_kwargs(self.args, opt_model)
+        self.optimizer = optimizer_cls(grouped_params, **optimizer_kwargs)
+        return self.optimizer
+
+
+class IndependentLoraOrthTrainer(HeadLRTrainerMixin, Trainer):
     def __init__(
         self,
         *args,
@@ -2566,6 +2726,9 @@ def run_simple_avg_variant(method_name):
         merged_deltas=merged_delta,
         step_states=step_states,
     )
+
+    if USE_CLASSIFIER_CALIBRATION:
+        merged_model = calibrate_classifier_row_norms(merged_model)
 
     eval_rows = evaluate_model(merged_model, method_name)
 
@@ -3232,7 +3395,7 @@ class ClassifierRowRestoreCallback(TrainerCallback):
         return control
 
 
-class RankExtensionTrainer(Trainer):
+class RankExtensionTrainer(HeadLRTrainerMixin, Trainer):
     def __init__(self, *args, classifier_snapshot=None, **kwargs):
         super().__init__(*args, **kwargs)
         self.classifier_snapshot = classifier_snapshot
@@ -4033,6 +4196,10 @@ def run_rank_extension_variant(
         step_idx=NUM_STEPS - 1,
         old_active_in_forward=final_old_active_in_forward,
     )
+
+    if USE_CLASSIFIER_CALIBRATION:
+        final_rank_model = calibrate_classifier_row_norms(final_rank_model)
+
     eval_rows = evaluate_model(final_rank_model, method_name)
 
     # PRE-THESIS FIX 2: keep the full stepwise accuracy matrix for the
@@ -5080,9 +5247,10 @@ def cfg_df():
     c["lora_alpha"]=LORA_ALPHA; c["lora_dropout"]=LORA_DROPOUT; c["target_modules"]=', '.join(TARGET_MODULES); c["batch_size"]=BATCH_LORA
     c["num_epochs"]=np.where(c.family.eq("rank_extension"), RANKEXT_EPOCHS, LORA_EPOCHS); c["learning_rate"]=np.where(c.family.eq("rank_extension"), LR_RANKEXT, LR_LORA)
     c["optimizer"]="AdamW"; c["scheduler"]=SCHED; c["lambda_orth"]=np.where(c.uses_delta_trace|c.uses_factor_orth, LAMBDA_ORTH, 0.0)
+    c["use_classifier_calibration"]=bool(USE_CLASSIFIER_CALIBRATION); c["head_lr_multiplier"]=float(HEAD_LR_MULTIPLIER)
     return c.reset_index(drop=True)
 CFG=cfg_df()
-js(Path(CONFIGS_DIR)/"run_config.json", {"run_name":RUN_NAME,"run_tag":RUN_TAG,"base_output_dir":BASE_OUTPUT_DIR,"model_checkpoint":MODEL_CHECKPOINT,"seed":SEED,"num_steps":NUM_STEPS,"classes_per_step":CLASSES_PER_STEP,"lora_rank":LORA_R,"lora_alpha":LORA_ALPHA,"lora_dropout":LORA_DROPOUT,"target_modules":TARGET_MODULES,"lambda_orth":LAMBDA_ORTH,"kd_temperatures":KD_TEMPERATURES,"kd_weight":KD_WEIGHT,"optimizer":"AdamW","scheduler":SCHED,"batch_size":BATCH_LORA})
+js(Path(CONFIGS_DIR)/"run_config.json", {"run_name":RUN_NAME,"run_tag":RUN_TAG,"base_output_dir":BASE_OUTPUT_DIR,"model_checkpoint":MODEL_CHECKPOINT,"seed":SEED,"num_steps":NUM_STEPS,"classes_per_step":CLASSES_PER_STEP,"lora_rank":LORA_R,"lora_alpha":LORA_ALPHA,"lora_dropout":LORA_DROPOUT,"target_modules":TARGET_MODULES,"lambda_orth":LAMBDA_ORTH,"kd_temperatures":KD_TEMPERATURES,"kd_weight":KD_WEIGHT,"optimizer":"AdamW","scheduler":SCHED,"batch_size":BATCH_LORA,"use_classifier_calibration":bool(USE_CLASSIFIER_CALIBRATION),"head_lr_multiplier":float(HEAD_LR_MULTIPLIER)})
 js(Path(CONFIGS_DIR)/"supervisor_selected_methods.json", SUPERVISOR_SELECTED_METHOD_SPECS)
 js(Path(CONFIGS_DIR)/"hyperparameters_by_method.json", CFG.to_dict("records"))
 

@@ -1,0 +1,5 @@
+run,family,base_method,base_total_loss_min,base_total_loss_max,base_own_span_x,family_shared_axis_max,family_shared_axis_driven_by,max_bookkeeping_mismatch_total_vs_sum_of_parts
+OLD,simple_avg,simple_avg,0.0067681051713899,2.0765818514527354,306.81879179875216,3334.775433779153,simple_avg_factor_orth_kd_T2,5.488309852808015e-06
+OLD,rank_extension,rank_extension,0.0121816762467296,3.534522008632482,290.1507097253049,43.45311172894292,rank_extension_orth_factor_lam_50_kd_T2,5.488309852808015e-06
+NEW,simple_avg,simple_avg,0.00416750392627,1.260744712006075,302.51794222890317,3231.966864902727,simple_avg_factor_orth,2.8328545340627898e-06
+NEW,rank_extension,rank_extension,0.0121816762467296,3.534522008632482,290.1507097253049,43.45311172894292,rank_extension_orth_factor_lam_50_kd_T2,2.8328545340627898e-06

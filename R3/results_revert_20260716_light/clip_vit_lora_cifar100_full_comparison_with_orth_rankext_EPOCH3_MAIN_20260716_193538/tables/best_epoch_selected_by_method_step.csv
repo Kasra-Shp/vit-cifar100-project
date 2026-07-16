@@ -1,0 +1,41 @@
+method_name,display_name,step_id,epochs_configured,best_epoch_selection_enabled,selected_epoch,selected_val_ce,final_epoch_val_ce,selected_epoch_lt_final
+rank_extension,RankExt,1,9,True,3,0.19677392006665467,0.2266465032119304,True
+rank_extension,RankExt,2,9,True,3,0.19957117080502212,0.2242128884792328,True
+rank_extension,RankExt,3,9,True,5,0.15470705151557923,0.17566635513305665,True
+rank_extension,RankExt,4,9,True,5,0.2613984370082617,0.2823898119945079,True
+rank_extension,RankExt,5,9,True,9,0.11509435248328373,0.11509435248328373,False
+rank_extension_kd_only_T2,RankExt + KD T2,1,9,True,3,0.19677392006665467,0.2266465032119304,True
+rank_extension_kd_only_T2,RankExt + KD T2,2,9,True,5,0.8919864497184753,0.9272528080940247,True
+rank_extension_kd_only_T2,RankExt + KD T2,3,9,True,8,0.7286113262176513,0.7384003915786743,True
+rank_extension_kd_only_T2,RankExt + KD T2,4,9,True,5,0.7359169921875,0.7545551755428315,True
+rank_extension_kd_only_T2,RankExt + KD T2,5,9,True,4,0.5945187990665436,0.6120986325740814,True
+rank_extension_orth_factor_lam_50,RankExt + FactorOrth,1,9,True,3,0.19677392006665467,0.2266465032119304,True
+rank_extension_orth_factor_lam_50,RankExt + FactorOrth,2,9,True,4,0.16887902831844986,0.19915608931332826,True
+rank_extension_orth_factor_lam_50,RankExt + FactorOrth,3,9,True,8,0.14851765704154968,0.1527718324661255,True
+rank_extension_orth_factor_lam_50,RankExt + FactorOrth,4,9,True,7,0.20963705039024352,0.21335377574153244,True
+rank_extension_orth_factor_lam_50,RankExt + FactorOrth,5,9,True,9,0.10409600782580673,0.10409600782580673,False
+rank_extension_orth_factor_lam_50_kd_T2,RankExt + FactorOrth + KD T2,1,9,True,3,0.19677392006665467,0.2266465032119304,True
+rank_extension_orth_factor_lam_50_kd_T2,RankExt + FactorOrth + KD T2,2,9,True,5,0.9228679208755494,0.9436643075942993,True
+rank_extension_orth_factor_lam_50_kd_T2,RankExt + FactorOrth + KD T2,3,9,True,8,0.7617770977020264,0.7684064922332764,True
+rank_extension_orth_factor_lam_50_kd_T2,RankExt + FactorOrth + KD T2,4,9,True,7,0.7449533700942993,0.7511127934455871,True
+rank_extension_orth_factor_lam_50_kd_T2,RankExt + FactorOrth + KD T2,5,9,True,7,0.6420604257583619,0.6462714834213257,True
+simple_avg,SimpleAvg,1,9,True,3,0.17538775634765624,0.21656804919242859,True
+simple_avg,SimpleAvg,2,9,True,2,0.19251509521901608,0.2309845867157128,True
+simple_avg,SimpleAvg,3,9,True,2,0.18293528294563294,0.2985184347629547,True
+simple_avg,SimpleAvg,4,9,True,2,0.24990581941604614,0.3376584277153306,True
+simple_avg,SimpleAvg,5,9,True,5,0.11891253399848938,0.1360978720189305,True
+simple_avg_factor_orth,SimpleAvg + FactorOrth,1,9,True,2,0.1926202137619257,0.22706059812754392,True
+simple_avg_factor_orth,SimpleAvg + FactorOrth,2,9,True,5,0.1595105142891407,0.16628979873657226,True
+simple_avg_factor_orth,SimpleAvg + FactorOrth,3,9,True,7,0.13368953013420104,0.13781702041625976,True
+simple_avg_factor_orth,SimpleAvg + FactorOrth,4,9,True,9,0.1703141098023625,0.1703141098023625,False
+simple_avg_factor_orth,SimpleAvg + FactorOrth,5,9,True,6,0.09503140473319217,0.11022729206061922,True
+simple_avg_factor_orth_kd_T2,SimpleAvg + FactorOrth + KD T2,1,9,True,2,0.1926202137619257,0.22706059812754392,True
+simple_avg_factor_orth_kd_T2,SimpleAvg + FactorOrth + KD T2,2,9,True,4,0.45687530517578123,0.46490130615234376,True
+simple_avg_factor_orth_kd_T2,SimpleAvg + FactorOrth + KD T2,3,9,True,4,0.4168087148666382,0.43346691989898684,True
+simple_avg_factor_orth_kd_T2,SimpleAvg + FactorOrth + KD T2,4,9,True,7,0.45035546863079073,0.4545509033203125,True
+simple_avg_factor_orth_kd_T2,SimpleAvg + FactorOrth + KD T2,5,9,True,6,0.3646850581169128,0.3739739992618561,True
+simple_avg_kd_T2,SimpleAvg + KD T2,1,9,True,2,0.1926202137619257,0.22706059812754392,True
+simple_avg_kd_T2,SimpleAvg + KD T2,2,9,True,5,0.6356645512580872,0.6758093264102936,True
+simple_avg_kd_T2,SimpleAvg + KD T2,3,9,True,3,0.553513427734375,0.5854111347198486,True
+simple_avg_kd_T2,SimpleAvg + KD T2,4,9,True,5,0.5893212893009185,0.6144182124137878,True
+simple_avg_kd_T2,SimpleAvg + KD T2,5,9,True,5,0.4955864253044128,0.5099902338981629,True

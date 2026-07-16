@@ -97,6 +97,20 @@ except ImportError:
 # In[ ]:
 
 
+# STRICT-REVIEW (B4, seed readiness): SEED is the SINGLE constant controlling
+# every source of randomness in this script -- set_seed()/random.seed()/
+# np.random.seed()/torch.manual_seed() below all derive from it, as does every
+# per-class/per-step dataset shuffle elsewhere (each offsets SEED by a class
+# or step index, e.g. `seed=SEED + int(cls)`, so they stay reproducible and
+# distinct from each other without introducing a second free-floating seed
+# constant anywhere). A pending multi-seed sweep (supervisor decision) needs
+# only to change THIS line -- nothing else in the script hardcodes a seed.
+# SEED is also stamped onto every per-method config table/JSON dump (CFG's
+# "seed" column, propagated into method_hyperparameter_summary.csv,
+# hyperparameter_consistency_check.csv, training_loss_history_by_epoch.csv,
+# supervisor_selected_accuracy_comparison.csv, final_metrics_all_methods.csv)
+# and into configs/run_config.json, so which seed produced a given saved
+# table is always recoverable from that table alone.
 SEED = 42
 set_seed(SEED)
 random.seed(SEED)
@@ -390,33 +404,56 @@ KD_TEMPERATURE = KD_TEMPERATURES[-1]
 # Set to False to restore the naive full-strength sum (the calibfix
 # behavior that produced 63.71%).
 COMBINED_LOSS_SCALE_ENABLED = True
-COMBINED_LAMBDA_ORTH_SCALE = 0.5
+COMBINED_LAMBDA_ORTH_SCALE = 0.3
 COMBINED_KD_WEIGHT_SCALE = 0.5
 
-# ACCURACY-PUSH CANDIDATE (flag, default OFF): additional/alternative lever --
-# ramp lambda_orth for the SAME combined method over the first
-# COMBINED_ORTH_WARMUP_EPOCHS epochs of each step, using the same
-# orth_lambda_warmup_multiplier() mechanism as rank_extension's
-# RANKEXT_ORTH_LAMBDA_WARMUP_ENABLED above, gated additionally on KD actually
-# being active this step (teacher_active) so it only ever touches the combined
-# method, never plain simple_avg_factor_orth. Directly targets the same
-# local_epoch==1 spike described above rather than its magnitude -- a
-# complementary lever, not a replacement for COMBINED_LOSS_SCALE_ENABLED.
-# Off by default so COMBINED_LOSS_SCALE_ENABLED's effect can be isolated and
-# validated on its own first; stacking two untested changes at once would
-# make a rerun's result impossible to attribute to either one.
+# STRICT-REVIEW SECOND ITERATION (B2, 2026-07-17): the halving above was
+# directionally right (simple_avg_factor_orth_kd_T2 all_seen: 63.71% calibfix
+# -> 69.13% NEW/revert) but still below simple_avg_kd_T2's own 71.51% floor.
+# Re-checked training_loss_history_by_epoch.csv from the NEW/revert run
+# (analysis_strict_review/report.txt Part B2) before choosing the next move:
 #
-# REJECTED ALTERNATIVE: a KD-side annealing schedule ("orth warmup while KD
-# anneals within each step", as originally proposed). Checked directly
-# against the loss histories above and NOT implemented: kd_loss_weighted does
-# not spike or front-load the way factor_orth_loss_weighted does -- it is
-# already a smooth, gently-decaying curve of comparable magnitude to
-# train_ce_loss across the WHOLE step, so there is no timing-mismatch signal
-# in the data for a KD-specific schedule to correct. Annealing a term that is
-# not misbehaving would add a second free parameter with no evidence behind
-# its shape, so it is left out.
-COMBINED_ORTH_WARMUP_ENABLED = False
+#   TRANSIENT (local_epoch 1-2 of steps 2-5), i.e. the conflict point:
+#     mean factor_orth_loss_weighted = 507.6, mean (ce+kd) = 2.25
+#     -> orth still outweighs ce+kd by ~226x on average (44.9x-509.4x per
+#     step, WORSE at later steps: 44.9x@S2, 241.8x@S3, 449.9x@S4, 509.4x@S5),
+#     despite lambda_orth already being halved (50->25). Cutting lambda alone
+#     cannot fix this at any reasonable value: even another 40% cut (25->15,
+#     the scale change below) only takes the ratio from ~226x to ~135x on
+#     average -- still completely dominant. Magnitude-scaling has hit
+#     diminishing returns; the transient needs a TIMING fix, not a bigger
+#     magnitude cut. This is why COMBINED_ORTH_WARMUP_ENABLED is turned ON
+#     below instead of pushing lambda_orth_scale much further down.
+#
+#   STEADY STATE (local_epoch >= 3 of steps 2-5), i.e. everywhere else:
+#     mean factor_orth_loss_weighted = 0.0235, mean (ce+kd) = 0.871
+#     -> orth is already only ~2.7% of ce+kd at lambda_orth_scale=0.5 -- NOT
+#     dominant, nothing here supports a further cut being necessary. The
+#     modest extra trim to 0.3 (lambda 25->15) below is kept small and
+#     explicitly a secondary safety margin for the tail of the warmup ramp,
+#     not a response to steady-state dominance (there isn't any).
+#     mean kd_loss_weighted / mean train_ce_loss = 1.873 for THIS method.
+#     Checked against simple_avg_kd_T2 (kd_weight_scale=1.0, no orth) at the
+#     SAME epoch selection: its own steady-state kd/ce ratio is 1.757 --
+#     essentially the SAME ratio the combined method already has at half
+#     kd_weight. KD is therefore already behaving proportionately, not being
+#     starved -- there is no evidence in this run that kd_weight is the
+#     under-tuned term, so COMBINED_KD_WEIGHT_SCALE is left at 0.5 rather than
+#     raised toward 0.7 as originally floated. Raising it further with no
+#     supporting signal, on top of an already-large KD/CE ratio, risks
+#     over-anchoring to the teacher and suppressing later_steps (new-class)
+#     fitting -- exactly the metric (66.30% vs simple_avg_factor_orth's
+#     76.63%) where this method is currently furthest behind its own
+#     single-mechanism siblings. "Exceeding both single-mechanism components"
+#     remains a hypothesis under test, not a guaranteed outcome of this
+#     change -- verify against the actual instrumented rerun.
+COMBINED_ORTH_WARMUP_ENABLED = True
 COMBINED_ORTH_WARMUP_EPOCHS = 1.0
+# (REJECTED ALTERNATIVE, still holds: a KD-side annealing schedule. kd_loss_
+# weighted has no spike/front-loading in either the calibfix or NEW run --
+# still a smooth, comparable-to-CE curve across the whole step in both -- so
+# there remains no timing-mismatch signal for a KD-specific schedule to
+# correct; only the orth term gets a warmup.)
 
 VALIDATION_PER_CLASS = 25
 LOSS_NA_FILL = 0.0
@@ -614,10 +651,30 @@ def active_rankext_rank_schedule():
 # ramp should be able to skip past the worst of the spike -- while the
 # constraint is already both small and evidently harmless by the time it
 # would re-engage at full strength.
-# Default OFF: BASELINE (no warmup, immediate full strength) is the config
-# that produced rank_extension's proven 68.0 result; this is an untested
-# hypothesis to validate in a rerun, not a confirmed fix.
-RANKEXT_ORTH_LAMBDA_WARMUP_ENABLED = False
+# STRICT-REVIEW (B3, 2026-07-17): re-checked directly against
+# training_loss_history_by_epoch.csv from THIS analysis's NEW/revert run
+# (analysis_strict_review/report.txt Part B3) before flipping this on:
+#   train_ce_loss at local_epoch==1, orth variant vs plain rank_extension,
+#   same step: step2 1.64x, step3 1.89x, step4 2.31x, step5 2.04x -- the same
+#   growing-with-step-index pattern documented above, confirmed to persist in
+#   the reverted 2-module/head-lr-x1/no-calibration baseline (not an artifact
+#   of the since-rolled-back 4-module/calibfix settings).
+#   factor_orth_loss_weighted collapses within ONE epoch at every step in
+#   this run too: step2 9.94->0.026, step3 18.81->0.046, step4 29.12->0.068,
+#   step5 36.15->0.079 (99.7-99.8% drop by local_epoch==2) -- confirms a
+#   1-epoch warmup window is long enough to skip past essentially all of the
+#   spike while leaving the (already small, per table4_factororth_trajectory_
+#   stats.csv) steady-state regularization untouched.
+# Turned ON as the ONE lever for this run, specifically to chase
+# RankExt+FactorOrth (non-KD) and RankExt+FactorOrth+KD back toward/above the
+# family's historical 68.0 ceiling. USE_RANKEXT_RANK_SCHEDULE_WIDE stays False
+# (see its own comment above) -- deliberately NOT enabled alongside this, so
+# any change in the next run's rank_extension numbers can be attributed to
+# warmup alone, per the "attribute honestly, one lever per run" standard this
+# analysis is holding itself to. Still an untested hypothesis, not a
+# confirmed fix -- BASELINE (this flag OFF) remains the config that actually
+# produced rank_extension's proven 68.0 result; verify against the rerun.
+RANKEXT_ORTH_LAMBDA_WARMUP_ENABLED = True
 RANKEXT_ORTH_LAMBDA_WARMUP_EPOCHS = 1.0
 
 
@@ -2127,6 +2184,96 @@ def simple_average_deltas(step_states):
 
     return merged
 
+# STRICT-REVIEW ADD (B1, 2026-07-17): merge-mechanism diagnostics for the
+# simple_avg family, to PROVE (not just hypothesize) whether factor-orth's
+# old-class ("first_step") damage is caused by later steps' orthogonality-
+# constrained deltas diluting/cancelling step 1's own contribution once
+# simple_average_deltas() averages them together -- see
+# analysis_revert_run/report.txt Comment 1c, which flagged this as
+# "plausible but unprovable from currently saved data" for lack of exactly
+# this logging.
+#
+# Purely diagnostic: reads already-extracted CPU tensors out of step_states
+# (the output of extract_lora_state(), already computed for every simple_avg
+# variant regardless of this change) and merged_delta (already computed by
+# simple_average_deltas() regardless of this change). Every operation here is
+# a norm/dot-product on small in-memory matrices (numpy-speed, no CUDA sync,
+# no forward/backward pass, no new model instantiation) -- negligible cost,
+# and nothing here can affect model weights, gradients, or the training loop:
+# it runs strictly AFTER train_independent_loras() has already returned.
+_MERGE_MECHANISM_CSV_INITIALIZED = set()
+
+
+def log_merge_mechanism(method_name, step_states, merged_delta, csv_path):
+    """Per (method, target_module): ||dW_t|| and cos(dW_1, dW_t) for every task
+    t=1..N BEFORE the merge (from step_states, one row per task), plus the
+    merged delta's own norm and its cosine similarity to step 1's delta AFTER
+    the merge (one 'MERGED' summary row per module). merged_norm_over_mean_
+    individual_norm < 1 with cos_dW1_merged << 1 (or negative) is the direct,
+    numeric signature of destructive dilution/cancellation of step 1's
+    direction; merged_norm_over_mean_individual_norm close to 1 with
+    cos_dW1_merged close to 1 would instead support "orth is redundant but
+    harmless" for this family. Appends to csv_path; the file is reset once per
+    process (first call) so repeated method calls within one run accumulate
+    correctly without carrying over rows from a stale previous run.
+    """
+    if len(step_states) == 0:
+        return None
+
+    keys = sorted(step_states[0]["deltas"].keys())
+    n_tasks = len(step_states)
+    rows = []
+
+    for key in keys:
+        task_deltas = [step_states[t]["deltas"].get(key) for t in range(n_tasks)]
+        task_deltas = [d.float() if d is not None else None for d in task_deltas]
+        dW1 = task_deltas[0]
+        norm1 = float(torch.linalg.norm(dW1)) if dW1 is not None else float("nan")
+        individual_norms = [float(torch.linalg.norm(d)) for d in task_deltas if d is not None]
+        mean_individual_norm = float(np.mean(individual_norms)) if individual_norms else float("nan")
+
+        for t, dWt in enumerate(task_deltas):
+            if dWt is None:
+                continue
+            norm_t = float(torch.linalg.norm(dWt))
+            if dW1 is not None and norm1 > 0 and norm_t > 0:
+                cos_1t = 1.0 if t == 0 else float(
+                    torch.dot(dW1.reshape(-1), dWt.reshape(-1)) / (norm1 * norm_t)
+                )
+            else:
+                cos_1t = float("nan")
+            rows.append({
+                "method": method_name, "target_module": key, "task_step": t + 1,
+                "phase": "pre_merge", "dW_norm": norm_t,
+                "dW_norm_over_dW1_norm": (norm_t / norm1) if norm1 > 0 else float("nan"),
+                "cos_dW1_dWt": cos_1t, "n_tasks_in_merge": n_tasks,
+            })
+
+        merged = merged_delta.get(key)
+        if merged is not None:
+            merged_norm = float(torch.linalg.norm(merged))
+            cos_1_merged = (
+                float(torch.dot(dW1.reshape(-1), merged.reshape(-1)) / (norm1 * merged_norm))
+                if (dW1 is not None and norm1 > 0 and merged_norm > 0) else float("nan")
+            )
+            rows.append({
+                "method": method_name, "target_module": key, "task_step": "MERGED",
+                "phase": "post_merge", "dW_norm": merged_norm,
+                "dW_norm_over_dW1_norm": (merged_norm / norm1) if norm1 > 0 else float("nan"),
+                "cos_dW1_dWt": cos_1_merged, "n_tasks_in_merge": n_tasks,
+                "merged_norm_over_mean_individual_norm": (
+                    merged_norm / mean_individual_norm if mean_individual_norm > 0 else float("nan")
+                ),
+            })
+
+    df = pd.DataFrame(rows)
+    write_header = csv_path not in _MERGE_MECHANISM_CSV_INITIALIZED
+    if write_header and os.path.exists(csv_path):
+        os.remove(csv_path)
+    _MERGE_MECHANISM_CSV_INITIALIZED.add(csv_path)
+    df.to_csv(csv_path, mode="a", header=write_header, index=False)
+    return df
+
 def column_normalize(mat, eps=1e-12):
     return mat / torch.linalg.norm(mat, dim=0, keepdim=True).clamp_min(eps)
 
@@ -2777,7 +2924,7 @@ class IndependentLoraOrthTrainer(HeadLRTrainerMixin, Trainer):
         kd_loss = torch.tensor(0.0, device=ce_loss.device, dtype=ce_loss.dtype)
         teacher_active = self.teacher_model is not None and self.kd_weight > 0.0
 
-        # Objective 2 (optional lever, off by default -- see
+        # Objective 2 (STRICT-REVIEW B2: now ON by default -- see
         # COMBINED_ORTH_WARMUP_ENABLED): ramps lambda_orth up over the first
         # COMBINED_ORTH_WARMUP_EPOCHS epochs of each step, but ONLY when KD is
         # ALSO active this step (teacher_active) and orth_mode is
@@ -2830,8 +2977,9 @@ class IndependentLoraOrthTrainer(HeadLRTrainerMixin, Trainer):
             "lambda_orth": float(self.lambda_orth),
             # Objective 2 transparency: nominal (configured, already reflects
             # COMBINED_LAMBDA_ORTH_SCALE for the combined method) vs the
-            # warmup-scaled value actually applied this batch. Equal whenever
-            # COMBINED_ORTH_WARMUP_ENABLED is off (the default).
+            # warmup-scaled value actually applied this batch. Equal only when
+            # COMBINED_ORTH_WARMUP_ENABLED is off, or once local_epoch exceeds
+            # COMBINED_ORTH_WARMUP_EPOCHS within a step (now on by default).
             "lambda_orth_warmup_multiplier": float(combined_warmup_multiplier),
             "lambda_orth_times_loss": weighted_orth_v,
             "orth_ratio_abs_weighted_over_ce": abs(weighted_orth_v) / (ce_v + float(self.orth_eps)),
@@ -3070,6 +3218,15 @@ def run_simple_avg_variant(method_name):
     simple_avg_step_states[method_name] = step_states
 
     merged_delta = simple_average_deltas(step_states)
+    # STRICT-REVIEW ADD (B1): diagnostic-only, see log_merge_mechanism()
+    # docstring. Runs for all 4 simple_avg variants (this function is their
+    # shared code path); does not affect merged_delta or anything downstream.
+    log_merge_mechanism(
+        method_name=method_name,
+        step_states=step_states,
+        merged_delta=merged_delta,
+        csv_path=os.path.join(TABLES_DIR, "merge_mechanism_by_method_step.csv"),
+    )
     merged_model = apply_deltas_to_base(
         merged_deltas=merged_delta,
         step_states=step_states,
@@ -4201,8 +4358,9 @@ class DeltaOrthRankExtensionTrainer(RankExtensionTrainer):
             "orth_loss_used": orth_used_v,
             "lambda_orth": float(self.lambda_orth),
             # Objective 1b transparency: nominal (configured) lambda_orth vs
-            # the warmup-scaled value actually applied this batch. Equal
-            # whenever RANKEXT_ORTH_LAMBDA_WARMUP_ENABLED is off (the default).
+            # the warmup-scaled value actually applied this batch. Equal only
+            # when RANKEXT_ORTH_LAMBDA_WARMUP_ENABLED is off, or once local_
+            # epoch exceeds RANKEXT_ORTH_LAMBDA_WARMUP_EPOCHS (now on by default).
             "lambda_orth_warmup_multiplier": float(orth_warmup_multiplier),
             "lambda_orth_times_loss": weighted_v,
             "orth_ratio_abs_weighted_over_ce": ratio_v,
@@ -5259,6 +5417,7 @@ supervisor_selected_accuracy_export_df = supervisor_selected_accuracy_df[[
     "method": "internal_method_name",
     "lambda_factor_orth": "factor_lambda",
 })
+supervisor_selected_accuracy_export_df["seed"] = int(SEED)  # STRICT-REVIEW ADD (B4)
 supervisor_selected_accuracy_path = os.path.join(TABLES_DIR, "supervisor_selected_accuracy_comparison.csv")
 supervisor_selected_accuracy_export_df.to_csv(supervisor_selected_accuracy_path, index=False)
 print("Saved supervisor-selected accuracy comparison:", supervisor_selected_accuracy_path)
@@ -5284,6 +5443,7 @@ method_hyperparameter_summary_df = summary_table[[
 ]].rename(columns={
     "method": "method_name",
 })
+method_hyperparameter_summary_df["seed"] = int(SEED)  # STRICT-REVIEW ADD (B4)
 method_hyperparameter_summary_path = os.path.join(TABLES_DIR, "method_hyperparameter_summary.csv")
 method_hyperparameter_summary_df.to_csv(method_hyperparameter_summary_path, index=False)
 print("Saved method hyperparameter summary:", method_hyperparameter_summary_path)
@@ -5629,6 +5789,15 @@ def cfg_df():
     # name still see the real, per-method effective state rather than the
     # master switch.
     c["use_classifier_calibration"]=c["apply_calibration"]
+    # STRICT-REVIEW ADD (B4): SEED is already the single source-of-truth
+    # constant (defined once near the top of the script and threaded into
+    # set_seed()/random.seed()/np.random.seed()/torch.manual_seed() and every
+    # dataset shuffle -- see SEED's own definition comment). Stamping it onto
+    # every per-method config row (and therefore into every table/JSON built
+    # from CFG below) means a future multi-seed sweep is fully traceable from
+    # any single saved artifact, not just configs/run_config.json, without
+    # cross-referencing which run used which seed.
+    c["seed"]=int(SEED)
     return c.reset_index(drop=True)
 CFG=cfg_df()
 js(Path(CONFIGS_DIR)/"run_config.json", {"run_name":RUN_NAME,"run_tag":RUN_TAG,"base_output_dir":BASE_OUTPUT_DIR,"model_checkpoint":MODEL_CHECKPOINT,"seed":SEED,"num_steps":NUM_STEPS,"classes_per_step":CLASSES_PER_STEP,"lora_rank":LORA_R,"lora_alpha":LORA_ALPHA,"lora_dropout":LORA_DROPOUT,"target_modules_default":TARGET_MODULES,"target_modules_by_family":{k:list(v) for k,v in TARGET_MODULES_BY_FAMILY.items()},"lambda_orth":LAMBDA_ORTH,"kd_temperatures":KD_TEMPERATURES,"kd_weight":KD_WEIGHT,"optimizer":"AdamW","scheduler":SCHED,"batch_size":BATCH_LORA,"use_classifier_calibration_master_switch":bool(USE_CLASSIFIER_CALIBRATION),"classifier_calibration_by_family":dict(CALIBRATION_ENABLED_FAMILIES),"head_lr_multiplier_default":float(HEAD_LR_MULTIPLIER),"head_lr_multiplier_by_family":{k:float(v) for k,v in HEAD_LR_MULTIPLIER_BY_FAMILY.items()},"rankext_rank_schedule_active":active_rankext_rank_schedule(),"rankext_rank_schedule_wide_enabled":bool(USE_RANKEXT_RANK_SCHEDULE_WIDE),"rankext_orth_lambda_warmup_enabled":bool(RANKEXT_ORTH_LAMBDA_WARMUP_ENABLED),"rankext_orth_lambda_warmup_epochs":float(RANKEXT_ORTH_LAMBDA_WARMUP_EPOCHS),"combined_loss_scale_enabled":bool(COMBINED_LOSS_SCALE_ENABLED),"combined_lambda_orth_scale":float(COMBINED_LAMBDA_ORTH_SCALE),"combined_kd_weight_scale":float(COMBINED_KD_WEIGHT_SCALE),"combined_orth_warmup_enabled":bool(COMBINED_ORTH_WARMUP_ENABLED),"combined_orth_warmup_epochs":float(COMBINED_ORTH_WARMUP_EPOCHS)})
@@ -5637,10 +5806,10 @@ js(Path(CONFIGS_DIR)/"hyperparameters_by_method.json", CFG.to_dict("records"))
 
 def epoch_table():
     if "training_loss_history_df" not in globals() or len(training_loss_history_df)==0: return pd.DataFrame()
-    e=training_loss_history_df[training_loss_history_df.method_name.isin(REQ)].copy(); e=e.merge(CFG[["method","display_method_name","lora_rank","lora_alpha","lora_dropout","target_modules","batch_size","num_epochs","optimizer","scheduler"]], left_on="method_name", right_on="method", how="left")
+    e=training_loss_history_df[training_loss_history_df.method_name.isin(REQ)].copy(); e=e.merge(CFG[["method","display_method_name","lora_rank","lora_alpha","lora_dropout","target_modules","batch_size","num_epochs","optimizer","scheduler","seed"]], left_on="method_name", right_on="method", how="left")
     e["method"]=e.method_name; e["display_method_name"]=e.display_method_name.fillna(e.display_name); e["cl_step"]=e.step_id.astype(int); e["local_epoch"]=e.epoch.astype(int); e["global_epoch"]=(e.cl_step-1)*e.num_epochs.fillna(LORA_EPOCHS).astype(int)+e.local_epoch
     for a,b in {"train_kd_loss_raw":"kd_loss_raw","train_kd_loss_weighted":"kd_loss_weighted","train_factor_orth_loss_raw":"factor_orth_loss_raw","train_factor_orth_loss_weighted":"factor_orth_loss_weighted","train_delta_trace_loss_raw":"delta_trace_loss_raw","train_delta_trace_loss_weighted":"delta_trace_loss_weighted"}.items(): e[b]=e[a] if a in e else np.nan
-    cols=["method","display_method_name","cl_step","local_epoch","global_epoch","train_ce_loss","val_ce_loss","train_total_loss","kd_loss_raw","kd_loss_weighted","factor_orth_loss_raw","factor_orth_loss_weighted","delta_trace_loss_raw","delta_trace_loss_weighted","learning_rate","lambda_orth","kd_temperature","lora_rank","lora_alpha","lora_dropout","target_modules","batch_size","num_epochs","optimizer","scheduler"]
+    cols=["method","display_method_name","cl_step","local_epoch","global_epoch","train_ce_loss","val_ce_loss","train_total_loss","kd_loss_raw","kd_loss_weighted","factor_orth_loss_raw","factor_orth_loss_weighted","delta_trace_loss_raw","delta_trace_loss_weighted","learning_rate","lambda_orth","kd_temperature","lora_rank","lora_alpha","lora_dropout","target_modules","batch_size","num_epochs","optimizer","scheduler","seed"]
     for c in cols:
         if c not in e: e[c]=np.nan
     e=e[cols+[c for c in e.columns if c not in cols]].sort_values(["method","cl_step","local_epoch"]); e.to_csv(Path(TABLES_DIR)/"training_loss_history_by_epoch.csv", index=False); return e
@@ -5689,11 +5858,13 @@ def metrics_tables():
     for c in ["first_step","later_steps","all_seen","avg_forgetting","backward_transfer","forward_transfer"]:
         if c not in s: s[c]=np.nan
     out=pd.DataFrame({"method":s.method.astype(str),"display_method_name":s.get("display_name",s.method.astype(str)),"first_step_accuracy":s.first_step,"later_steps_accuracy":s.later_steps,"all_seen_accuracy":s.all_seen,"average_accuracy":s[["first_step","later_steps","all_seen"]].mean(axis=1),"final_accuracy":s.all_seen,"per_step_accuracy":s.method.astype(str).map(per_step_accuracy_json),"forgetting_metric":s.avg_forgetting,"backward_transfer":s.backward_transfer,"forward_transfer":s.forward_transfer})
+    out["seed"]=int(SEED)  # STRICT-REVIEW ADD (B4)
     out.to_csv(Path(TABLES_DIR)/"supervisor_selected_accuracy_comparison.csv", index=False)
     allm=summary_table.copy() if "summary_table" in globals() and len(summary_table)>0 else s.copy()
     for c in ["first_step","later_steps","all_seen","avg_forgetting","backward_transfer","forward_transfer"]:
         if c not in allm: allm[c]=np.nan
     allout=pd.DataFrame({"method":allm.method.astype(str),"display_method_name":allm.get("display_name",allm.method.astype(str)),"first_step_accuracy":allm.first_step,"later_steps_accuracy":allm.later_steps,"all_seen_accuracy":allm.all_seen,"average_accuracy":allm[["first_step","later_steps","all_seen"]].mean(axis=1),"final_accuracy":allm.all_seen,"per_step_accuracy":allm.method.astype(str).map(per_step_accuracy_json),"forgetting_metric":allm.avg_forgetting,"backward_transfer":allm.backward_transfer,"forward_transfer":allm.forward_transfer})
+    allout["seed"]=int(SEED)  # STRICT-REVIEW ADD (B4)
     allout.to_csv(Path(TABLES_DIR)/"final_metrics_all_methods.csv", index=False); return out
 M=metrics_tables()
 for m in REQ:
@@ -5827,22 +5998,53 @@ if len(E)>0:
                 s=fd[(fd.cl_step==st)&(fd.variant==v)].sort_values("local_epoch")
                 if len(s)>0: ax.plot(s.local_epoch,s.train_ce_loss,color=VCOL[v],linestyle=VSTYLE[v],lw=2.3); ax.plot(s.local_epoch,s.val_ce_loss,color=VCOL[v],linestyle=VSTYLE[v],lw=2.0,alpha=.45)
     fig.tight_layout(rect=[.02,.02,.90,.95]); plt.savefig(Path(PLOTS_DIR)/"train_val_ce_loss_by_method.png",dpi=DPI,bbox_inches="tight"); plt.close()
-    C=E.copy(); C["variant"]=C.method.map(variant); C["family"]=C.method.map(fam); comps=[("train_ce_loss","Train CE",False),("kd_loss_weighted","KD weighted",False),("factor_orth_loss_weighted","Factor-Orth weighted",True),("train_total_loss","Total train loss",True)]
-    fig,axs=plt.subplots(len(comps),2,figsize=(16,13),sharex=True); fig.suptitle("Combined Loss Decomposition",fontsize=22,fontweight="bold",y=.995)
-    for rr,(met,lab,logy) in enumerate(comps):
+    # STRICT-REVIEW REDESIGN (2026-07-17, analysis_strict_review/report.txt A1):
+    # the previous layout (rows=loss component, cols=family, all 4 variants
+    # overlaid per cell) put a variant's CE and its Total on two DIFFERENT
+    # panels with two DIFFERENT y-scales (CE linear, Total log) and no legend.
+    # For the Base variant, Total IS CE (KD=orth=0 identically), so any visual
+    # difference between those two panels was 100% a rendering artifact of
+    # axis choice, never a real difference in the data -- proved numerically in
+    # analysis_strict_review/report.txt Part A1a (same 18 numbers, two axes).
+    # Fix: one panel PER VARIANT, all 4 quantities (CE, KD weighted, Factor-
+    # Orth weighted, Total) plotted TOGETHER on the SAME (necessarily log,
+    # since components span 1e-4 to 1e4) axis, so "Total = sum of the other
+    # three" is checkable by eye in a single panel instead of inferred across
+    # panels. Grid is now rows=variant (4), cols=family (2) -- same 8-panel
+    # footprint as before.
+    C=E.copy(); C["variant"]=C.method.map(variant); C["family"]=C.method.map(fam)
+    method_by_family_variant={(fam(m),variant(m)):m for m in REQ}
+    line_specs=[
+        ("train_ce_loss","Train CE","#1f77b4","-",2.0),
+        ("kd_loss_weighted","KD weighted","#ff7f0e","--",2.0),
+        ("factor_orth_loss_weighted","Factor-Orth weighted","#d62728",":",2.0),
+        ("train_total_loss","TOTAL (= sum of the above)","#000000","-",3.0),
+    ]
+    fig,axs=plt.subplots(len(SUPERVISOR_VARIANT_ORDER),2,figsize=(16,15),sharex=True)
+    fig.suptitle("Combined Loss Decomposition -- per-variant panels\n"
+                 "(all lines share ONE log-scale y-axis per panel; TOTAL is plotted, never a separate scale, so 'TOTAL = sum of the other lines' is directly checkable by eye)",
+                 fontsize=16,fontweight="bold",y=.995)
+    for rr,v in enumerate(SUPERVISOR_VARIANT_ORDER):
         for cc,f in enumerate(FAMS):
-            ax=axs[rr,cc]; fd=C[C.family==f];
+            ax=axs[rr,cc]
+            m=method_by_family_variant.get((f,v))
             if rr==0: ax.set_title(FLAB[f],fontweight="bold")
-            if cc==0: ax.set_ylabel(lab)
-            ax.grid(True,axis="y",color="#ddd");
-            if logy: ax.set_yscale("log")
+            if cc==0: ax.set_ylabel(f"{v}\n(log scale)")
+            ax.grid(True,axis="y",color="#ddd"); ax.set_yscale("log")
             for b in range(LORA_EPOCHS,NUM_STEPS*LORA_EPOCHS,LORA_EPOCHS): ax.axvline(b+.5,color="#bbb",linestyle=":",lw=1)
+            fd=C[(C.family==f)&(C.method==m)] if m is not None else C.iloc[0:0]
             for st in range(1,NUM_STEPS+1):
-                for v in SUPERVISOR_VARIANT_ORDER:
-                    s=fd[(fd.cl_step==st)&(fd.variant==v)].sort_values("local_epoch"); y=pd.to_numeric(s.get(met,np.nan),errors="coerce"); good=np.isfinite(y)&((y>0) if logy else True); x=(st-1)*LORA_EPOCHS+s.local_epoch.astype(float)
-                    if len(s)>0 and good.any(): ax.plot(x[good],y[good],color=VCOL[v],linestyle=VSTYLE[v],lw=2.1)
+                s=fd[fd.cl_step==st].sort_values("local_epoch")
+                if len(s)==0: continue
+                x=(st-1)*LORA_EPOCHS+s.local_epoch.astype(float)
+                for met,lab,color,ls,lw in line_specs:
+                    y=pd.to_numeric(s.get(met,np.nan),errors="coerce"); good=np.isfinite(y)&(y>0)
+                    if good.any(): ax.plot(x[good],y[good],color=color,linestyle=ls,lw=lw)
             ax.set_xticks([(i*LORA_EPOCHS)+2 for i in range(NUM_STEPS)]); ax.set_xticklabels([f"S{i}" for i in range(1,NUM_STEPS+1)])
-    fig.tight_layout(rect=[.02,.02,.90,.95]); plt.savefig(Path(PLOTS_DIR)/"combined_loss_decomposition.png",dpi=DPI,bbox_inches="tight"); plt.close()
+    legend_handles=[Line2D([0],[0],color=color,linestyle=ls,lw=max(lw,2.5)) for _,lab,color,ls,lw in line_specs]
+    legend_labels=[lab for _,lab,_,_,_ in line_specs]
+    fig.legend(legend_handles, legend_labels, loc="center left", bbox_to_anchor=(.915,.52), frameon=False, title="Line (all 4 on\nthe same axis)")
+    fig.tight_layout(rect=[.02,.02,.90,.94]); plt.savefig(Path(PLOTS_DIR)/"combined_loss_decomposition.png",dpi=DPI,bbox_inches="tight"); plt.close()
 else: missing_outputs.append({"output":"loss plots","method":"all","metric_or_column":"training_loss_history_by_epoch","why":"No epoch-level rows available","required_or_optional":"required"})
 
 def valdiag():
@@ -5876,7 +6078,7 @@ if len(D)>0 and "final_validation_ce" in D:
     for _,r in D.iterrows(): plt.scatter(r.final_validation_ce,r.all_seen_accuracy,s=90); plt.annotate(r.display_method_name,(r.final_validation_ce,r.all_seen_accuracy),xytext=(5,4),textcoords="offset points",fontsize=9)
     plt.xlabel("Final validation CE loss"); plt.ylabel("All-seen accuracy (%)"); plt.title("All-Seen Accuracy vs Final Validation CE"); plt.grid(True,color="#ddd"); figsave("accuracy_vs_validation_ce.png")
 # Hyperparameter check
-HP=CFG[["method","display_method_name","lora_rank","lora_alpha","lora_dropout","target_modules","num_epochs","learning_rate","batch_size","lambda_orth","kd_temperature","optimizer","scheduler"]].copy(); HP.to_csv(Path(TABLES_DIR)/"hyperparameter_consistency_check.csv",index=False)
+HP=CFG[["method","display_method_name","lora_rank","lora_alpha","lora_dropout","target_modules","num_epochs","learning_rate","batch_size","lambda_orth","kd_temperature","optimizer","scheduler","seed"]].copy(); HP.to_csv(Path(TABLES_DIR)/"hyperparameter_consistency_check.csv",index=False)
 hp_note="Delta-trace and factor-orth variants use the same main hyperparameters when matched by family and KD temperature: LoRA rank/alpha/dropout, target modules, epochs, LR, batch size, optimizer, scheduler, KD temperature and KD weight. If simple_avg_delta_trace outperforms simple_avg_factor_orth, the difference is therefore more likely due to orthogonality formulation and loss scale than hyperparameter mismatch."
 txt(Path(REPORTS_DIR)/"hyperparameter_consistency_notes.txt", "Hyperparameter consistency notes\n================================\n\n"+hp_note)
 # Reports

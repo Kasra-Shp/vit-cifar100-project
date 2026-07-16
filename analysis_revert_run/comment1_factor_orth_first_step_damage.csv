@@ -1,0 +1,5 @@
+pair,base_method,orth_method,OLD_base_first_step,OLD_orth_first_step,OLD_orth_minus_base_first_step,NEW_base_first_step,NEW_orth_first_step,NEW_orth_minus_base_first_step
+"simple_avg family, no-KD pair",simple_avg,simple_avg_factor_orth,54.05,0.8,-53.25,82.0,71.2,-10.799999999999997
+"simple_avg family, KD pair",simple_avg_kd_T2,simple_avg_factor_orth_kd_T2,74.5,11.8,-62.7,88.9,80.45,-8.450000000000003
+"rank_extension family, no-KD pair",rank_extension,rank_extension_orth_factor_lam_50,0.8,2.25,1.45,0.8,2.25,1.45
+"rank_extension family, KD pair",rank_extension_kd_only_T2,rank_extension_orth_factor_lam_50_kd_T2,59.55,71.7,12.150000000000006,59.55,71.7,12.150000000000006

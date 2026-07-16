@@ -1,0 +1,9 @@
+method,display_method_name,lora_rank,lora_alpha,lora_dropout,target_modules,num_epochs,learning_rate,batch_size,lambda_orth,kd_temperature,optimizer,scheduler
+simple_avg,SimpleAvg,80,160,0.05,"q_proj, v_proj",9,5e-05,16,0.0,0.0,AdamW,cosine
+rank_extension,RankExt,80,160,0.05,"q_proj, v_proj",9,0.0001,16,0.0,0.0,AdamW,cosine
+simple_avg_factor_orth,SimpleAvg + FactorOrth,80,160,0.05,"q_proj, v_proj",9,5e-05,16,50.0,0.0,AdamW,cosine
+rank_extension_orth_factor_lam_50,RankExt + FactorOrth,80,160,0.05,"q_proj, v_proj",9,0.0001,16,50.0,0.0,AdamW,cosine
+simple_avg_kd_T2,SimpleAvg + KD T2,80,160,0.05,"q_proj, v_proj",9,5e-05,16,0.0,2.0,AdamW,cosine
+rank_extension_kd_only_T2,RankExt + KD T2,80,160,0.05,"q_proj, v_proj",9,0.0001,16,0.0,2.0,AdamW,cosine
+simple_avg_factor_orth_kd_T2,SimpleAvg + FactorOrth + KD T2,80,160,0.05,"q_proj, v_proj",9,5e-05,16,50.0,2.0,AdamW,cosine
+rank_extension_orth_factor_lam_50_kd_T2,RankExt + FactorOrth + KD T2,80,160,0.05,"q_proj, v_proj",9,0.0001,16,50.0,2.0,AdamW,cosine

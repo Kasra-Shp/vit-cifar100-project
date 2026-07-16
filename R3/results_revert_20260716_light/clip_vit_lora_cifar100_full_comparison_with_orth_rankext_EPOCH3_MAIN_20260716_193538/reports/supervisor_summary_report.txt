@@ -1,0 +1,164 @@
+Supervisor summary report
+=========================
+
+Official methods:
+- simple_avg
+- rank_extension
+- simple_avg_factor_orth
+- rank_extension_orth_factor_lam_50
+- simple_avg_kd_T2
+- rank_extension_kd_only_T2
+- simple_avg_factor_orth_kd_T2
+- rank_extension_orth_factor_lam_50_kd_T2
+
+Missing-method confirmation:
+- simple_avg_factor_orth included: True
+- simple_avg_factor_orth_kd_T2 included: True
+
+Final accuracy ranking:
+                                 method            display_method_name  first_step_accuracy  later_steps_accuracy  all_seen_accuracy  average_accuracy  final_accuracy                 per_step_accuracy  forgetting_metric  backward_transfer  forward_transfer
+                 simple_avg_factor_orth         SimpleAvg + FactorOrth                71.20               76.6250              75.54           74.4550           75.54  [71.2, 78.85, 72.35, 70.2, 85.1]                NaN          -0.218625               NaN
+                             simple_avg                      SimpleAvg                82.00               69.6125              72.09           74.5675           72.09   [82.0, 68.0, 68.65, 61.9, 79.9]                NaN          -0.244625               NaN
+                       simple_avg_kd_T2              SimpleAvg + KD T2                88.90               67.1625              71.51           75.8575           71.51   [88.9, 68.5, 67.4, 60.35, 72.4]                NaN          -0.200625               NaN
+           simple_avg_factor_orth_kd_T2 SimpleAvg + FactorOrth + KD T2                80.45               66.3000              69.13           71.9600           69.13   [80.45, 68.7, 64.5, 55.2, 76.8]                NaN          -0.267750               NaN
+rank_extension_orth_factor_lam_50_kd_T2   RankExt + FactorOrth + KD T2                71.70               66.6500              67.66           68.6700           67.66  [71.7, 50.45, 53.0, 70.9, 92.25]           0.207625          -0.207625             -0.05
+              rank_extension_kd_only_T2                RankExt + KD T2                59.55               58.6750              58.85           59.0250           58.85 [59.55, 36.45, 39.85, 64.2, 94.2]           0.339125          -0.339250             -0.05
+      rank_extension_orth_factor_lam_50           RankExt + FactorOrth                 2.25               41.9750              34.03           26.0850           34.03  [2.25, 12.3, 19.8, 38.25, 97.55]           0.766750          -0.766875             -0.05
+                         rank_extension                        RankExt                 0.80               27.0750              21.82           16.5650           21.82      [0.8, 1.85, 2.2, 7.3, 96.95]           0.915625          -0.915750             -0.05
+
+Validation ranking:
+                                 method            display_method_name  all_seen_accuracy  final_validation_ce  best_validation_ce  global_epoch_of_best_validation_ce  cl_step_of_best_validation_ce  local_epoch_of_best_validation_ce  final_train_ce  train_val_ce_gap_final_epoch  train_val_ce_gap_best_val_epoch  validation_ce_std  validation_ce_range validation_ce_trend  validation_ce_increases_while_train_ce_decreases  num_val_up_train_down_events  final_validation_ce_minus_best overfitting_signal                                           overfitting_flags  overfitting_score
+      rank_extension_orth_factor_lam_50           RankExt + FactorOrth              34.03             0.104096            0.104096                                  45                              5                                  9        0.028720                      0.075376                         0.075376           0.187027             0.991626          decreasing                                              True                            10                        0.000000           moderate                                           val_up_train_down           2.823282
+                 simple_avg_factor_orth         SimpleAvg + FactorOrth              75.54             0.110227            0.095031                                  42                              5                                  6        0.008469                      0.101758                         0.079354           0.080965             0.360690          decreasing                                              True                             7                        0.015196           moderate                                           val_up_train_down           1.957126
+                         rank_extension                        RankExt              21.82             0.115094            0.115094                                  45                              5                                  9        0.012367                      0.102727                         0.102727           0.105136             0.555807          decreasing                                              True                            15                        0.000000           moderate                                           val_up_train_down           3.991679
+                             simple_avg                      SimpleAvg              72.09             0.136098            0.118913                                  41                              5                                  5        0.006614                      0.129484                         0.101635           0.065722             0.240624          decreasing                                              True                            16                        0.017185           moderate                                           val_up_train_down           4.206825
+           simple_avg_factor_orth_kd_T2 SimpleAvg + FactorOrth + KD T2              69.13             0.373974            0.192620                                   2                              1                                  2        0.243428                      0.130546                         0.031905           0.128966             0.553319          increasing                                              True                             9                        0.181354           moderate                                           val_up_train_down           2.700229
+                       simple_avg_kd_T2              SimpleAvg + KD T2              71.51             0.509990            0.192620                                   2                              1                                  2        0.373323                      0.136668                         0.031905           0.167727             0.655400          increasing                                              True                            15                        0.317370             strong                 val_up_train_down;final_val_worse_than_best           4.367887
+              rank_extension_kd_only_T2                RankExt + KD T2              58.85             0.612099            0.196774                                   3                              1                                  3        0.469548                      0.142551                         0.066024           0.257274             1.022166          increasing                                              True                            16                        0.415325             strong val_up_train_down;final_val_worse_than_best;unstable_val_ce           4.813417
+rank_extension_orth_factor_lam_50_kd_T2   RankExt + FactorOrth + KD T2              67.66             0.646271            0.196774                                   3                              1                                  3        0.537581                      0.108691                         0.066024           0.301534             1.267098          increasing                                              True                            11                        0.449498             strong val_up_train_down;final_val_worse_than_best;unstable_val_ce           3.624963
+
+CE, KD, factor-orth, and total losses are logged/plotted with CL-step separation. Hyperparameter consistency answer: Delta-trace and factor-orth variants use the same main hyperparameters when matched by family and KD temperature: LoRA rank/alpha/dropout, target modules, epochs, LR, batch size, optimizer, scheduler, KD temperature and KD weight. If simple_avg_delta_trace outperforms simple_avg_factor_orth, the difference is therefore more likely due to orthogonality formulation and loss scale than hyperparameter mismatch.
+
+Generated files:
+- tables/all_methods_convergence_table.csv
+- tables/all_results_clip_vit_full_comparison.csv
+- tables/all_results_selected_methods.csv
+- tables/best_epoch_selected_by_method_step.csv
+- tables/final_accuracy_selected_methods.csv
+- tables/final_metrics_all_methods.csv
+- tables/hyperparameter_consistency_check.csv
+- tables/loss_components_summary_by_method.csv
+- tables/loss_summary_by_method.csv
+- tables/method_hyperparameter_summary.csv
+- tables/method_run_metadata_selected_methods.csv
+- tables/per_step_accuracy_by_method.csv
+- tables/rank_extension_kd_only_T2_step_1_rank_structure.csv
+- tables/rank_extension_kd_only_T2_step_1_trainable_parameters.csv
+- tables/rank_extension_kd_only_T2_step_2_frozen_rank_blocks.csv
+- tables/rank_extension_kd_only_T2_step_2_rank_structure.csv
+- tables/rank_extension_kd_only_T2_step_2_trainable_parameters.csv
+- tables/rank_extension_kd_only_T2_step_3_frozen_rank_blocks.csv
+- tables/rank_extension_kd_only_T2_step_3_rank_structure.csv
+- tables/rank_extension_kd_only_T2_step_3_trainable_parameters.csv
+- tables/rank_extension_kd_only_T2_step_4_frozen_rank_blocks.csv
+- tables/rank_extension_kd_only_T2_step_4_rank_structure.csv
+- tables/rank_extension_kd_only_T2_step_4_trainable_parameters.csv
+- tables/rank_extension_kd_only_T2_step_5_frozen_rank_blocks.csv
+- tables/rank_extension_kd_only_T2_step_5_rank_structure.csv
+- tables/rank_extension_kd_only_T2_step_5_trainable_parameters.csv
+- tables/rank_extension_orth_factor_lam_50_kd_T2_step_1_rank_structure.csv
+- tables/rank_extension_orth_factor_lam_50_kd_T2_step_1_trainable_parameters.csv
+- tables/rank_extension_orth_factor_lam_50_kd_T2_step_2_frozen_rank_blocks.csv
+- tables/rank_extension_orth_factor_lam_50_kd_T2_step_2_rank_structure.csv
+- tables/rank_extension_orth_factor_lam_50_kd_T2_step_2_trainable_parameters.csv
+- tables/rank_extension_orth_factor_lam_50_kd_T2_step_3_frozen_rank_blocks.csv
+- tables/rank_extension_orth_factor_lam_50_kd_T2_step_3_rank_structure.csv
+- tables/rank_extension_orth_factor_lam_50_kd_T2_step_3_trainable_parameters.csv
+- tables/rank_extension_orth_factor_lam_50_kd_T2_step_4_frozen_rank_blocks.csv
+- tables/rank_extension_orth_factor_lam_50_kd_T2_step_4_rank_structure.csv
+- tables/rank_extension_orth_factor_lam_50_kd_T2_step_4_trainable_parameters.csv
+- tables/rank_extension_orth_factor_lam_50_kd_T2_step_5_frozen_rank_blocks.csv
+- tables/rank_extension_orth_factor_lam_50_kd_T2_step_5_rank_structure.csv
+- tables/rank_extension_orth_factor_lam_50_kd_T2_step_5_trainable_parameters.csv
+- tables/rank_extension_orth_factor_lam_50_step_1_rank_structure.csv
+- tables/rank_extension_orth_factor_lam_50_step_1_trainable_parameters.csv
+- tables/rank_extension_orth_factor_lam_50_step_2_frozen_rank_blocks.csv
+- tables/rank_extension_orth_factor_lam_50_step_2_rank_structure.csv
+- tables/rank_extension_orth_factor_lam_50_step_2_trainable_parameters.csv
+- tables/rank_extension_orth_factor_lam_50_step_3_frozen_rank_blocks.csv
+- tables/rank_extension_orth_factor_lam_50_step_3_rank_structure.csv
+- tables/rank_extension_orth_factor_lam_50_step_3_trainable_parameters.csv
+- tables/rank_extension_orth_factor_lam_50_step_4_frozen_rank_blocks.csv
+- tables/rank_extension_orth_factor_lam_50_step_4_rank_structure.csv
+- tables/rank_extension_orth_factor_lam_50_step_4_trainable_parameters.csv
+- tables/rank_extension_orth_factor_lam_50_step_5_frozen_rank_blocks.csv
+- tables/rank_extension_orth_factor_lam_50_step_5_rank_structure.csv
+- tables/rank_extension_orth_factor_lam_50_step_5_trainable_parameters.csv
+- tables/rank_extension_step_1_rank_structure.csv
+- tables/rank_extension_step_1_trainable_parameters.csv
+- tables/rank_extension_step_2_frozen_rank_blocks.csv
+- tables/rank_extension_step_2_rank_structure.csv
+- tables/rank_extension_step_2_trainable_parameters.csv
+- tables/rank_extension_step_3_frozen_rank_blocks.csv
+- tables/rank_extension_step_3_rank_structure.csv
+- tables/rank_extension_step_3_trainable_parameters.csv
+- tables/rank_extension_step_4_frozen_rank_blocks.csv
+- tables/rank_extension_step_4_rank_structure.csv
+- tables/rank_extension_step_4_trainable_parameters.csv
+- tables/rank_extension_step_5_frozen_rank_blocks.csv
+- tables/rank_extension_step_5_rank_structure.csv
+- tables/rank_extension_step_5_trainable_parameters.csv
+- tables/ranking_by_all_seen_selected_methods.csv
+- tables/summary_metrics_selected_methods.csv
+- tables/supervisor_method_mapping.csv
+- tables/supervisor_selected_accuracy_comparison.csv
+- tables/top2_convergence_table.csv
+- tables/train_val_gap_by_method.csv
+- tables/training_loss_history_by_epoch.csv
+- tables/validation_diagnostics_by_method.csv
+- tables/validation_ranking_by_best_val_ce.csv
+- tables/validation_ranking_by_final_val_ce.csv
+- tables/validation_split_summary.csv
+- plots/08_ce_loss_by_method.png
+- plots/08b_train_val_ce_loss_by_method.png
+- plots/09_kd_loss_by_method.png
+- plots/11_factor_orth_loss_by_method.png
+- plots/12_total_loss_by_method.png
+- plots/13_loss_ratio_diagnostics.png
+- plots/14_combined_loss_decomposition.png
+- plots/15_supervisor_selected_train_val_ce.png
+- plots/17_supervisor_selected_accuracy_comparison.png
+- plots/accuracy_vs_validation_ce.png
+- plots/best_vs_final_validation_ce.png
+- plots/combined_loss_decomposition.png
+- plots/factor_orth_loss_by_method.png
+- plots/factor_orth_weighted_loss_log.png
+- plots/forgetting_curve_by_method.png
+- plots/kd_loss_by_method.png
+- plots/live_convergence_rank_extension.png
+- plots/live_convergence_rank_extension_kd_only_T2.png
+- plots/live_convergence_rank_extension_orth_factor_lam_50.png
+- plots/live_convergence_rank_extension_orth_factor_lam_50_kd_T2.png
+- plots/live_convergence_simple_avg.png
+- plots/live_convergence_simple_avg_factor_orth.png
+- plots/live_convergence_simple_avg_factor_orth_kd_T2.png
+- plots/live_convergence_simple_avg_kd_T2.png
+- plots/per_task_accuracy_heatmap.png
+- plots/supervisor_method_metric_heatmap.png
+- plots/supervisor_method_step_accuracy_heatmap.png
+- plots/total_loss_by_method.png
+- plots/total_loss_by_method_log.png
+- plots/train_ce_loss_by_method.png
+- plots/train_val_ce_gap_by_method.png
+- plots/train_val_ce_loss_by_method.png
+- plots/validation_ce_loss_by_method.png
+- plots/validation_ce_loss_clean.png
+- reports/hyperparameter_consistency_notes.txt
+- reports/missing_outputs_or_metrics.txt
+- reports/validation_based_result_report.txt
+- logs/training_loss_history_by_batch.csv
+- configs/hyperparameters_by_method.json
+- configs/run_config.json
+- configs/supervisor_selected_methods.json
+
+Supervisor requests are satisfied unless listed in reports/missing_outputs_or_metrics.txt.

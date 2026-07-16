@@ -1,0 +1,31 @@
+Final supervisor-output checklist
+=================================
+
+PASS tables/training_loss_history_by_epoch.csv
+PASS tables/supervisor_selected_accuracy_comparison.csv
+PASS tables/final_metrics_all_methods.csv
+PASS tables/validation_diagnostics_by_method.csv
+PASS tables/validation_ranking_by_best_val_ce.csv
+PASS tables/validation_ranking_by_final_val_ce.csv
+PASS tables/train_val_gap_by_method.csv
+PASS tables/hyperparameter_consistency_check.csv
+PASS tables/best_epoch_selected_by_method_step.csv
+PASS tables/per_step_accuracy_by_method.csv
+PASS plots/train_ce_loss_by_method.png
+PASS plots/validation_ce_loss_by_method.png
+PASS plots/train_val_ce_loss_by_method.png
+PASS plots/kd_loss_by_method.png
+PASS plots/factor_orth_loss_by_method.png
+PASS plots/total_loss_by_method.png
+PASS plots/combined_loss_decomposition.png
+PASS plots/supervisor_method_step_accuracy_heatmap.png
+PASS plots/supervisor_method_metric_heatmap.png
+PASS plots/per_task_accuracy_heatmap.png
+PASS plots/forgetting_curve_by_method.png
+PASS plots/accuracy_vs_validation_ce.png
+PASS plots/train_val_ce_gap_by_method.png
+PASS reports/validation_based_result_report.txt
+PASS reports/hyperparameter_consistency_notes.txt
+PASS reports/supervisor_summary_report.txt
+
+OVERALL PASS

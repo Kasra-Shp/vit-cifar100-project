@@ -1,0 +1,371 @@
+================================================================================
+REVERT-RUN ANALYSIS: SUPERVISOR COMMENTS 1-3 + RUN VERDICT
+================================================================================
+Scope: work performed entirely from saved CSVs/logs in R3/. No training was run.
+
+Runs used (resolved paths):
+  OLD      = R3/clip_vit_lora_cifar100_full_comparison_with_orth_rankext_EPOCH3_MAIN_20260715_014445
+             (2-module q/v, head_lr x1, no calibration -- the run the supervisor's
+             three comments were made against)
+  CALIBFIX = R3/results_calibfix_20260716_light/..._MAIN_20260716_133338
+             (4-module q/k/v/out, head_lr x10 uniform, calibration on for
+             simple_avg only -- the run immediately before this revert)
+  NEW      = R3/results_revert_20260716_light/..._MAIN_20260716_193538
+             (rank_extension family reverted to OLD's exact baseline setup;
+             simple_avg family kept on CALIBFIX's setup; simple_avg_factor_orth_kd_T2
+             additionally rescaled: lambda_orth x0.5, kd_weight x0.5)
+
+================================================================================
+EXECUTIVE SUMMARY
+================================================================================
+1. Factor-orth's old-class ("first_step") damage is real but is a simple_avg
+   phenomenon, not a family-wide one. In OLD, simple_avg+FactorOrth collapses
+   first_step accuracy by -53.3pp vs plain simple_avg (54.05%->0.80%); its KD
+   sibling drops -62.7pp. In NEW, the SAME comparison is only -10.8pp / -8.45pp --
+   most of the damage was fixed already by classifier calibration + the 4-module
+   setup (unchanged by this revert), not by anything this revert itself changed.
+   rank_extension shows NO such damage in either run -- factor-orth is neutral-
+   to-positive there (+1.45pp / +12.15pp), and this is now directly explained:
+   rank_extension's "frozen" rank blocks are bit-for-bit unchanged across every
+   CL step (max abs diff = 0.0, confirmed in the saved frozen_rank_blocks CSVs),
+   so the "averaging dilutes step-1's contribution" mechanism cannot apply to it
+   at all -- rank_extension does not average/merge anything; it concatenates.
+   The averaging-dilution mechanism is plausible but NOT provable for simple_avg
+   either, because no per-task adapter weight norms are logged for that family
+   (see Comment 1c for exactly what extra logging would settle it).
+
+2. The combined_loss_decomposition figure had no legend in OLD or NEW. Fixed
+   permanently in vit_lora_cifar100_full5step_n5.py (this analysis's only source
+   code change). "Blue" = the Base variant (no KD, no orth). The "total bends up
+   but parts don't" effect is a shared-log-axis illusion, not a bug: verified
+   total_loss == sum(components) to within 1e-6 in both runs (bookkeeping is
+   correct), and the Total-loss row is log-scaled while Train-CE is linear, and
+   both rows share their y-axis across all 4 variants in a family panel. Base's
+   own values only span 0.004-2.08 (simple_avg, NEW), but the Total-loss axis is
+   forced up to ~3232 by the Factor-Orth variant sharing the same panel -- so
+   Base's small, ordinary per-step CE reset (identical in both rows) LOOKS like
+   a much bigger "bend" on the compressed log axis than on the linear one. The
+   pattern is unchanged in the NEW run's regenerated figure.
+
+3. rank_extension's within-step RISING KD curve is confirmed to persist in NEW
+   (the reverted, non-4-module, non-head-lr-x10 baseline) at every CL step
+   transition (2,3,4,5): KD rises 26-35% from epoch 1 to epoch 2 of every new
+   step while CE simultaneously drops 73-78% in that same epoch. Teacher wiring
+   and KD hyperparameters are confirmed correct (previous-step frozen model,
+   detached logits, T=2.0, weight=1.0, identical to simple_avg's). This is a
+   structural property of rank_extension's architecture (old blocks stay ACTIVE
+   in the forward pass while new blocks train into the SAME weight, unlike
+   simple_avg's fully separate per-step adapters), not a bug.
+
+4. Verdict: the revert WORKS as intended.
+   - RankExt+FactorOrth+KD: back to 67.66% all_seen / 71.70% first_step in NEW,
+     bit-identical to OLD, and healthy (not the 0.10% first_step collapse seen
+     mid-experiment when rank_extension briefly inherited the 4-module/calib
+     setup). TARGET MET.
+   - Rescaled combined SimpleAvg+FactorOrth+KD: improved from 63.71% (CALIBFIX)
+     to 69.13% (NEW), i.e. +5.42pp, but still BELOW the 71.5% floor set by
+     SimpleAvg+KD alone, and well below the 75.5% set by SimpleAvg+FactorOrth
+     alone. TARGET PARTIALLY MET -- direction is right, magnitude is not there
+     yet.
+   - SimpleAvg+FactorOrth: unchanged at 75.54% all_seen (bit-identical to
+     CALIBFIX, as expected -- this method was untouched by the revert).
+     SANITY CONFIRMED.
+
+================================================================================
+COMMENT 1 -- "IT'S STILL WEIRD THAT FACTOR-ORTH DAMAGES OLD-CLASS PERFORMANCE
+THAT MUCH"
+================================================================================
+
+1a. QUANTIFYING THE DAMAGE, BOTH RUNS, BOTH FAMILIES
+    (analysis_revert_run/comment1_factor_orth_first_step_damage.csv)
+
+  first_step accuracy, orth variant minus its non-orth sibling:
+
+    pair                                          OLD delta    NEW delta
+    ------------------------------------------------------------------
+    simple_avg vs +FactorOrth                       -53.25pp     -10.80pp
+    simple_avg_kd_T2 vs +FactorOrth+KD               -62.70pp      -8.45pp
+    rank_extension vs +FactorOrth                     +1.45pp      +1.45pp  (unchanged)
+    rank_extension_kd_only_T2 vs +FactorOrth+KD      +12.15pp     +12.15pp  (unchanged)
+
+  Two clean, opposite findings:
+    - simple_avg family: factor-orth genuinely devastates first_step accuracy
+      in OLD (both pairs), and the revert/rescaling did NOT touch this --
+      simple_avg's config is byte-identical between CALIBFIX and NEW. What
+      changed the damage from ~-53/-63pp (OLD) to ~-9/-11pp (NEW) is the prior
+      calibfix run's classifier calibration + 4-module expansion, already in
+      place before this revert. The damage is smaller now but not eliminated.
+    - rank_extension family: factor-orth does NOT damage first_step accuracy in
+      EITHER run -- it is neutral for the non-KD pair and clearly helps
+      (+12.15pp) for the KD pair. These numbers are bit-identical between OLD
+      and NEW because the revert restored rank_extension to exactly its OLD
+      configuration (2-module, head_lr x1, no calibration) -- same seed, same
+      hyperparameters, same result.
+
+  Conclusion: "factor-orth damages old-class performance" is true only for
+  simple_avg, not for rank_extension. Any explanation must be specific to how
+  simple_avg merges per-task adapters, not a property of factor-orth in general.
+
+1b. MECHANISM TESTING AGAINST THE DATA
+
+  Mechanism (i): "averaging orthogonal updates dilutes/overwrites step-1's
+  directions after merging" -- RULED OUT for rank_extension, UNTESTABLE (not
+  ruled out) for simple_avg.
+    - rank_extension: this mechanism requires that the old block gets modified
+      when new-step deltas are merged in. The saved
+      rank_extension_orth_factor_lam_50_step_{2,3,4,5}_frozen_rank_blocks.csv
+      files report A_max_abs_diff = B_max_abs_diff = 0.0 at every single step
+      transition, both in the plain and orth variant. The frozen blocks are
+      never touched -- rank_extension concatenates new rank onto old rank
+      (total_rank = frozen_rank + new_rank, confirmed in rank_structure.csv),
+      it does not average/merge weights at all. There is nothing for this
+      mechanism to act on, which is exactly why rank_extension shows no damage.
+    - simple_avg: this family genuinely does merge (average) independently-
+      trained per-task adapters, so the mechanism is structurally *possible*.
+      But no per-task adapter weight norms or overlap/cosine-similarity data
+      are logged anywhere for simple_avg (no rank_structure/trainable_parameters
+      equivalent exists for this family in tables/) -- only aggregate losses and
+      final accuracies are saved. From what IS saved, the per-task accuracy
+      breakdown (comment1_simple_avg_per_task_accuracy_isolation.csv) shows the
+      OLD-run collapse is ISOLATED almost entirely to step 1 (task 1):
+        step:                  1      2      3      4      5
+        simple_avg (OLD):    54.05  51.40  46.50  47.15  41.05
+        +FactorOrth (OLD):    0.80  78.85  77.10  72.00  83.90
+      Steps 2-5 for the orth variant are all healthy (72-84%) -- only step 1 is
+      near-zero. This is NOT a smooth/graded forgetting curve (which a general
+      "dilution across all steps" story would predict); it looks like an
+      all-or-nothing failure specific to task 1's slot in the merge. This is
+      consistent with, but does not prove, a dilution/cancellation mechanism
+      concentrated on step 1's contribution specifically.
+    - The per-epoch loss history rules out a TRAINING-time bug at step 1: for
+      simple_avg_factor_orth, factor_orth_loss_raw/weighted = 0.0 for every
+      epoch of cl_step==1 in both runs (correctly inactive -- no prior task to
+      be orthogonal to yet), and train_ce_loss converges cleanly to 0.01-0.04.
+      Step 1's OWN adapter is trained perfectly well. Whatever destroys its
+      accuracy happens afterward, at MERGE time, when steps 2-5's adapters
+      (which ARE penalized for overlapping with step 1's subspace during their
+      own training) get averaged in.
+
+  Mechanism (ii): "factor-orth distorts merged weight norm balance" -- UNTESTABLE
+  from saved data for either family. No per-adapter or per-merge weight norms
+  are logged anywhere in tables/ for simple_avg (rank_extension's
+  trainable_parameters.csv logs shapes/numel only, not values or norms). This
+  cannot be confirmed or ruled out with what is currently saved.
+
+1c. PLAIN-LANGUAGE CAUSAL EXPLANATION (see also supervisor_paragraphs.txt)
+
+  For rank_extension, this is settled: the family literally cannot exhibit
+  merge-dilution, because "merging" never happens -- old rank blocks are frozen
+  and concatenated, never averaged, confirmed to 0.0 numerical drift across
+  every step. Factor-orth is at worst a redundant nudge there, and it measurably
+  helps when combined with KD.
+
+  For simple_avg, the honest answer is: the failure is real, isolated
+  specifically to step 1 (not a general forgetting gradient), happens at merge
+  time rather than during step 1's own training, and is substantially (not
+  fully) fixed by classifier calibration + wider target-module coverage --
+  but the exact mechanism (does averaging in orthogonality-constrained later
+  deltas specifically cancel/dilute step 1's weight directions, or inflate
+  their relative norm?) CANNOT be pinned down from the CSVs currently saved,
+  because no per-task LoRA delta weight norms or pairwise overlap/cosine-
+  similarity between step 1's delta and each later step's delta are logged.
+
+  EXTRA LOGGING THAT WOULD SETTLE IT: for simple_avg (all 4 variants), save
+  per-CL-step, pre-merge: (a) the Frobenius norm of each task's LoRA delta
+  weight ||dW_t|| per target module, and (b) the cosine similarity between
+  dW_1 and each dW_t (t=2..5) per target module, both before and immediately
+  after the final average. If factor-orth systematically increases ||dW_t||
+  for t>1 relative to ||dW_1|| and/or drives cos(dW_1, dW_t) toward strongly
+  negative (destructive, not just orthogonal) values specifically for t>1,
+  that would confirm the dilution/cancellation mechanism directly.
+
+================================================================================
+COMMENT 2 -- "WHAT'S THE LEGEND OF combined_loss_decomposition? STRANGE THAT
+THE BLUE CURVE BENDS UP IN TOTAL WHEN ITS PARTS DON'T"
+================================================================================
+
+2a. FACTUAL ISSUE -- FIXED PERMANENTLY
+  Confirmed: plots/combined_loss_decomposition.png in BOTH OLD and NEW runs has
+  no legend and no scale annotation anywhere on the figure (verified by reading
+  the plotting code, vit_lora_cifar100_full5step_n5.py, and the saved PNGs).
+  Fixed at the source (the only code change made in this analysis):
+    - Added a shared fig.legend() with the same VCOL/VSTYLE per-variant mapping
+      (Base / KD (T=2) / Factor-Orth / KD + Factor-Orth) used by every other
+      per-variant plot in the script.
+    - Each row's y-axis label now states "(log scale)" or "(linear scale)" --
+      rows 0-1 (Train CE, KD weighted) are linear; rows 2-3 (Factor-Orth
+      weighted, Total train loss) are log.
+  This is a permanent fix to the generator function, not a one-off patch --
+  every future run of vit_lora_cifar100_full5step_n5.py will produce this
+  figure with a legend from now on.
+
+2b. THE SUBSTANTIVE PUZZLE -- "BLUE" IDENTIFIED, BEND EXPLAINED WITH NUMBERS
+  Per the plot code's VCOL mapping, "Blue" (#1f77b4) = the "Base" variant --
+  plain simple_avg / plain rank_extension, no KD, no factor-orth.
+
+  Tested against comparison_all_methods_3runs.csv / comment2_axis_range_and_
+  bookkeeping_check.csv, OLD run:
+    (iv) Bookkeeping bug in total's computation -- REJECTED. Reconstructing
+         total = train_ce + kd_weighted + factor_orth_weighted + delta_trace_
+         weighted and comparing to the logged train_total_loss column: max
+         mismatch across all methods/epochs is 5.5e-6 (floating-point noise).
+         Total is computed correctly everywhere, including for Base.
+    (iii) Per-batch vs per-epoch averaging mismatch -- REJECTED. Both the
+         "Train CE" row and the "Total train loss" row are plotted from the
+         SAME per-epoch dataframe (E = epoch_table()); no batch-level data is
+         used anywhere in this figure.
+    (ii) A component included in total but not plotted as its own row --
+         REJECTED for Base specifically: for Base, kd_loss_weighted and
+         factor_orth_loss_weighted are exactly 0.0 at every epoch (confirmed),
+         so train_total_loss == train_ce_loss exactly for Base, in both rows.
+         Nothing hidden is being added to Base's total.
+    (i) Log-scale visual compression across a SHARED axis -- CONFIRMED, with
+         numbers. Base's own total-loss values range 0.0068-2.08 in OLD's
+         SimpleAvg panel (a ~307x span -- this is just the ordinary "new step
+         starts, CE spikes, then decays over 9 epochs" pattern, identical in
+         both the Train-CE and Total-loss rows since Total==CE for Base). But
+         the Total-loss row's y-axis is shared across all 4 variants in that
+         panel and is forced up to 3334.8 by simple_avg_factor_orth_kd_T2 (the
+         Factor-Orth weighted spike documented separately in the source code's
+         own comments, reaching >3000x train_ce_loss at the first epoch of each
+         step). On a log axis spanning 0.007-3335 (5.7 decades), Base's own
+         2.5-decade climb from 0.007 to 2.08 occupies a large, visually
+         prominent fraction of the panel and reads as a dramatic "bend" --
+         whereas on the Train-CE row (linear, axis capped near 4.09, the max
+         CE value across all 4 variants), the identical climb to 2.08 is just
+         over half the panel height and reads as an unremarkable bump. Same
+         numbers, same shape, very different visual impression purely because
+         one row is log and shared with curves 100-1000x larger. This effect
+         is smaller (though still present) in the RankExt panel, where the
+         shared-axis ratio is only ~12x (max total 43.45) rather than ~1600x.
+
+2c. REGENERATED FIGURE, NEW RUN
+  analysis_revert_run/combined_loss_decomposition_NEW_run_legend_fixed.png
+  (built by analysis_revert_run/regenerate_combined_loss_decomposition.py,
+  reading only R3/results_revert_20260716_light/.../tables/training_loss_
+  history_by_epoch.csv -- no training). The legend now makes it immediately
+  visible that the bottom-row curve that "bends up" at every step boundary is
+  Base (blue), and that every other variant does the exact same thing at every
+  step boundary too (a fresh CL step legitimately starts at higher CE before
+  converging) -- it is not unique to Base and not growing over time. The bend
+  STILL APPEARS in the NEW run (Base's own range: 0.004-1.26 in SimpleAvg,
+  shared axis still forced to 3232 by Factor-Orth) -- expected, since this is
+  an axis-sharing/log-scale artifact of the plotting choice, not something the
+  revert changed or could change.
+
+================================================================================
+COMMENT 3 -- "THE KD FOR rank_ext LOOKS VERY STRANGE"
+================================================================================
+
+3a. CONFIRMED PERSISTENT IN THE NEW (REVERTED BASELINE) RUN
+  rank_extension_kd_only_T2, NEW run, kd_loss_weighted, epoch 1 -> epoch 2 of
+  every CL step transition (training_loss_history_by_epoch.csv):
+    step   kd@epoch1   kd@epoch2   kd rise    ce@epoch1   ce@epoch2   ce drop
+    2        1.018       1.286     +26.3%       3.677       0.941     -74.4%
+    3        0.797       1.037     +30.2%       3.183       0.854     -73.2%
+    4        0.750       1.012     +34.9%       3.300       0.869     -73.7%
+    5        0.679       0.900     +32.6%       2.989       0.655     -78.1%
+  Rises at EVERY step transition (2,3,4,5), then decays smoothly for the
+  remaining 7 epochs of each step -- the exact pattern the supervisor flagged,
+  and it is present in the reverted, 2-module, head_lr-x1, no-calibration
+  baseline. This rules out the 4-module/head-LR-x10 era as the cause: the NEW
+  run's rank_extension numbers are bit-identical to OLD's in every column
+  (confirmed revert), and OLD already had this rising pattern. It is not an
+  artifact introduced by the since-reverted changes.
+  Contrast, same run: simple_avg_kd_T2 decays MONOTONICALLY from epoch 1 at
+  every step (e.g. step 2: 1.969 -> 1.315 -> 1.192 -> ... -> 1.022, never rising).
+
+3b. RULING OUT BUGS
+  - Teacher wiring (vit_lora_cifar100_full5step_n5.py, ~line 4406-4418):
+    teacher_model is built via build_rank_extension_model(previous_rank_state=...,
+    step_idx=step_idx-1, ...) -- explicitly the PREVIOUS step's state, eval()'d,
+    requires_grad=False on every parameter, asserted. The student-side KD loss
+    additionally calls teacher_logits = teacher_outputs.logits.detach() before
+    computing KL-divergence. Teacher is correct and frozen; no off-by-one or
+    non-detached-gradient bug found.
+  - Temperature/weight configuration (method_hyperparameter_summary.csv, NEW
+    run): rank_extension_kd_only_T2 has kd_temperature=2.0, kd_weight=1.0,
+    identical to simple_avg_kd_T2's configuration. No mismatch. kd_weight is
+    correctly 0.0 at step 1 for both families (no teacher exists yet).
+  Nothing in the wiring or hyperparameters explains the difference between the
+  two families' KD shapes -- the explanation has to be structural.
+
+3c. SUPERVISOR-READY EXPLANATION (also in supervisor_paragraphs.txt)
+  rank_extension keeps its OLD (frozen) rank blocks ACTIVE in the forward pass
+  while the NEW step's rank block trains (old_active_in_forward=True, confirmed
+  in rank_structure.csv) -- both blocks feed the SAME weight matrix. simple_avg
+  instead trains a fully separate, independent adapter each step and only
+  merges by averaging at the very end. This means: at the start of a new
+  rank_extension step, the model's output is still dominated by the frozen old
+  blocks (close to the teacher's own output, so KD divergence starts low), and
+  as the new block rapidly fits the new classes (CE drops ~74-78% in the very
+  first epoch-to-epoch transition, confirmed above), that fitting necessarily
+  perturbs the SAME shared weight the old blocks also depend on, pulling the
+  combined output away from the frozen teacher's distribution -- hence KD rises
+  in lockstep with CE's steepest drop, before both settle down together for the
+  rest of the step. simple_avg's independent per-step adapter has no shared
+  weight to perturb, so its KD term has nothing analogous to react to and just
+  decays smoothly. This is the "frozen old blocks force new ranks to drift from
+  the teacher to learn new classes" hypothesis, and it is well-supported: correct
+  teacher/hyperparameters rule out a bug, the pattern is exactly reproduced at
+  every one of the 4 step transitions in the reverted baseline, and the timing
+  match (KD rise concentrated in the exact epoch of steepest CE drop, every
+  time) is the signature of a shared-weight tug-of-war, not noise.
+
+================================================================================
+RUN VERDICT -- NEW (REVERT) vs CALIBFIX (20260716_133338) vs OLD (20260715)
+================================================================================
+
+- RankExt+FactorOrth+KD restored? YES. all_seen 67.66% / first_step 71.70% in
+  NEW, bit-identical to OLD (same config, same seed -> same result), a full
+  recovery from CALIBFIX's regime (all_seen 62.89%, and -- per the family's
+  non-KD sibling rank_extension_orth_factor_lam_50 -- first_step had collapsed
+  to 0.10% under the since-reverted 4-module/head-lr-x10 settings). Target met.
+
+- Rescaled combined SimpleAvg+FactorOrth+KD (simple_avg_factor_orth_kd_T2)
+  improved above 71.5 / toward 75.5? PARTIALLY. all_seen: OLD 64.16% ->
+  CALIBFIX 63.71% -> NEW 69.13% (+5.42pp vs CALIBFIX). Improved, and now above
+  its own OLD-run baseline, but still BELOW both reference floors: SimpleAvg+KD
+  alone (71.51%) and SimpleAvg+FactorOrth alone (75.54%). The 0.5x/0.5x
+  rescaling helped but did not fully resolve the combined-method magnitude
+  conflict documented in the script's own COMBINED_LOSS_SCALE_ENABLED comment
+  block (factor-orth's transient spike at each step's first epoch was ~100-
+  3200x train_ce_loss before rescaling). Target partially met -- a further
+  lever (e.g. the already-implemented but currently OFF
+  COMBINED_ORTH_WARMUP_ENABLED) is the natural next experiment.
+
+- SimpleAvg+FactorOrth sanity (unchanged by this revert): all_seen 75.54% in
+  both CALIBFIX and NEW (bit-identical, as expected since this method's config
+  was not touched). Confirmed.
+
+FULL PER-METHOD TABLE: analysis_revert_run/comparison_all_methods_3runs.csv
+(first_step/later_steps/all_seen/forgetting/backward_transfer, all 8 methods,
+all 3 runs, with delta_CALIBFIX_minus_OLD / delta_NEW_minus_OLD / delta_NEW_
+minus_CALIBFIX columns for each metric.)
+
+  method                                     OLD all_seen  CALIBFIX all_seen  NEW all_seen
+  ------------------------------------------------------------------------------------------
+  rank_extension                                   21.82             40.60         21.82
+  rank_extension_kd_only_T2                        58.85             63.51         58.85
+  rank_extension_orth_factor_lam_50                34.03             34.91         34.03
+  rank_extension_orth_factor_lam_50_kd_T2          67.66             62.89         67.66
+  simple_avg                                       48.02             72.09         72.09
+  simple_avg_factor_orth                           62.53             75.54         75.54
+  simple_avg_factor_orth_kd_T2                     64.16             63.71         69.13
+  simple_avg_kd_T2                                 41.84             71.51         71.51
+
+================================================================================
+DELIVERABLES IN analysis_revert_run/
+================================================================================
+  report.txt                                              - this file
+  supervisor_paragraphs.txt                                 - standalone supervisor-ready text for comments 1 and 3
+  build_comparison.py                                       - builds the 3-run comparison table (rerunnable)
+  comparison_all_methods_3runs.csv                          - full per-method, per-run, per-metric table with deltas
+  raw_final_metrics_all_runs_long.csv                       - long-format raw final_metrics_all_methods.csv, all 3 runs, tagged by run
+  comment1_factor_orth_first_step_damage.csv                - orth-vs-base first_step deltas, both families, both runs
+  comment1_simple_avg_per_task_accuracy_isolation.csv       - per-task (step) accuracy, simple_avg vs +FactorOrth, OLD vs NEW
+  comment2_axis_range_and_bookkeeping_check.csv             - shared-axis range summary + total-vs-sum-of-parts bookkeeping check
+  regenerate_combined_loss_decomposition.py                 - regenerates the NEW run's decomposition figure from saved CSVs (rerunnable, no training)
+  combined_loss_decomposition_NEW_run_legend_fixed.png      - regenerated figure, NEW run, with legend + scale labels
+  (source fix): vit_lora_cifar100_full5step_n5.py combined_loss_decomposition
+  block (~line 5830) now emits a legend and linear/log axis labels permanently.

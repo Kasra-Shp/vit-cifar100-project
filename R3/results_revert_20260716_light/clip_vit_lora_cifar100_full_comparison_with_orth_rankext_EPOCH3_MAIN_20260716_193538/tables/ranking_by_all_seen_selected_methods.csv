@@ -1,0 +1,9 @@
+method,rank_all_seen,first_step,later_steps,all_seen,old_new_gap
+simple_avg_factor_orth,1,71.2,76.625,75.53999999999999,-5.424999999999997
+simple_avg,2,82.0,69.6125,72.09,12.387500000000003
+simple_avg_kd_T2,3,88.9,67.16250000000001,71.50999999999999,21.737499999999997
+simple_avg_factor_orth_kd_T2,4,80.45,66.3,69.13,14.150000000000006
+rank_extension_orth_factor_lam_50_kd_T2,5,71.7,66.64999999999999,67.66,5.050000000000011
+rank_extension_kd_only_T2,6,59.550000000000004,58.675,58.85,0.8750000000000071
+rank_extension_orth_factor_lam_50,7,2.25,41.975,34.03,-39.725
+rank_extension,8,0.8,27.075,21.82,-26.275

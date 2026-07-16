@@ -1,0 +1,279 @@
+================================================================================
+STRICT REVIEW: NUMBERS-BACKED PROOFS + INSTRUMENTED-RUN CODE CHANGES
+================================================================================
+Standard held throughout: every claim below is either a demonstrated code fix
+(verified by py_compile/pyflakes and, where applicable, a regenerated figure
+or dry-run) or a numbers-backed proof from saved CSVs. No training was run
+this session. Runs used: OLD (.../20260715_014445), CALIBFIX (.../
+20260716_133338), NEW/revert (results_revert_20260716_light/.../20260716_193538).
+Replay/rehearsal was not touched and remains forbidden -- nothing in this
+session adds it.
+
+================================================================================
+PART A -- ANALYSIS ONLY
+================================================================================
+
+--------------------------------------------------------------------------
+A1. Decomposition figure: proof, then redesign
+--------------------------------------------------------------------------
+
+a) PROOF: for the Base variant (simple_avg, NEW run), train_ce_loss and
+   train_total_loss are numerically IDENTICAL at every one of the 18 rows
+   checked (steps 2-3, all 9 epochs each) -- confirmed by direct comparison
+   (see the printed table in this session's transcript; also true for
+   rank_extension's Base variant, same steps). This is expected (KD=orth=0
+   for Base) but is now DEMONSTRATED, not assumed: kd_loss_weighted and
+   factor_orth_loss_weighted are NaN/0 for Base at every epoch, so
+   total = ce exactly, to floating-point precision.
+
+   Given the two values are identical, ANY visual difference between the old
+   figure's "Train CE" row (linear) and "Total loss" row (log) for this curve
+   is 100% attributable to the axis/rendering choice, not to the data. Built
+   analysis_strict_review/A1_proof_same_data_two_axes.png to show this
+   directly: the SAME 45-number sequence (Base variant, all 5 steps),
+   rendered once on a linear axis [0, 2.60] (matching the family's real
+   "Train CE" row range) and once on a log axis [0.0042, 3232] (matching the
+   family's real "Total loss" row range, forced up by simple_avg_factor_
+   orth's spike).
+
+   What the rendered comparison actually shows: on the LINEAR axis, each
+   step's spike-then-recovery reads as "sharp spike, then dead flat" -- the
+   decay to near-zero is visually indistinguishable from "settled." On the
+   LOG axis, the exact same numbers read as "spike, then a viSibly still-
+   sloped, continuously-declining ramp" -- because a log axis never renders
+   exponential decay toward zero as visually "flat" (constant proportional
+   change keeps producing constant negative slope on log paper, all the way
+   down). The qualitative impression differs even though the data does not:
+   linear reads as "converges, then stays flat"; log reads as "never quite
+   stops moving." That is the likely source of "bends up" -- not that the
+   log panel makes the spike itself look bigger (fractionally, the spike
+   occupies a similar share of panel height on both axes: 44.6%->0.25% on
+   linear vs 41.5%->3.3% on log, i.e. comparable), but that the log panel
+   never shows the "flatline" contrast that would let a reader mentally file
+   the rest of the step as "done, no further change."
+
+b) REDESIGN, implemented and regenerated (permanent code fix):
+   vit_lora_cifar100_full5step_n5.py's combined_loss_decomposition block
+   (search "STRICT-REVIEW REDESIGN") now uses ONE PANEL PER VARIANT (4 rows =
+   Base/KD/Factor-Orth/KD+Factor-Orth, 2 cols = family), with Train CE, KD
+   weighted, Factor-Orth weighted, and TOTAL all plotted together on a SINGLE
+   shared log axis per panel, plus one shared legend (previously there was
+   NONE). "Total = sum of the other three" is now checkable BY EYE within a
+   single panel: e.g. in the Base row, TOTAL (thick black) sits exactly on
+   top of Train CE (blue) because the other two are zero; in the Factor-Orth
+   rows, TOTAL visibly spikes in lockstep with the red Factor-Orth line at
+   each step start. Regenerated from the NEW run's saved CSVs (no training):
+   analysis_strict_review/combined_loss_decomposition_NEW_run_redesigned.png.
+   Verified total==sum-of-parts to 2.8e-6 max error across all methods/epochs
+   in the NEW run (the same bookkeeping check as the previous analysis,
+   re-run here). Caption/labels state the log scale explicitly on every
+   y-axis.
+
+--------------------------------------------------------------------------
+A2. Per-step CE levels: what's explained, what isn't
+--------------------------------------------------------------------------
+
+a) TABLE (analysis_strict_review/A2_final_epoch_ce_by_method_step.csv):
+   final-epoch train/val CE per (method, step), all 8 methods, NEW run, plus
+   step1-vs-mean(steps2-5) gaps:
+
+   method                                    train_step1  train_mean(2-5)  train_gap   val_step1  val_mean(2-5)  val_gap
+   simple_avg                                    0.0109         0.0121      +0.0012      0.2166       0.2508     +0.0342
+   simple_avg_kd_T2                              0.0116         0.4295      +0.4179      0.2271       0.5964     +0.3693
+   simple_avg_factor_orth                        0.0116         0.0173      +0.0057      0.2271       0.1462     -0.0809
+   simple_avg_factor_orth_kd_T2                  0.0116         0.2696      +0.2581      0.2271       0.4317     +0.2047
+   rank_extension                                0.0238         0.0280      +0.0042      0.2266       0.1993     -0.0273
+   rank_extension_kd_only_T2                     0.0238         0.5799      +0.5562      0.2266       0.7581     +0.5314
+   rank_extension_orth_factor_lam_50             0.0238         0.0431      +0.0193      0.2266       0.1673     -0.0593
+   rank_extension_orth_factor_lam_50_kd_T2       0.0238         0.6351      +0.6113      0.2266       0.7774     +0.5507
+
+b) EXPLAINED vs UNEXPLAINED, tested against the data (not assumed):
+
+   KD variants -- FULLY EXPLAINED as the CE-KD equilibrium, not step-index
+   deterioration:
+     - All 4 KD-using methods show LARGE train gaps (+0.258 to +0.611) and
+       large val gaps (+0.205 to +0.551). All 4 non-KD methods show gaps an
+       order of magnitude smaller (+0.001 to +0.019 train; -0.081 to +0.034
+       val). The split is clean and total: KD presence, not step index,
+       predicts the gap.
+     - Directly tested whether this is an ACCUMULATING effect (would predict
+       the KD-vs-non-KD gap growing across steps 2->5): computed per-step
+       train_ce(KD) - train_ce(non-KD) for both families
+       (A2_kd_equilibrium_gap_by_step.csv). Result: the gap SHRINKS
+       monotonically at every step for both families --
+         simple_avg:      0.529 (S2) -> 0.398 (S3) -> 0.376 (S4) -> 0.367 (S5)
+         rank_extension:  0.682 (S2) -> 0.560 (S3) -> 0.509 (S4) -> 0.457 (S5)
+       This is the OPPOSITE of an accumulating-interference signature --
+       proof, not inference, that the elevated CE is a standing multi-
+       objective equilibrium (minimizing CE+kd_weight*KD trades off some CE
+       fit for staying near the teacher), present from the first KD-active
+       step and NOT worsening as more steps accumulate.
+
+   Non-KD variants -- NO evidence of a systematic step-index mechanism:
+     - Correlation of final-epoch train_ce_loss with step index (1..5), all
+       4 non-KD methods: simple_avg -0.165, simple_avg_factor_orth -0.041,
+       rank_extension -0.008, rank_extension_orth_factor_lam_50 +0.423 (only
+       one of four is even weakly positive, and it is contradicted by the
+       SAME method's val_ce correlation of -0.725). No consistent positive
+       trend across methods -- this rules against hypothesis (i) "harder
+       optimization from a carried-forward/merged state" and (ii)
+       "accumulated-adapter interference," both of which predict a
+       consistent positive correlation with step index across non-KD
+       methods. Val CE correlations for non-KD methods are mostly NEGATIVE
+       (-0.110 to -0.834) -- later steps trend BETTER if anything.
+     - Hypothesis (iii), LR-schedule-vs-step-index interaction: REJECTED by
+       direct code inspection, not inference. get_training_args() (~line
+       1560) computes warmup_steps and total_steps FRESH from that step's own
+       train_dataset_len and epochs every time it is called; get_training_args
+       is invoked inside the per-step training loop (confirmed 5 call sites,
+       all inside `for step_idx in range(NUM_STEPS)` loops) with a brand-new
+       TrainingArguments/Trainer/optimizer/scheduler each step -- no
+       scheduler state, momentum, or step-count carries over between CL
+       steps. Every step gets an identical-shape (relative) warmup+cosine
+       schedule. There is no mechanism in the code for step index to interact
+       with the LR schedule.
+     - Residual non-KD gaps (+0.001 to +0.019 train) are consistent with
+       ordinary per-class-group task-difficulty noise (5 different random
+       20-class subsets have different inherent difficulty) -- non-monotonic
+       across steps (e.g. rank_extension: 0.0238, 0.0182, 0.0410, 0.0404,
+       0.0124 -- up, down, up, up, down), not a directional trend.
+
+c) VERDICT: the elevated later-step CE is FULLY explained for KD methods (a
+   standing, non-accumulating CE-KD equilibrium -- confirmed shrinking, not
+   growing, across steps) and NOT present as a systematic effect for non-KD
+   methods (near-zero, non-monotonic gaps; all three candidate mechanisms
+   tested and rejected/unsupported). This does NOT threaten fairness of any
+   thesis comparison: the KD-vs-non-KD CE gap is an expected property of the
+   KD objective itself (present symmetrically in both families, comparable
+   magnitude), not a confound that advantages one method over another, and
+   the non-KD "gap" is noise-level and non-directional.
+
+--------------------------------------------------------------------------
+A3. KD-rise documentation figure
+--------------------------------------------------------------------------
+analysis_strict_review/A3_rankext_kd_rise_vs_ce_drop.png -- dual-axis plot,
+rank_extension_kd_only_T2, NEW run, full 5-step run. Left axis: Train CE
+(blue). Right axis: KD weighted loss (red). Shaded bands mark epoch1->epoch2
+of each new step. Alignment table (A3_kd_rise_ce_drop_alignment.csv):
+
+  step   kd_epoch1  kd_epoch2  kd_rise%   ce_epoch1  ce_epoch2  ce_drop%
+  2         1.018      1.286    +26.3%       3.677      0.941    -74.4%
+  3         0.797      1.037    +30.2%       3.183      0.854    -73.2%
+  4         0.750      1.012    +34.9%       3.300      0.869    -73.7%
+  5         0.679      0.900    +32.6%       2.989      0.655    -78.1%
+
+At every one of the 4 step transitions, the KD rise and the CE drop land in
+the exact same epoch. This is the visual evidence for the already-verified
+structural explanation (frozen old rank blocks stay active in the forward
+pass and share the same weight the new block is rapidly updating to fit new
+classes; simple_avg's fully independent per-step adapters show no such rise,
+confirmed by contrast in the same run: simple_avg_kd_T2 decays monotonically
+from epoch 1 at every step, e.g. step 2: 1.969->1.315->1.192->...->1.022).
+
+================================================================================
+PART B -- CODE CHANGES FOR ONE INSTRUMENTED RUN
+================================================================================
+Full detail and line numbers: analysis_strict_review/CHANGES.md. Summary:
+
+B1. log_merge_mechanism() added (vit_lora_cifar100_full5step_n5.py, near
+    simple_average_deltas()), hooked into run_simple_avg_variant() right
+    after the merge. Logs, per target module, per task: pre-merge ||dW_t||
+    and cos(dW_1, dW_t); post-merge merged-delta norm and cos(dW_1, merged).
+    Writes tables/merge_mechanism_by_method_step.csv for all 4 simple_avg
+    variants. Diagnostic-only (CPU tensor norms/dot-products on data already
+    computed regardless of this change); cannot alter training. Dry-run
+    verified on synthetic data (analysis_strict_review/
+    dryrun_merge_mechanism_logging.py -> dryrun_merge_mechanism.csv): a
+    "healthy" random-delta case reproduces the theoretical 1/sqrt(5)
+    variance-reduction ratio (0.439 logged vs 0.447 theoretical) and an
+    engineered "destructive dilution" case is correctly flagged
+    (cos(dW1,merged) = -0.997, merged_norm_over_mean_individual_norm = 0.566).
+    This will let the next run PROVE (not hypothesize) whether factor-orth's
+    simple_avg first_step damage is caused by later-step deltas cancelling
+    step 1's direction on merge.
+
+B2. COMBINED_ORTH_WARMUP_ENABLED: False->True. COMBINED_LAMBDA_ORTH_SCALE:
+    0.5->0.3 (lambda 25->15). COMBINED_KD_WEIGHT_SCALE: left at 0.5 (NOT
+    raised to ~0.7) -- justified against the NEW run's own numbers: at the
+    conflict point (local_epoch 1-2, steps 2-5), factor_orth_loss_weighted
+    still outweighs (ce+kd) by ~226x on average (44.9x@S2 up to 509.4x@S5)
+    even after the first halving -- a further lambda cut cannot fix this at
+    any reasonable value (even lambda=15 only gets to ~135x), so the warmup
+    (a timing fix) is the primary lever, not magnitude. At steady state
+    (local_epoch>=3), factor-orth is already only ~2.7% of (ce+kd) --
+    negligible, no evidence a further cut is needed (the 25->15 trim is a
+    small supplementary margin, not a response to steady-state dominance).
+    kd/ce at steady state is 1.873 for the combined method vs 1.757 for
+    simple_avg_kd_T2 itself (full strength, no orth) -- essentially the SAME
+    ratio despite half the kd_weight, i.e. KD is already behaving
+    proportionately, not starved -- so raising it further has no supporting
+    evidence and risks suppressing later_steps (already this method's
+    weakest metric vs its single-mechanism siblings: 66.30% vs
+    simple_avg_factor_orth's 76.63%). All exact numbers and the full
+    reasoning are in-line in the source code comments (search "STRICT-REVIEW
+    SECOND ITERATION"). Exceeding both single-mechanism components (75.54%)
+    remains an explicitly-labeled hypothesis under test, not a guaranteed
+    outcome.
+
+B3. RANKEXT_ORTH_LAMBDA_WARMUP_ENABLED: False->True. USE_RANKEXT_RANK_
+    SCHEDULE_WIDE: confirmed left False (single lever, verified by grep after
+    the edit). Re-checked the justifying step-boundary CE-ratio evidence
+    directly against the NEW/revert run specifically (not just the calibfix
+    run cited in the pre-existing comment): 1.64x/1.89x/2.31x/2.04x across
+    steps 2-5, with the raw orth violation collapsing 99.7-99.8% within one
+    epoch every time -- confirms the spike persists in the reverted baseline
+    and that a 1-epoch warmup window is appropriately sized.
+
+B4. SEED (=42) confirmed as the only randomness-controlling constant in the
+    file (no second hardcoded seed found). Comment expanded to state this and
+    to point at every place it is now logged. Added a "seed" column to
+    cfg_df() (-> hyperparameters_by_method.json) and propagated it into
+    hyperparameter_consistency_check.csv, method_hyperparameter_summary.csv,
+    supervisor_selected_accuracy_comparison.csv, final_metrics_all_methods.csv,
+    and training_loss_history_by_epoch.csv (run_config.json already had it).
+    A multi-seed sweep now requires changing exactly one line.
+
+FULL FINAL PER-METHOD CONFIG TABLE (all 8 methods, values parsed back out of
+the edited source file, not hand-transcribed -- see
+analysis_strict_review/print_final_config_table.py and
+final_per_method_config_table_for_next_run.csv):
+
+  method                                    family          target_modules                  head_lr  calib  epochs  lr       lambda_orth  kd_weight  combined_warmup  rankext_warmup  wide_sched  seed
+  simple_avg                                simple_avg      q,k,v,out                        10.0     True   9       5e-5     0.0          0.0        -                -               False       42
+  simple_avg_kd_T2                          simple_avg      q,k,v,out                        10.0     True   9       5e-5     0.0          1.0        -                -               False       42
+  simple_avg_factor_orth                    simple_avg      q,k,v,out                        10.0     True   9       5e-5     50.0         0.0        -                -               False       42
+  simple_avg_factor_orth_kd_T2              simple_avg      q,k,v,out                        10.0     True   9       5e-5     15.0         0.5        ON(1ep)          -               False       42
+  rank_extension                            rank_extension  q,v                              1.0      False  9       1e-4     0.0          0.0        -                -               False       42
+  rank_extension_kd_only_T2                 rank_extension  q,v                              1.0      False  9       1e-4     0.0          1.0        -                -               False       42
+  rank_extension_orth_factor_lam_50         rank_extension  q,v                              1.0      False  9       1e-4     50.0         0.0        -                ON(1ep)         False       42
+  rank_extension_orth_factor_lam_50_kd_T2   rank_extension  q,v                              1.0      False  9       1e-4     50.0         1.0        -                ON(1ep)         False       42
+
+================================================================================
+VERIFICATION
+================================================================================
+- python -m py_compile vit_lora_cifar100_full5step_n5.py -- clean.
+- python -m pyflakes vit_lora_cifar100_full5step_n5.py -- clean (exit 0).
+- log_merge_mechanism() dry-run on synthetic healthy + destructive-dilution
+  matrices -- arithmetic verified correct.
+- A1 redesign and A3 figure both regenerated end-to-end from the NEW run's
+  real saved CSVs (no training) -- plotting code runs correctly.
+- Final per-method config table reconstructed by parsing the actual edited
+  constants back out of the source file (not hand-typed) -- confirms every
+  flag lands where intended, with no stray lever accidentally flipped
+  (USE_RANKEXT_RANK_SCHEDULE_WIDE confirmed False for all methods).
+
+================================================================================
+DELIVERABLES IN analysis_strict_review/
+================================================================================
+  report.txt                                        - this file
+  CHANGES.md                                         - every code edit, with line numbers and rationale
+  A1_proof_same_data_two_axes.png                    - A1a numerical proof (same data, two axes)
+  combined_loss_decomposition_NEW_run_redesigned.png - A1b redesigned figure, regenerated from NEW run
+  regenerate_combined_loss_decomposition.py          - regenerates the above (rerunnable, no training)
+  A2_final_epoch_ce_by_method_step.csv               - A2a table
+  A2_kd_equilibrium_gap_by_step.csv                  - A2b accumulation test (gap shrinks, not grows)
+  A3_rankext_kd_rise_vs_ce_drop.png                  - A3 documentation figure
+  A3_kd_rise_ce_drop_alignment.csv                   - A3 numeric alignment table
+  make_A3_kd_rise_figure.py                          - regenerates the A3 figure (rerunnable, no training)
+  dryrun_merge_mechanism_logging.py / .csv            - B1 synthetic dry-run + output
+  print_final_config_table.py / final_per_method_config_table_for_next_run.csv - full config table, parsed from source

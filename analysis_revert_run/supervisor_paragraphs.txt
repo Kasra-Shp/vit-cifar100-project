@@ -1,0 +1,64 @@
+================================================================================
+SUPERVISOR-READY PARAGRAPHS
+================================================================================
+
+COMMENT 1 -- why factor-orth damages old-class (first_step) performance
+--------------------------------------------------------------------------
+
+This turns out to be specific to the simple-average family, not a general
+property of the factor-orthogonality penalty. In rank_extension, factor-orth
+cannot dilute step 1's contribution through merging because rank_extension
+never merges or averages weights at all: each CL step concatenates a fresh,
+frozen-once-trained rank block onto the previous ones, and we confirmed
+directly from the saved rank-structure logs that these frozen blocks have
+exactly zero numerical drift across every later step (max abs weight
+difference = 0.0, every step, every run). Consistent with that, factor-orth is
+neutral-to-helpful for rank_extension's first-step accuracy in both the old
+and reverted runs (+1.5pp / +12.2pp). The real damage is isolated to
+simple_avg, where it genuinely does merge independently-trained per-task
+adapters by averaging. There, factor-orth's first-step accuracy drop is severe
+in the old run (-53pp to -63pp depending on the KD pairing) and the collapse
+is oddly all-or-nothing: task 1's own accuracy goes to near-zero while tasks
+2-5 stay healthy (72-84%), and task 1's own training loss converges perfectly
+fine on its own (factor-orth is correctly inactive during step 1's training,
+since there's nothing to be orthogonal to yet) -- so whatever breaks it
+happens later, at merge time, when steps 2-5 (which ARE penalized for
+overlapping with step 1's subspace) get averaged in. The classifier
+calibration and wider target-module changes already in the pipeline cut this
+damage substantially (down to -9pp/-11pp in the reverted run) but did not
+eliminate it. I can't fully prove the exact merge-time mechanism (does
+averaging in the orthogonality-constrained later deltas literally cancel step
+1's weight directions, or just inflate their relative scale?) from what's
+currently logged -- we don't save per-task adapter weight norms or
+cross-task cosine similarity for simple_avg. If we want to close this out
+definitively, logging ||dW_t|| and cos(dW_1, dW_t) per target module, before
+and after the final merge, for all 4 simple_avg variants, would settle it in
+one more run.
+
+COMMENT 3 -- why rank_ext's KD curve rises before it decays
+--------------------------------------------------------------------------
+
+Confirmed this is structural and persists in the reverted baseline (2 modules,
+no head-LR multiplier, no calibration) -- so it isn't an artifact of the
+since-rolled-back 4-module/head-LR-x10 configuration. At every CL step
+transition (steps 2 through 5), the weighted KD loss rises 26-35% from the
+first to the second epoch of the new step, and that rise lands in exactly the
+same epoch where training CE drops fastest (73-78% in that one step). I
+checked the teacher wiring and hyperparameters directly in code and config:
+the teacher is correctly built from the previous step's frozen state (weights
+detached, requires_grad off, logits detached again before the KL term), and
+temperature/weight (T=2.0, weight=1.0) are identical to simple_avg's KD
+setup -- there's no bug in either. The difference is architectural:
+rank_extension keeps its old, frozen rank blocks active in the forward pass
+alongside the new step's block, so both write into the same shared weight.
+At the start of a new step the model's output is still dominated by the old
+(teacher-matching) blocks, so KD starts low; as the new block rapidly learns
+the new classes, that update necessarily perturbs the same shared weight the
+old blocks depend on, pulling the combined output away from the frozen
+teacher just as CE is improving fastest -- then both settle down together for
+the rest of the step. simple_avg trains a fully independent adapter per step
+with nothing shared to perturb, which is exactly why its KD curve just decays
+smoothly instead. In short: the new rank block is "spending" some KD alignment
+to buy fast adaptation to new classes, and it pays that back down over the
+rest of the step -- not a bug, and a reasonable structural tradeoff given how
+rank_extension is built.

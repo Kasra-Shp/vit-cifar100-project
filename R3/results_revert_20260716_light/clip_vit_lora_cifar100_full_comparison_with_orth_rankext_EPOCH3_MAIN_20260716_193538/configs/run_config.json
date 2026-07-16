@@ -1,0 +1,63 @@
+{
+  "base_output_dir": "results/clip_vit_lora_cifar100_full_comparison_with_orth_rankext_EPOCH3_MAIN_20260716_193538",
+  "batch_size": 16,
+  "classes_per_step": 20,
+  "classifier_calibration_by_family": {
+    "rank_extension": false,
+    "simple_avg": true
+  },
+  "combined_kd_weight_scale": 0.5,
+  "combined_lambda_orth_scale": 0.5,
+  "combined_loss_scale_enabled": true,
+  "combined_orth_warmup_enabled": false,
+  "combined_orth_warmup_epochs": 1.0,
+  "head_lr_multiplier_by_family": {
+    "rank_extension": 1.0,
+    "simple_avg": 10.0
+  },
+  "head_lr_multiplier_default": 10.0,
+  "kd_temperatures": [
+    2.0
+  ],
+  "kd_weight": 1.0,
+  "lambda_orth": 50.0,
+  "lora_alpha": 160,
+  "lora_dropout": 0.05,
+  "lora_rank": 80,
+  "model_checkpoint": "openai/clip-vit-base-patch16",
+  "num_steps": 5,
+  "optimizer": "AdamW",
+  "rankext_orth_lambda_warmup_enabled": false,
+  "rankext_orth_lambda_warmup_epochs": 1.0,
+  "rankext_rank_schedule_active": [
+    16,
+    32,
+    48,
+    64,
+    80
+  ],
+  "rankext_rank_schedule_wide_enabled": false,
+  "run_name": "clip_vit_lora_cifar100_full_comparison_with_orth_rankext_EPOCH3_MAIN",
+  "run_tag": "20260716_193538",
+  "scheduler": "cosine",
+  "seed": 42,
+  "target_modules_by_family": {
+    "rank_extension": [
+      "q_proj",
+      "v_proj"
+    ],
+    "simple_avg": [
+      "q_proj",
+      "k_proj",
+      "v_proj",
+      "out_proj"
+    ]
+  },
+  "target_modules_default": [
+    "q_proj",
+    "k_proj",
+    "v_proj",
+    "out_proj"
+  ],
+  "use_classifier_calibration_master_switch": true
+}

@@ -1,0 +1,361 @@
+method_name,display_name,step_id,epoch,train_ce_loss,val_ce_loss
+rank_extension,RankExt,1,1,2.156518216853056,0.3929214172363281
+rank_extension,RankExt,1,2,0.21415291645518336,0.20261816788464784
+rank_extension,RankExt,1,3,0.13075035411833985,0.19677392006665467
+rank_extension,RankExt,1,4,0.08382769388005473,0.2196961631765589
+rank_extension,RankExt,1,5,0.05976072034080986,0.24027304483950138
+rank_extension,RankExt,1,6,0.041291222474766805,0.22129068280011416
+rank_extension,RankExt,1,7,0.02674027763585728,0.22774540543556213
+rank_extension,RankExt,1,8,0.02388574212391624,0.23008336806483567
+rank_extension,RankExt,1,9,0.02375262245181948,0.2266465032119304
+rank_extension,RankExt,2,1,3.1846834524563605,0.4742408752441406
+rank_extension,RankExt,2,2,0.23393374124511343,0.23611145782470702
+rank_extension,RankExt,2,3,0.11483950841003937,0.19957117080502212
+rank_extension,RankExt,2,4,0.0750932839023499,0.2660748720150441
+rank_extension,RankExt,2,5,0.04695598353921879,0.22314282296597956
+rank_extension,RankExt,2,6,0.0272607024362097,0.21061689402163028
+rank_extension,RankExt,2,7,0.01712473938394277,0.2339194252640009
+rank_extension,RankExt,2,8,0.014679528967230238,0.21887592102587222
+rank_extension,RankExt,2,9,0.01824226293377578,0.2242128884792328
+rank_extension,RankExt,3,1,3.077149912251583,0.39196252393722536
+rank_extension,RankExt,3,2,0.27896146862233273,0.20066061973571778
+rank_extension,RankExt,3,3,0.17272635076622495,0.165483380317688
+rank_extension,RankExt,3,4,0.12327440338300877,0.16848612642288208
+rank_extension,RankExt,3,5,0.09270252526478201,0.15470705151557923
+rank_extension,RankExt,3,6,0.07086471973872575,0.2108138999938965
+rank_extension,RankExt,3,7,0.05586266966506106,0.17590581488609314
+rank_extension,RankExt,3,8,0.04441472406758637,0.16922400903701781
+rank_extension,RankExt,3,9,0.04100689202342182,0.17566635513305665
+rank_extension,RankExt,4,1,3.534522008632482,0.6709017331600189
+rank_extension,RankExt,4,2,0.4030592182620627,0.30662261581420897
+rank_extension,RankExt,4,3,0.21439345522982176,0.28524995982646945
+rank_extension,RankExt,4,4,0.147116127317069,0.2790680274963379
+rank_extension,RankExt,4,5,0.10233300496503467,0.2613984370082617
+rank_extension,RankExt,4,6,0.07350862444908984,0.2741270301332697
+rank_extension,RankExt,4,7,0.05149585757076313,0.2776663205605
+rank_extension,RankExt,4,8,0.03968726974858551,0.2850565903224051
+rank_extension,RankExt,4,9,0.04037189043350518,0.2823898119945079
+rank_extension,RankExt,5,1,3.4729732490600425,0.5048506467342376
+rank_extension,RankExt,5,2,0.2490709394277608,0.1581150226742029
+rank_extension,RankExt,5,3,0.11893550709851819,0.17101680564507843
+rank_extension,RankExt,5,4,0.07465426940432765,0.16868205714412032
+rank_extension,RankExt,5,5,0.04049867193508496,0.1319044680595398
+rank_extension,RankExt,5,6,0.02565390443396907,0.14698470998182891
+rank_extension,RankExt,5,7,0.015923654192821962,0.11599572229478508
+rank_extension,RankExt,5,8,0.012181676246729663,0.11654903102014214
+rank_extension,RankExt,5,9,0.012366951101575978,0.11509435248328373
+rank_extension_kd_only_T2,RankExt + KD T2,1,1,2.156518216853056,0.3929214172363281
+rank_extension_kd_only_T2,RankExt + KD T2,1,2,0.21415291645518336,0.20261816788464784
+rank_extension_kd_only_T2,RankExt + KD T2,1,3,0.13075035411833985,0.19677392006665467
+rank_extension_kd_only_T2,RankExt + KD T2,1,4,0.08382769388005473,0.2196961631765589
+rank_extension_kd_only_T2,RankExt + KD T2,1,5,0.05976072034080986,0.24027304483950138
+rank_extension_kd_only_T2,RankExt + KD T2,1,6,0.041291222474766805,0.22129068280011416
+rank_extension_kd_only_T2,RankExt + KD T2,1,7,0.02674027763585728,0.22774540543556213
+rank_extension_kd_only_T2,RankExt + KD T2,1,8,0.02388574212391624,0.23008336806483567
+rank_extension_kd_only_T2,RankExt + KD T2,1,9,0.02375262245181948,0.2266465032119304
+rank_extension_kd_only_T2,RankExt + KD T2,2,1,3.6767609694975683,1.218939697265625
+rank_extension_kd_only_T2,RankExt + KD T2,2,2,0.9412080538077433,1.066043701648712
+rank_extension_kd_only_T2,RankExt + KD T2,2,3,0.8239693576195201,0.9648001713752746
+rank_extension_kd_only_T2,RankExt + KD T2,2,4,0.775687031374603,0.9582517094612122
+rank_extension_kd_only_T2,RankExt + KD T2,2,5,0.7390517362805663,0.8919864497184753
+rank_extension_kd_only_T2,RankExt + KD T2,2,6,0.7209778186727742,0.91238818359375
+rank_extension_kd_only_T2,RankExt + KD T2,2,7,0.7020246161789191,0.925388916015625
+rank_extension_kd_only_T2,RankExt + KD T2,2,8,0.6977841611768378,0.92150390625
+rank_extension_kd_only_T2,RankExt + KD T2,2,9,0.6997721089363098,0.9272528080940247
+rank_extension_kd_only_T2,RankExt + KD T2,3,1,3.1826584362554473,0.9799672870635986
+rank_extension_kd_only_T2,RankExt + KD T2,3,2,0.8541550015816923,0.817302978515625
+rank_extension_kd_only_T2,RankExt + KD T2,3,3,0.7469426055912112,0.75033544921875
+rank_extension_kd_only_T2,RankExt + KD T2,3,4,0.6874242773798646,0.7554814434051513
+rank_extension_kd_only_T2,RankExt + KD T2,3,5,0.6551692140884087,0.7374279766082764
+rank_extension_kd_only_T2,RankExt + KD T2,3,6,0.6305052960505251,0.74325537109375
+rank_extension_kd_only_T2,RankExt + KD T2,3,7,0.6131395600369719,0.735608154296875
+rank_extension_kd_only_T2,RankExt + KD T2,3,8,0.6027719582690567,0.7286113262176513
+rank_extension_kd_only_T2,RankExt + KD T2,3,9,0.6005668961524964,0.7384003915786743
+rank_extension_kd_only_T2,RankExt + KD T2,4,1,3.300035552580501,0.95509326171875
+rank_extension_kd_only_T2,RankExt + KD T2,4,2,0.8694074734312589,0.7973092041015625
+rank_extension_kd_only_T2,RankExt + KD T2,4,3,0.7112406579685993,0.7583212890625
+rank_extension_kd_only_T2,RankExt + KD T2,4,4,0.6559928326333155,0.8003129873275757
+rank_extension_kd_only_T2,RankExt + KD T2,4,5,0.6071014466832896,0.7359169921875
+rank_extension_kd_only_T2,RankExt + KD T2,4,6,0.5848124342863676,0.7592991943359375
+rank_extension_kd_only_T2,RankExt + KD T2,4,7,0.5665601307251414,0.7517314450740814
+rank_extension_kd_only_T2,RankExt + KD T2,4,8,0.5514831055383214,0.7495312504768371
+rank_extension_kd_only_T2,RankExt + KD T2,4,9,0.5498008813381196,0.7545551755428315
+rank_extension_kd_only_T2,RankExt + KD T2,5,1,2.9893102630265607,0.823739501953125
+rank_extension_kd_only_T2,RankExt + KD T2,5,2,0.6548463339688348,0.6080219721794129
+rank_extension_kd_only_T2,RankExt + KD T2,5,3,0.5638874408651571,0.620696044921875
+rank_extension_kd_only_T2,RankExt + KD T2,5,4,0.5261050632254022,0.5945187990665436
+rank_extension_kd_only_T2,RankExt + KD T2,5,5,0.5011349657519919,0.6044555654525757
+rank_extension_kd_only_T2,RankExt + KD T2,5,6,0.48593013535757534,0.611963134765625
+rank_extension_kd_only_T2,RankExt + KD T2,5,7,0.4768917721803071,0.6176452641487121
+rank_extension_kd_only_T2,RankExt + KD T2,5,8,0.47135999735261574,0.6164708256721496
+rank_extension_kd_only_T2,RankExt + KD T2,5,9,0.4695477071285248,0.6120986325740814
+rank_extension_orth_factor_lam_50,RankExt + FactorOrth,1,1,2.156518216853056,0.3929214172363281
+rank_extension_orth_factor_lam_50,RankExt + FactorOrth,1,2,0.21415291645518336,0.20261816788464784
+rank_extension_orth_factor_lam_50,RankExt + FactorOrth,1,3,0.13075035411833985,0.19677392006665467
+rank_extension_orth_factor_lam_50,RankExt + FactorOrth,1,4,0.08382769388005473,0.2196961631765589
+rank_extension_orth_factor_lam_50,RankExt + FactorOrth,1,5,0.05976072034080986,0.24027304483950138
+rank_extension_orth_factor_lam_50,RankExt + FactorOrth,1,6,0.041291222474766805,0.22129068280011416
+rank_extension_orth_factor_lam_50,RankExt + FactorOrth,1,7,0.02674027763585728,0.22774540543556213
+rank_extension_orth_factor_lam_50,RankExt + FactorOrth,1,8,0.02388574212391624,0.23008336806483567
+rank_extension_orth_factor_lam_50,RankExt + FactorOrth,1,9,0.02375262245181948,0.2266465032119304
+rank_extension_orth_factor_lam_50,RankExt + FactorOrth,2,1,5.228813584229365,0.49872329711914065
+rank_extension_orth_factor_lam_50,RankExt + FactorOrth,2,2,0.2240758407250291,0.2204216556251049
+rank_extension_orth_factor_lam_50,RankExt + FactorOrth,2,3,0.11332123912489195,0.19931473302468658
+rank_extension_orth_factor_lam_50,RankExt + FactorOrth,2,4,0.07244712625607298,0.16887902831844986
+rank_extension_orth_factor_lam_50,RankExt + FactorOrth,2,5,0.04798976710432621,0.17550767635554076
+rank_extension_orth_factor_lam_50,RankExt + FactorOrth,2,6,0.028080828559058184,0.17361592200398446
+rank_extension_orth_factor_lam_50,RankExt + FactorOrth,2,7,0.019022102779174436,0.21189408873021603
+rank_extension_orth_factor_lam_50,RankExt + FactorOrth,2,8,0.016820079410834177,0.19560695980489254
+rank_extension_orth_factor_lam_50,RankExt + FactorOrth,2,9,0.019719929656013848,0.19915608931332826
+rank_extension_orth_factor_lam_50,RankExt + FactorOrth,3,1,5.803728132171834,0.5251496591567993
+rank_extension_orth_factor_lam_50,RankExt + FactorOrth,3,2,0.30978516034904074,0.23263921546936034
+rank_extension_orth_factor_lam_50,RankExt + FactorOrth,3,3,0.18787933638105628,0.18435333347320557
+rank_extension_orth_factor_lam_50,RankExt + FactorOrth,3,4,0.1379865305467707,0.17094935607910156
+rank_extension_orth_factor_lam_50,RankExt + FactorOrth,3,5,0.10604376350147802,0.148820116519928
+rank_extension_orth_factor_lam_50,RankExt + FactorOrth,3,6,0.08690968683508576,0.17488789224624635
+rank_extension_orth_factor_lam_50,RankExt + FactorOrth,3,7,0.0695660620439248,0.15183512711524963
+rank_extension_orth_factor_lam_50,RankExt + FactorOrth,3,8,0.058999081295685936,0.14851765704154968
+rank_extension_orth_factor_lam_50,RankExt + FactorOrth,3,9,0.05715214717537165,0.1527718324661255
+rank_extension_orth_factor_lam_50,RankExt + FactorOrth,4,1,8.181294131005844,1.0957218313217163
+rank_extension_orth_factor_lam_50,RankExt + FactorOrth,4,2,0.4769097288032291,0.3199486694484949
+rank_extension_orth_factor_lam_50,RankExt + FactorOrth,4,3,0.2440088938952225,0.2651997537463903
+rank_extension_orth_factor_lam_50,RankExt + FactorOrth,4,4,0.17669645981924212,0.2611758890077472
+rank_extension_orth_factor_lam_50,RankExt + FactorOrth,4,5,0.12916088667545528,0.24278335904702544
+rank_extension_orth_factor_lam_50,RankExt + FactorOrth,4,6,0.10415969616580815,0.21407831621542572
+rank_extension_orth_factor_lam_50,RankExt + FactorOrth,4,7,0.07949413365272225,0.20963705039024352
+rank_extension_orth_factor_lam_50,RankExt + FactorOrth,4,8,0.06819172730310591,0.21721756816096605
+rank_extension_orth_factor_lam_50,RankExt + FactorOrth,4,9,0.06667226423919201,0.21335377574153244
+rank_extension_orth_factor_lam_50,RankExt + FactorOrth,5,1,7.083728147070069,0.9217948760986329
+rank_extension_orth_factor_lam_50,RankExt + FactorOrth,5,2,0.25939109358386914,0.15473673337697982
+rank_extension_orth_factor_lam_50,RankExt + FactorOrth,5,3,0.1201185712285462,0.12352278994023799
+rank_extension_orth_factor_lam_50,RankExt + FactorOrth,5,4,0.08405701635695505,0.11172478866949677
+rank_extension_orth_factor_lam_50,RankExt + FactorOrth,5,5,0.06621434428523004,0.11026559924893081
+rank_extension_orth_factor_lam_50,RankExt + FactorOrth,5,6,0.04937903076585871,0.10449176788143813
+rank_extension_orth_factor_lam_50,RankExt + FactorOrth,5,7,0.03736076302345476,0.1077200558166951
+rank_extension_orth_factor_lam_50,RankExt + FactorOrth,5,8,0.028933823919000075,0.10417095565795899
+rank_extension_orth_factor_lam_50,RankExt + FactorOrth,5,9,0.02871997968927026,0.10409600782580673
+rank_extension_orth_factor_lam_50_kd_T2,RankExt + FactorOrth + KD T2,1,1,2.156518216853056,0.3929214172363281
+rank_extension_orth_factor_lam_50_kd_T2,RankExt + FactorOrth + KD T2,1,2,0.21415291645518336,0.20261816788464784
+rank_extension_orth_factor_lam_50_kd_T2,RankExt + FactorOrth + KD T2,1,3,0.13075035411833985,0.19677392006665467
+rank_extension_orth_factor_lam_50_kd_T2,RankExt + FactorOrth + KD T2,1,4,0.08382769388005473,0.2196961631765589
+rank_extension_orth_factor_lam_50_kd_T2,RankExt + FactorOrth + KD T2,1,5,0.05976072034080986,0.24027304483950138
+rank_extension_orth_factor_lam_50_kd_T2,RankExt + FactorOrth + KD T2,1,6,0.041291222474766805,0.22129068280011416
+rank_extension_orth_factor_lam_50_kd_T2,RankExt + FactorOrth + KD T2,1,7,0.02674027763585728,0.22774540543556213
+rank_extension_orth_factor_lam_50_kd_T2,RankExt + FactorOrth + KD T2,1,8,0.02388574212391624,0.23008336806483567
+rank_extension_orth_factor_lam_50_kd_T2,RankExt + FactorOrth + KD T2,1,9,0.02375262245181948,0.2266465032119304
+rank_extension_orth_factor_lam_50_kd_T2,RankExt + FactorOrth + KD T2,2,1,5.644264547407334,1.2987834463119508
+rank_extension_orth_factor_lam_50_kd_T2,RankExt + FactorOrth + KD T2,2,2,1.0167151773562197,1.0555766611099242
+rank_extension_orth_factor_lam_50_kd_T2,RankExt + FactorOrth + KD T2,2,3,0.8577700824034019,1.0124193105697632
+rank_extension_orth_factor_lam_50_kd_T2,RankExt + FactorOrth + KD T2,2,4,0.7988102013947533,0.9782192387580871
+rank_extension_orth_factor_lam_50_kd_T2,RankExt + FactorOrth + KD T2,2,5,0.7600212873005476,0.9228679208755494
+rank_extension_orth_factor_lam_50_kd_T2,RankExt + FactorOrth + KD T2,2,6,0.7394457588430311,0.9328415517807007
+rank_extension_orth_factor_lam_50_kd_T2,RankExt + FactorOrth + KD T2,2,7,0.7237879493197457,0.9445468740463256
+rank_extension_orth_factor_lam_50_kd_T2,RankExt + FactorOrth + KD T2,2,8,0.7174349629488148,0.9428564443588257
+rank_extension_orth_factor_lam_50_kd_T2,RankExt + FactorOrth + KD T2,2,9,0.7190768462181091,0.9436643075942993
+rank_extension_orth_factor_lam_50_kd_T2,RankExt + FactorOrth + KD T2,3,1,4.925937175945838,1.191159912109375
+rank_extension_orth_factor_lam_50_kd_T2,RankExt + FactorOrth + KD T2,3,2,0.9796633631479544,0.9038018798828125
+rank_extension_orth_factor_lam_50_kd_T2,RankExt + FactorOrth + KD T2,3,3,0.8371647567534056,0.8080178241729736
+rank_extension_orth_factor_lam_50_kd_T2,RankExt + FactorOrth + KD T2,3,4,0.7593137221258195,0.8015624980926513
+rank_extension_orth_factor_lam_50_kd_T2,RankExt + FactorOrth + KD T2,3,5,0.716340901812569,0.7635756855010987
+rank_extension_orth_factor_lam_50_kd_T2,RankExt + FactorOrth + KD T2,3,6,0.6849390034792853,0.7913710947036743
+rank_extension_orth_factor_lam_50_kd_T2,RankExt + FactorOrth + KD T2,3,7,0.6668853151016548,0.7645451650619507
+rank_extension_orth_factor_lam_50_kd_T2,RankExt + FactorOrth + KD T2,3,8,0.6570880546921589,0.7617770977020264
+rank_extension_orth_factor_lam_50_kd_T2,RankExt + FactorOrth + KD T2,3,9,0.6543820416450501,0.7684064922332764
+rank_extension_orth_factor_lam_50_kd_T2,RankExt + FactorOrth + KD T2,4,1,5.484614347865265,1.46387158203125
+rank_extension_orth_factor_lam_50_kd_T2,RankExt + FactorOrth + KD T2,4,2,1.0749372102198054,0.9034754629135132
+rank_extension_orth_factor_lam_50_kd_T2,RankExt + FactorOrth + KD T2,4,3,0.8488440360202164,0.8254492182731629
+rank_extension_orth_factor_lam_50_kd_T2,RankExt + FactorOrth + KD T2,4,4,0.7595093444722598,0.7812316904067993
+rank_extension_orth_factor_lam_50_kd_T2,RankExt + FactorOrth + KD T2,4,5,0.7001881807065401,0.7687862546443939
+rank_extension_orth_factor_lam_50_kd_T2,RankExt + FactorOrth + KD T2,4,6,0.6689035248560984,0.7463536376953125
+rank_extension_orth_factor_lam_50_kd_T2,RankExt + FactorOrth + KD T2,4,7,0.6457110508543547,0.7449533700942993
+rank_extension_orth_factor_lam_50_kd_T2,RankExt + FactorOrth + KD T2,4,8,0.6315650433790488,0.7517282724380493
+rank_extension_orth_factor_lam_50_kd_T2,RankExt + FactorOrth + KD T2,4,9,0.6291862382411957,0.7511127934455871
+rank_extension_orth_factor_lam_50_kd_T2,RankExt + FactorOrth + KD T2,5,1,5.0765198834984275,1.2071518535614014
+rank_extension_orth_factor_lam_50_kd_T2,RankExt + FactorOrth + KD T2,5,2,0.8446798574729044,0.714055419921875
+rank_extension_orth_factor_lam_50_kd_T2,RankExt + FactorOrth + KD T2,5,3,0.6747289071317579,0.6850336909294128
+rank_extension_orth_factor_lam_50_kd_T2,RankExt + FactorOrth + KD T2,5,4,0.618181120860772,0.6635382070541381
+rank_extension_orth_factor_lam_50_kd_T2,RankExt + FactorOrth + KD T2,5,5,0.5853704858998783,0.64616650390625
+rank_extension_orth_factor_lam_50_kd_T2,RankExt + FactorOrth + KD T2,5,6,0.5600655482440698,0.6498664560317993
+rank_extension_orth_factor_lam_50_kd_T2,RankExt + FactorOrth + KD T2,5,7,0.5444549220995825,0.6420604257583619
+rank_extension_orth_factor_lam_50_kd_T2,RankExt + FactorOrth + KD T2,5,8,0.5364394162033425,0.649227783203125
+rank_extension_orth_factor_lam_50_kd_T2,RankExt + FactorOrth + KD T2,5,9,0.5375805470943451,0.6462714834213257
+simple_avg,SimpleAvg,1,1,1.171160300248554,0.2503909759372473
+simple_avg,SimpleAvg,1,2,0.1715482375828824,0.20820242952555418
+simple_avg,SimpleAvg,1,3,0.09319896213099604,0.17538775634765624
+simple_avg,SimpleAvg,1,4,0.05255426043552942,0.26648404049873353
+simple_avg,SimpleAvg,1,5,0.025536752931895803,0.21778590774536133
+simple_avg,SimpleAvg,1,6,0.012899940745899317,0.26282618641853334
+simple_avg,SimpleAvg,1,7,0.00831813658969324,0.21840631145238876
+simple_avg,SimpleAvg,1,8,0.007003592064634698,0.21946141600608826
+simple_avg,SimpleAvg,1,9,0.010911840683221817,0.21656804919242859
+simple_avg,SimpleAvg,2,1,1.1342553222237945,0.28273482632637026
+simple_avg,SimpleAvg,2,2,0.140101167023159,0.19251509521901608
+simple_avg,SimpleAvg,2,3,0.07592560928863604,0.26389874386764134
+simple_avg,SimpleAvg,2,4,0.04077876824961945,0.20456976532936097
+simple_avg,SimpleAvg,2,5,0.023162820999993422,0.19956872916244903
+simple_avg,SimpleAvg,2,6,0.01314844658710604,0.237231842517911
+simple_avg,SimpleAvg,2,7,0.008825155304025355,0.23077366638186503
+simple_avg,SimpleAvg,2,8,0.006551236656440644,0.23146074986460735
+simple_avg,SimpleAvg,2,9,0.010929721936187707,0.2309845867157128
+simple_avg,SimpleAvg,3,1,1.1611894899323802,0.3530330982208252
+simple_avg,SimpleAvg,3,2,0.21419386929053752,0.18293528294563294
+simple_avg,SimpleAvg,3,3,0.13066310977227374,0.24288020205497743
+simple_avg,SimpleAvg,3,4,0.08298929288494783,0.2211959295272827
+simple_avg,SimpleAvg,3,5,0.049747905953497186,0.2796114835739136
+simple_avg,SimpleAvg,3,6,0.027389908280819043,0.31775306463241576
+simple_avg,SimpleAvg,3,7,0.014883263618810547,0.29968413996696475
+simple_avg,SimpleAvg,3,8,0.011559994252084075,0.3027594449520111
+simple_avg,SimpleAvg,3,9,0.015015284915763186,0.2985184347629547
+simple_avg,SimpleAvg,4,1,1.260744712006075,0.28925296021997926
+simple_avg,SimpleAvg,4,2,0.22139015779143476,0.24990581941604614
+simple_avg,SimpleAvg,4,3,0.1292524244379611,0.2747177031035535
+simple_avg,SimpleAvg,4,4,0.07002485275390695,0.29501242280006407
+simple_avg,SimpleAvg,4,5,0.034262077551072447,0.35953679847717285
+simple_avg,SimpleAvg,4,6,0.021823499205579612,0.3560762128829811
+simple_avg,SimpleAvg,4,7,0.014684749634866196,0.3542007076740265
+simple_avg,SimpleAvg,4,8,0.010533666401465407,0.3340048341750953
+simple_avg,SimpleAvg,4,9,0.0157024640671385,0.3376584277153306
+simple_avg,SimpleAvg,5,1,1.1261714553397983,0.1656215250492096
+simple_avg,SimpleAvg,5,2,0.13044598471119495,0.18499361205287276
+simple_avg,SimpleAvg,5,3,0.06434552616622971,0.1727473087273538
+simple_avg,SimpleAvg,5,4,0.03486519706747771,0.14828672003751853
+simple_avg,SimpleAvg,5,5,0.017277905241143508,0.11891253399848938
+simple_avg,SimpleAvg,5,6,0.009021470499354735,0.13007589507009834
+simple_avg,SimpleAvg,5,7,0.004629837461840505,0.14838843774807173
+simple_avg,SimpleAvg,5,8,0.004167503926270061,0.14078137278551003
+simple_avg,SimpleAvg,5,9,0.006613776776001032,0.1360978720189305
+simple_avg_factor_orth,SimpleAvg + FactorOrth,1,1,1.1677790485938275,0.29123064421117306
+simple_avg_factor_orth,SimpleAvg + FactorOrth,1,2,0.1607151607478984,0.1926202137619257
+simple_avg_factor_orth,SimpleAvg + FactorOrth,1,3,0.09151298510250407,0.2390330240735784
+simple_avg_factor_orth,SimpleAvg + FactorOrth,1,4,0.050792766347733616,0.22520674872305244
+simple_avg_factor_orth,SimpleAvg + FactorOrth,1,5,0.027625413578968364,0.20099971935153008
+simple_avg_factor_orth,SimpleAvg + FactorOrth,1,6,0.012851484214551135,0.24058056901395322
+simple_avg_factor_orth,SimpleAvg + FactorOrth,1,7,0.010119827841845109,0.23518577884137631
+simple_avg_factor_orth,SimpleAvg + FactorOrth,1,8,0.007172348570393147,0.2251611328087747
+simple_avg_factor_orth,SimpleAvg + FactorOrth,1,9,0.011567209134002042,0.22706059812754392
+simple_avg_factor_orth,SimpleAvg + FactorOrth,2,1,2.456117216869579,0.43169270849227903
+simple_avg_factor_orth,SimpleAvg + FactorOrth,2,2,0.19398949184745062,0.2177424989938736
+simple_avg_factor_orth,SimpleAvg + FactorOrth,2,3,0.10499987873386164,0.18630964678525924
+simple_avg_factor_orth,SimpleAvg + FactorOrth,2,4,0.056184875592589376,0.16905482313036918
+simple_avg_factor_orth,SimpleAvg + FactorOrth,2,5,0.03293136721629588,0.1595105142891407
+simple_avg_factor_orth,SimpleAvg + FactorOrth,2,6,0.020184183998995263,0.17572363756597043
+simple_avg_factor_orth,SimpleAvg + FactorOrth,2,7,0.013213851316602993,0.17024395037442447
+simple_avg_factor_orth,SimpleAvg + FactorOrth,2,8,0.010283219625745885,0.16379330967366695
+simple_avg_factor_orth,SimpleAvg + FactorOrth,2,9,0.013084665926266462,0.16628979873657226
+simple_avg_factor_orth,SimpleAvg + FactorOrth,3,1,2.18963320721581,0.4416594829559326
+simple_avg_factor_orth,SimpleAvg + FactorOrth,3,2,0.26028651793594243,0.1996434667110443
+simple_avg_factor_orth,SimpleAvg + FactorOrth,3,3,0.16551758292757096,0.1958801064491272
+simple_avg_factor_orth,SimpleAvg + FactorOrth,3,4,0.11149992934260212,0.16325255680084227
+simple_avg_factor_orth,SimpleAvg + FactorOrth,3,5,0.07794418620770095,0.14809224700927734
+simple_avg_factor_orth,SimpleAvg + FactorOrth,3,6,0.05624261210199262,0.1441718225479126
+simple_avg_factor_orth,SimpleAvg + FactorOrth,3,7,0.04118657480833716,0.13368953013420104
+simple_avg_factor_orth,SimpleAvg + FactorOrth,3,8,0.03231285124192717,0.13532999062538148
+simple_avg_factor_orth,SimpleAvg + FactorOrth,3,9,0.030403106051683428,0.13781702041625976
+simple_avg_factor_orth,SimpleAvg + FactorOrth,4,1,2.380130185555124,0.45572101962566375
+simple_avg_factor_orth,SimpleAvg + FactorOrth,4,2,0.30594188214325513,0.2518325853347778
+simple_avg_factor_orth,SimpleAvg + FactorOrth,4,3,0.1839488563013309,0.20074545454606413
+simple_avg_factor_orth,SimpleAvg + FactorOrth,4,4,0.11362904580033262,0.22892260074568913
+simple_avg_factor_orth,SimpleAvg + FactorOrth,4,5,0.06195568239362147,0.19637390351295472
+simple_avg_factor_orth,SimpleAvg + FactorOrth,4,6,0.03951737454435864,0.18001739597320557
+simple_avg_factor_orth,SimpleAvg + FactorOrth,4,7,0.023761482699774204,0.17726480579376222
+simple_avg_factor_orth,SimpleAvg + FactorOrth,4,8,0.0154779371245956,0.17397602844244103
+simple_avg_factor_orth,SimpleAvg + FactorOrth,4,9,0.017079862357769163,0.1703141098023625
+simple_avg_factor_orth,SimpleAvg + FactorOrth,5,1,2.28777052171882,0.3344119558334351
+simple_avg_factor_orth,SimpleAvg + FactorOrth,5,2,0.16865227260916937,0.1700327952504158
+simple_avg_factor_orth,SimpleAvg + FactorOrth,5,3,0.08554370296531219,0.13274283551983534
+simple_avg_factor_orth,SimpleAvg + FactorOrth,5,4,0.045281662249968185,0.1278247447088361
+simple_avg_factor_orth,SimpleAvg + FactorOrth,5,5,0.02677630542855725,0.12615071940468625
+simple_avg_factor_orth,SimpleAvg + FactorOrth,5,6,0.01567768050542819,0.09503140473319217
+simple_avg_factor_orth,SimpleAvg + FactorOrth,5,7,0.01066185805658413,0.1096047415737994
+simple_avg_factor_orth,SimpleAvg + FactorOrth,5,8,0.007158669018707635,0.10673633956932463
+simple_avg_factor_orth,SimpleAvg + FactorOrth,5,9,0.008469241715641692,0.11022729206061922
+simple_avg_factor_orth_kd_T2,SimpleAvg + FactorOrth + KD T2,1,1,1.1677790485938275,0.29123064421117306
+simple_avg_factor_orth_kd_T2,SimpleAvg + FactorOrth + KD T2,1,2,0.1607151607478984,0.1926202137619257
+simple_avg_factor_orth_kd_T2,SimpleAvg + FactorOrth + KD T2,1,3,0.09151298510250407,0.2390330240735784
+simple_avg_factor_orth_kd_T2,SimpleAvg + FactorOrth + KD T2,1,4,0.050792766347733616,0.22520674872305244
+simple_avg_factor_orth_kd_T2,SimpleAvg + FactorOrth + KD T2,1,5,0.027625413578968364,0.20099971935153008
+simple_avg_factor_orth_kd_T2,SimpleAvg + FactorOrth + KD T2,1,6,0.012851484214551135,0.24058056901395322
+simple_avg_factor_orth_kd_T2,SimpleAvg + FactorOrth + KD T2,1,7,0.010119827841845109,0.23518577884137631
+simple_avg_factor_orth_kd_T2,SimpleAvg + FactorOrth + KD T2,1,8,0.007172348570393147,0.2251611328087747
+simple_avg_factor_orth_kd_T2,SimpleAvg + FactorOrth + KD T2,1,9,0.011567209134002042,0.22706059812754392
+simple_avg_factor_orth_kd_T2,SimpleAvg + FactorOrth + KD T2,2,1,2.604732771747046,0.7401238708496094
+simple_avg_factor_orth_kd_T2,SimpleAvg + FactorOrth + KD T2,2,2,0.4948902688554076,0.5528169240951538
+simple_avg_factor_orth_kd_T2,SimpleAvg + FactorOrth + KD T2,2,3,0.4051599766875877,0.4705885007381439
+simple_avg_factor_orth_kd_T2,SimpleAvg + FactorOrth + KD T2,2,4,0.3594469555088731,0.45687530517578123
+simple_avg_factor_orth_kd_T2,SimpleAvg + FactorOrth + KD T2,2,5,0.3334413202571087,0.47109695434570314
+simple_avg_factor_orth_kd_T2,SimpleAvg + FactorOrth + KD T2,2,6,0.3193098140056016,0.4795252072811127
+simple_avg_factor_orth_kd_T2,SimpleAvg + FactorOrth + KD T2,2,7,0.30989721432083944,0.460440673828125
+simple_avg_factor_orth_kd_T2,SimpleAvg + FactorOrth + KD T2,2,8,0.3071870254200013,0.4635845332145691
+simple_avg_factor_orth_kd_T2,SimpleAvg + FactorOrth + KD T2,2,9,0.3102159891605377,0.46490130615234376
+simple_avg_factor_orth_kd_T2,SimpleAvg + FactorOrth + KD T2,3,1,2.3346301671330942,0.6945601787567138
+simple_avg_factor_orth_kd_T2,SimpleAvg + FactorOrth + KD T2,3,2,0.5059296671484338,0.49568585109710694
+simple_avg_factor_orth_kd_T2,SimpleAvg + FactorOrth + KD T2,3,3,0.40889357362614304,0.4412813129425049
+simple_avg_factor_orth_kd_T2,SimpleAvg + FactorOrth + KD T2,3,4,0.3496971917934105,0.4168087148666382
+simple_avg_factor_orth_kd_T2,SimpleAvg + FactorOrth + KD T2,3,5,0.312117647978126,0.4427147216796875
+simple_avg_factor_orth_kd_T2,SimpleAvg + FactorOrth + KD T2,3,6,0.28981977583932095,0.42482733058929445
+simple_avg_factor_orth_kd_T2,SimpleAvg + FactorOrth + KD T2,3,7,0.2747558243939134,0.4358632822036743
+simple_avg_factor_orth_kd_T2,SimpleAvg + FactorOrth + KD T2,3,8,0.266118622217022,0.42651666450500486
+simple_avg_factor_orth_kd_T2,SimpleAvg + FactorOrth + KD T2,3,9,0.2662034739255905,0.43346691989898684
+simple_avg_factor_orth_kd_T2,SimpleAvg + FactorOrth + KD T2,4,1,2.5272869479929367,0.7459393312931061
+simple_avg_factor_orth_kd_T2,SimpleAvg + FactorOrth + KD T2,4,2,0.5551230749145883,0.5123296513557434
+simple_avg_factor_orth_kd_T2,SimpleAvg + FactorOrth + KD T2,4,3,0.42296263521812,0.4907271726131439
+simple_avg_factor_orth_kd_T2,SimpleAvg + FactorOrth + KD T2,4,4,0.3478743004994314,0.4813811032772064
+simple_avg_factor_orth_kd_T2,SimpleAvg + FactorOrth + KD T2,4,5,0.3021198401929902,0.4577460935115814
+simple_avg_factor_orth_kd_T2,SimpleAvg + FactorOrth + KD T2,4,6,0.27874749156295275,0.4521917723417282
+simple_avg_factor_orth_kd_T2,SimpleAvg + FactorOrth + KD T2,4,7,0.26254123749791597,0.45035546863079073
+simple_avg_factor_orth_kd_T2,SimpleAvg + FactorOrth + KD T2,4,8,0.2571133768705071,0.45140563941001893
+simple_avg_factor_orth_kd_T2,SimpleAvg + FactorOrth + KD T2,4,9,0.2587094108104706,0.4545509033203125
+simple_avg_factor_orth_kd_T2,SimpleAvg + FactorOrth + KD T2,5,1,2.3974304171904017,0.6559323139190674
+simple_avg_factor_orth_kd_T2,SimpleAvg + FactorOrth + KD T2,5,2,0.4088147792904103,0.4781453855037689
+simple_avg_factor_orth_kd_T2,SimpleAvg + FactorOrth + KD T2,5,3,0.3234622956299391,0.3932155764102936
+simple_avg_factor_orth_kd_T2,SimpleAvg + FactorOrth + KD T2,5,4,0.28189039010493483,0.3860104978084564
+simple_avg_factor_orth_kd_T2,SimpleAvg + FactorOrth + KD T2,5,5,0.26242800562596713,0.3692657469511032
+simple_avg_factor_orth_kd_T2,SimpleAvg + FactorOrth + KD T2,5,6,0.2500846360306271,0.3646850581169128
+simple_avg_factor_orth_kd_T2,SimpleAvg + FactorOrth + KD T2,5,7,0.24375127446456032,0.37298620557785034
+simple_avg_factor_orth_kd_T2,SimpleAvg + FactorOrth + KD T2,5,8,0.24154592002512978,0.368701416015625
+simple_avg_factor_orth_kd_T2,SimpleAvg + FactorOrth + KD T2,5,9,0.24342820982933044,0.3739739992618561
+simple_avg_kd_T2,SimpleAvg + KD T2,1,1,1.1677790485938275,0.29123064421117306
+simple_avg_kd_T2,SimpleAvg + KD T2,1,2,0.1607151607478984,0.1926202137619257
+simple_avg_kd_T2,SimpleAvg + KD T2,1,3,0.09151298510250407,0.2390330240735784
+simple_avg_kd_T2,SimpleAvg + KD T2,1,4,0.050792766347733616,0.22520674872305244
+simple_avg_kd_T2,SimpleAvg + KD T2,1,5,0.027625413578968364,0.20099971935153008
+simple_avg_kd_T2,SimpleAvg + KD T2,1,6,0.012851484214551135,0.24058056901395322
+simple_avg_kd_T2,SimpleAvg + KD T2,1,7,0.010119827841845109,0.23518577884137631
+simple_avg_kd_T2,SimpleAvg + KD T2,1,8,0.007172348570393147,0.2251611328087747
+simple_avg_kd_T2,SimpleAvg + KD T2,1,9,0.011567209134002042,0.22706059812754392
+simple_avg_kd_T2,SimpleAvg + KD T2,2,1,1.605460095425089,0.8480197749137879
+simple_avg_kd_T2,SimpleAvg + KD T2,2,2,0.676050653320844,0.6941168217658996
+simple_avg_kd_T2,SimpleAvg + KD T2,2,3,0.6182869440708004,0.7917634274959564
+simple_avg_kd_T2,SimpleAvg + KD T2,2,4,0.5899966493004658,0.7071574702262878
+simple_avg_kd_T2,SimpleAvg + KD T2,2,5,0.5657391837385835,0.6356645512580872
+simple_avg_kd_T2,SimpleAvg + KD T2,2,6,0.5556234978750104,0.6722937009334564
+simple_avg_kd_T2,SimpleAvg + KD T2,2,7,0.5411217523891417,0.6880957033634186
+simple_avg_kd_T2,SimpleAvg + KD T2,2,8,0.5402570663905535,0.6754404301643372
+simple_avg_kd_T2,SimpleAvg + KD T2,2,9,0.5400983813762665,0.6758093264102936
+simple_avg_kd_T2,SimpleAvg + KD T2,3,1,1.5054178179383473,0.6683449726104737
+simple_avg_kd_T2,SimpleAvg + KD T2,3,2,0.6062140230272637,0.607200927734375
+simple_avg_kd_T2,SimpleAvg + KD T2,3,3,0.5235382434286056,0.553513427734375
+simple_avg_kd_T2,SimpleAvg + KD T2,3,4,0.47948499331708816,0.5768271474838257
+simple_avg_kd_T2,SimpleAvg + KD T2,3,5,0.45102214827889303,0.5743884258270263
+simple_avg_kd_T2,SimpleAvg + KD T2,3,6,0.43014241041707213,0.5882045907974243
+simple_avg_kd_T2,SimpleAvg + KD T2,3,7,0.4188504949456356,0.5801848134994507
+simple_avg_kd_T2,SimpleAvg + KD T2,3,8,0.4128134629765495,0.5820444316864014
+simple_avg_kd_T2,SimpleAvg + KD T2,3,9,0.4129041838169098,0.5854111347198486
+simple_avg_kd_T2,SimpleAvg + KD T2,4,1,1.5921883064576725,0.6638245847225189
+simple_avg_kd_T2,SimpleAvg + KD T2,4,2,0.5949889498655914,0.6070048823356629
+simple_avg_kd_T2,SimpleAvg + KD T2,4,3,0.4977669880038402,0.6124184575080872
+simple_avg_kd_T2,SimpleAvg + KD T2,4,4,0.4467949459787275,0.6399172360897064
+simple_avg_kd_T2,SimpleAvg + KD T2,4,5,0.41627214736625795,0.5893212893009185
+simple_avg_kd_T2,SimpleAvg + KD T2,4,6,0.4058484353491517,0.62326513671875
+simple_avg_kd_T2,SimpleAvg + KD T2,4,7,0.3938334222211212,0.6223574223518371
+simple_avg_kd_T2,SimpleAvg + KD T2,4,8,0.3890547855467093,0.6122856442928314
+simple_avg_kd_T2,SimpleAvg + KD T2,4,9,0.39167275428771975,0.6144182124137878
+simple_avg_kd_T2,SimpleAvg + KD T2,5,1,1.4369237307343272,0.6017271723747254
+simple_avg_kd_T2,SimpleAvg + KD T2,5,2,0.48030374118539154,0.5159194331169128
+simple_avg_kd_T2,SimpleAvg + KD T2,5,3,0.4244601644453455,0.5007707517147064
+simple_avg_kd_T2,SimpleAvg + KD T2,5,4,0.3988054135783774,0.5172341310977936
+simple_avg_kd_T2,SimpleAvg + KD T2,5,5,0.3885317492680471,0.4955864253044128
+simple_avg_kd_T2,SimpleAvg + KD T2,5,6,0.38040992402639545,0.5084479982852936
+simple_avg_kd_T2,SimpleAvg + KD T2,5,7,0.37482268912870376,0.5129494631290435
+simple_avg_kd_T2,SimpleAvg + KD T2,5,8,0.37290510833263396,0.5105317380428315
+simple_avg_kd_T2,SimpleAvg + KD T2,5,9,0.37332266597747804,0.5099902338981629

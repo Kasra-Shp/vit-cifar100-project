@@ -1,0 +1,231 @@
+================================================================================
+STEP-1 OVERFITTING — VERIFICATION AND MITIGATION DECISION
+================================================================================
+Scope: static analysis of saved CSVs only, no training performed this session.
+Runs used: NEW = R3/results_4mod_20260715_light/.../MAIN_20260715_144651
+(9 epochs/step, 4 target modules); PREV = R3/results_EPOCH6_20260711_light/
+.../MAIN_20260711_214100 (6 epochs/step, 2 target modules). Note: neither run
+is a perfectly isolated ablation of "epoch count only" (see
+analysis_rankext_drop/report.txt caveat on the missing intermediate
+20260715_014445 run) -- PREV is used here purely as a second, independent data
+point to check whether the step-1 pattern is epoch-count-specific or general.
+
+================================================================================
+VERDICT (read this first)
+================================================================================
+The supervisor's observation is real and reproduces in both runs, but the
+mechanism is more specific than "step 1 has the largest train-val gap": step 1
+is not always the single largest-gap step in absolute terms, but it IS the one
+step where every method, without exception, drives train CE to ~0 while val CE
+plateaus -- because it is the only step with literally no CL regularizer
+active for anyone (no KD teacher exists yet, no factor-orth reference exists
+yet). From step 2 onward, only KD reliably keeps train CE away from 0 (across
+both runs, 0/8 method-step combinations with KD active ever drop train_ce
+below 0.05); factor-orth alone does NOT reproduce this effect -- its own loss
+term decays to near-zero within a few epochs of each step and is not a
+meaningful CE regularizer.
+
+The existing best-epoch (val-CE) selection mechanism already fully contains
+this at step 1: it intervenes (selects an epoch earlier than the final one)
+for 8/8 methods at step 1, and step 1 is where it saves the most epochs of any
+step (mean 6.9 of 9 configured epochs). No further mitigation was added --
+see "Mitigation decision" below.
+
+================================================================================
+1. QUANTITATIVE VERIFICATION (training_loss_history_by_epoch.csv, both runs)
+================================================================================
+
+1a. Final-epoch train-val CE gap by CL step, averaged over all 8 methods:
+
+  NEW (9 epochs/step):
+    step   mean_gap   std    min    max
+    1      0.205      0.009  0.197  0.215
+    2      0.205      0.057  0.136  0.288
+    3      0.180      0.055  0.107  0.284
+    4      0.222      0.051  0.153  0.322
+    5      0.130      0.022  0.102  0.160
+
+  PREV (6 epochs/step):
+    step   mean_gap   std    min    max
+    1      0.109      0.017  0.099  0.149
+    2      0.170      0.051  0.112  0.249
+    3      0.098      0.035  0.042  0.132
+    4      0.135      0.051  0.059  0.195
+    5      0.085      0.032  0.048  0.138
+
+CLAIM (i) "step 1 has the largest gap" -- REFUTED as literally stated in both
+runs. In NEW, step 4 has the largest mean gap (0.222 vs step 1's 0.205); in
+PREV, step 2 does (0.170 vs step 1's 0.109). Step 1 is the tightest-clustered
+(smallest std: 0.009 NEW, 0.017 PREV) but not the largest on average.
+
+Refined, verified claim: step 1 is the step with the LEAST cross-method
+VARIANCE in the gap (see 1b) and the one step guaranteed to show the
+"train->~0" shape for every method (see 1c) -- later steps' larger mean gaps
+in some cases come from KD methods, whose gap is large for a different reason
+(train CE stays high because the objective is genuinely harder, not because
+generalization degraded from memorization -- see 1c).
+
+1b. CLAIM (ii) "gap is roughly uniform across all 8 methods at step 1" --
+CONFIRMED, strongly. Step 1 train/val CE, NEW run:
+
+  rank_extension family (4 methods): train_ce_loss=0.010510,
+    val_ce_loss=0.207336 -- IDENTICAL across all 4 (rank_extension,
+    rank_extension_kd_only_T2, rank_extension_orth_factor_lam_50,
+    rank_extension_orth_factor_lam_50_kd_T2). Expected: no KD teacher and no
+    factor-orth reference exist yet at step 1, so these 4 variants train
+    byte-for-byte identically there.
+  simple_avg family (4 methods): simple_avg alone = 0.010912 / 0.216568;
+    the other 3 (simple_avg_kd_T2, simple_avg_factor_orth,
+    simple_avg_factor_orth_kd_T2) = 0.011567 / 0.227061, identical to each
+    other. Very close to simple_avg's own numbers (within 0.0006 train /
+    0.010 val) -- consistent with "roughly uniform," the small residual
+    difference plausibly reflects minor code-path differences between the
+    plain and orth/kd-wrapped trainers even when their loss terms are zero.
+
+Same pattern holds in PREV (rank_extension's 4 variants identical at
+0.039817/0.145744; simple_avg's non-orth/kd variants close to its own
+0.023158-0.025830/0.121980-0.174486 range).
+
+1c. CLAIM (iii) "steps with active KD/orth show smaller gaps" -- CONFIRMED
+for KD, REFUTED for factor-orth alone. Final-epoch train_ce_loss by
+method x step, NEW run (bold pattern: KD methods never collapse after step 1):
+
+  method                                     step1   step2   step3   step4   step5
+  rank_extension                             0.011   0.012   0.016   0.015   0.007
+  rank_extension_orth_factor_lam_50          0.011   0.011   0.019   0.016   0.007
+  simple_avg                                 0.011   0.011   0.015   0.016   0.007
+  simple_avg_factor_orth                     0.012   0.013   0.030   0.017   0.008
+  rank_extension_kd_only_T2                  0.011   0.746   0.616   0.548   0.477
+  rank_extension_orth_factor_lam_50_kd_T2    0.011   0.755   0.637   0.565   0.488
+  simple_avg_kd_T2                           0.012   0.540   0.413   0.392   0.373
+  simple_avg_factor_orth_kd_T2               0.012   0.571   0.454   0.439   0.407
+
+Thresholding "memorized" as train_ce < 0.05: at step 1, 8/8 methods cross this
+threshold (uniform, confirms 1b). At steps 2-5, the 4 non-KD methods
+(rank_extension, rank_extension_orth_factor_lam_50, simple_avg,
+simple_avg_factor_orth) cross it at essentially every step in NEW (only 2
+misses in PREV's noisier 6-epoch schedule); the 4 KD methods cross it at ZERO
+of their 16 step2-5 checkpoints in EITHER run. This is a clean, perfect
+separation by KD status, not by orth status: factor-orth's own loss term
+decays to a tiny weighted value within each step (e.g.
+rank_extension_orth_factor_lam_50's final-epoch weighted factor-orth loss is
+0.00005-0.001 across steps 2-5 in NEW -- see
+analysis_rankext_drop/overfitting_diagnostics_NEW_vs_PREV.csv from the prior
+analysis) and does not meaningfully hold train CE away from 0. KD's
+distillation term, by contrast, is what is actually large enough
+(kd_loss_weighted ~= 0.63-1.24 through steps 2-5) to keep the joint objective
+from being trivially satisfiable by memorizing 20 hard labels.
+
+1d. Step-1 epoch-by-epoch trajectory (rank_extension, NEW run) illustrates the
+shape directly:
+
+  epoch   train_ce   val_ce
+  1       1.135      0.244
+  2       0.164      0.166   <- val CE minimum
+  3       0.092      0.203
+  4       0.053      0.203
+  5       0.028      0.246
+  6       0.015      0.197
+  7       0.007      0.215
+  8       0.008      0.210
+  9       0.011      0.207
+
+Val CE bottoms out at epoch 2 and then oscillates in a 0.20-0.25 band for the
+remaining 7 epochs while train CE keeps falling toward 0 -- textbook mild
+overfitting, and it is real. It is also, per 1a-1c above, not unique to step 1
+in magnitude; what is unique to step 1 is that every method shows exactly this
+shape with no regularizing counter-force, whereas at later steps only the
+non-KD methods do.
+
+================================================================================
+2. IS THE EXISTING BEST-EPOCH SELECTION MECHANISM ALREADY SUFFICIENT?
+================================================================================
+(best_epoch_selected_by_method_step.csv -- NEW run only; this mechanism and its
+CSV do not exist in the PREV run's outputs, so no before/after comparison is
+possible here, only a within-NEW-run sufficiency check.)
+
+Intervention rate (selected_epoch < final_epoch) by CL step, all 8 methods:
+  step 1: 8/8  (100%)
+  step 2: 8/8  (100%)
+  step 3: 8/8  (100%)
+  step 4: 7/8  (87.5%)
+  step 5: 8/8  (100%)
+  overall: 39/40 (97.5%)
+
+Mean epochs saved (epochs_configured - selected_epoch) by step:
+  step 1: 6.9  (min 6, max 7)   <- largest of any step
+  step 2: 3.9  (min 1, max 7)
+  step 3: 4.4  (min 1, max 7)
+  step 4: 4.5  (min 0, max 7)
+  step 5: 3.5  (min 3, max 4)
+
+At step 1 specifically, EVERY one of the 8 methods gets its checkpoint rolled
+back to epoch 2 (7 of 8 methods) or epoch 3 (simple_avg), saving 6-7 of the 9
+configured epochs -- the most uniform, most aggressive intervention of any
+step. Spot-checking against the epoch-by-epoch trajectory (section 1d): epoch
+2 is the TRUE minimum of the step-1 val-CE curve for rank_extension, not just
+an early guess, so the mechanism is not merely truncating training early, it
+is correctly locating the actual best checkpoint.
+
+CONCLUSION: the existing best-epoch (val-CE) selection mechanism already fully
+contains the step-1 overfitting problem the supervisor observed. The
+"~0.15-0.2 gap" the supervisor flagged is a property of the FINAL epoch's
+weights; the SELECTED (kept) checkpoint at step 1 already reflects the true
+best point on the val-CE curve, well before that gap opens up.
+
+================================================================================
+3. MITIGATION DECISION
+================================================================================
+Per the requested preference order:
+  (1) rely on existing best-epoch selection if evidence shows it already
+      contains the problem;
+  (2) only if that evidence is insufficient, add an optional, flag-gated,
+      default-off step-1-only regularization knob.
+
+Section 2's evidence shows condition (1) is met: best-epoch selection already
+intervenes at 8/8 methods at step 1 and recovers the true val-CE minimum. NO
+CODE CHANGE WAS MADE for Task 2 -- adding a step-1-only early-stop patience or
+dropout override now would duplicate a mechanism that measurably already
+works, add an unused knob with no evidence behind its need, and (per this
+project's own convention -- see the LORA_DROPOUT comment block in
+vit_lora_cifar100_full5step_n5.py describing the dropout 0.1 experiment that
+was reverted specifically because it added a "second, blunter regularizer on
+top" of a working best-epoch selection) repeat a mistake this codebase has
+already identified and backed out of once.
+
+If a future run's data ever shows best-epoch selection failing to contain
+step-1 overfitting (e.g. the true val-CE minimum shifting to epoch 1, giving
+the selection mechanism nothing useful to recover, or selected_val_ce itself
+trending up across runs despite the mechanism firing), the documented fallback
+is a flag such as STEP1_EARLY_STOP_PATIENCE (default None / no-op, only
+consulted for cl_step == 0) or a LORA_DROPOUT override applied only at step 1
+-- gated so steps 2-5 and the default protocol are completely unaffected. Not
+implemented now because it is not evidenced as necessary.
+
+================================================================================
+4. THESIS-READY PARAGRAPH
+================================================================================
+Step 1 of every continual-learning method in this study is trained under pure
+cross-entropy: there is no knowledge-distillation teacher yet (the first task
+has no predecessor to distill from) and no factor-orthogonality reference yet
+(no prior LoRA factors exist to be orthogonal to). With full LoRA capacity
+free to fit only 20 classes and no competing loss term, every method's
+training CE collapses toward zero within the first two or three epochs while
+validation CE plateaus early and then drifts upward -- a textbook mild
+overfitting signature, and it is identical in scale and shape across all eight
+methods at this step, since nothing yet distinguishes their objectives. From
+step 2 onward the picture bifurcates by mechanism rather than by step index:
+methods using knowledge distillation are measurably protected against this
+collapse -- across both the 6-epoch and 9-epoch runs studied here, a
+KD-active step never drives training CE below 0.05 at any of steps 2-5,
+because matching a soft teacher distribution is a strictly harder, less
+trivially satisfiable objective than fitting hard labels alone. Methods using
+only factor-orthogonality regularization, by contrast, still collapse to
+near-zero training CE at later steps just as they did at step 1 -- the
+orthogonality loss itself decays to a numerically negligible value within a
+few epochs of each step and does not act as an effective anti-overfitting
+force, despite superficially being "another CL regularizer." In this sense,
+the continual-learning objectives introduced from step 2 onward only
+sometimes double as implicit anti-overfitting regularizers: knowledge
+distillation reliably does, factor-orthogonality reliably does not, and step 1
+is simply the one point in the schedule where no method has access to either.

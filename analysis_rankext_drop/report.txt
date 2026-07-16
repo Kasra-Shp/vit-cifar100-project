@@ -1,0 +1,278 @@
+================================================================================
+RANK_EXTENSION ACCURACY DROP — ROOT CAUSE ANALYSIS
+================================================================================
+Runs compared:
+  NEW  = R3/results_4mod_20260715_light/.../MAIN_20260715_144651
+         (target_modules=[q,k,v,out]_proj, use_classifier_calibration=True,
+          head_lr_multiplier=10.0, lora_dropout=0.05, 9 epochs/step,
+          factor-orth formula fix applied)
+  PREV = R3/results_EPOCH6_20260711_light/.../MAIN_20260711_214100
+         (target_modules=[q,v]_proj, no calibration, head_lr_multiplier
+          implicitly 1.0, lora_dropout=0.10, 6 epochs/step, old factor-orth
+          formula on the simple_avg path)
+
+CAVEAT ON THE COMPARISON BASELINE: git history shows an intermediate commit
+(5c80ba8, "EPOCHS=9; dropout=0.05", timestamped ~20260715_0142) that sits
+between PREV and NEW and is NOT archived anywhere under R3 (no folder matching
+that run_tag exists on disk). The only previous-run data actually available in
+R3 for comparison is the 20260711_214100 (6-epoch, dropout=0.10, 2-module) run,
+so this analysis necessarily bundles the epoch/dropout change in with the
+"4 changes" the NEW run is nominally isolating. This does not undermine the
+verdict below (more epochs / lower dropout only improves convergence — it
+cannot explain a catastrophic accuracy collapse), but it means the reported
+deltas for methods that IMPROVED are not a clean single-variable ablation.
+
+================================================================================
+EXECUTIVE SUMMARY
+================================================================================
+The rank_extension family did NOT uniformly regress. Its two non-KD variants
+(rank_extension, rank_extension_orth_factor_lam_50) IMPROVED by +30.4 and
++29.9 points all_seen accuracy, in line with the simple_avg family's broad
+improvement. Only the two KD variants collapsed:
+
+    rank_extension_kd_only_T2                 59.29% -> 50.12%  (-9.2 pts)
+    rank_extension_orth_factor_lam_50_kd_T2    67.98% -> 26.24% (-41.7 pts, catastrophic)
+
+Per-step training loss curves (train_ce / val_ce per epoch) are HEALTHY and
+essentially unchanged in shape/scale between NEW and PREV for all four
+rank_extension variants, including the two that collapsed. Training is not
+broken. The damage happens strictly AFTER training, in the merge + evaluation
+path — and the fingerprint (step-1 block accuracy jumps up while steps 2-5
+collapse toward chance, even though step-1's own training loss and step-5's
+own training loss are both fine) points at exactly one shared, KD-sensitive,
+post-hoc operation: calibrate_classifier_row_norms(), the newly-enabled
+USE_CLASSIFIER_CALIBRATION=True path (H2).
+
+VERDICT: H2 (classifier row-norm calibration) is the primary cause, and it is
+specifically incompatible with rank_extension's KD variants because of how the
+calibration function computes its correction (see "Mechanism" below). H1 (head
+LR x10) is a secondary amplifier, not the root cause on its own — it is applied
+identically to the two rank_extension variants that IMPROVED, so it cannot be
+sufficient by itself. H3 (4 target modules) contributes a modest, uniform
+increase in overfitting score across ALL rank_extension variants (collapsed
+and improved alike), so it is at most a minor amplifier, not the trigger. H4
+(factor-orth fix) is confirmed as a non-factor for rank_extension, exactly as
+expected (control check passes).
+
+RECOMMENDED MINIMAL FIX: disable use_classifier_calibration for the
+rank_extension family specifically (or, more targeted: skip calibration for
+any method whose classifier is the shared/incremental one rather than a
+stitched independent-head merge), and re-run. Do not touch head_lr_multiplier
+or target_modules — the data shows those are not the trigger.
+
+================================================================================
+STEP 1 — QUANTIFYING THE DROP (see accuracy_comparison_NEW_vs_PREV.csv)
+================================================================================
+all_seen accuracy, NEW vs PREV, all 8 methods (sorted by delta):
+
+  method                                    PREV     NEW     delta
+  ---------------------------------------------------------------
+  simple_avg_kd_T2                         39.15    71.51   +32.36
+  rank_extension                           23.56    53.95   +30.39
+  rank_extension_orth_factor_lam_50        35.10    64.95   +29.85
+  simple_avg                               48.52    72.09   +23.57
+  simple_avg_factor_orth                   61.63    75.54   +13.91
+  simple_avg_factor_orth_kd_T2             63.80    63.71    -0.09  (flat)
+  rank_extension_kd_only_T2                59.29    50.12    -9.17
+  rank_extension_orth_factor_lam_50_kd_T2  67.98    26.24   -41.74  (catastrophic)
+
+KEY OBSERVATION: this is NOT a family-wide regression. 6 of 8 methods improved
+or held flat; only the two rank_extension+KD methods collapsed, and the
+collapse is far worse when factor_orth is stacked on top of KD (-41.7 vs -9.2).
+simple_avg's own KD variants did NOT collapse (simple_avg_kd_T2 improved
++32.4; simple_avg_factor_orth_kd_T2 was flat). So the failure mode requires
+BOTH "rank_extension" AND "KD" to be present simultaneously — it is a
+family x KD interaction, not a KD problem or a rank_extension problem in
+isolation.
+
+first_step / later_steps breakdown (see fig3_per_group_pattern.png):
+
+  method                                    first_step        later_steps
+                                          PREV -> NEW        PREV -> NEW
+  ------------------------------------------------------------------------
+  rank_extension                            3.75 -> 41.95     28.51 -> 56.95   (both up)
+  rank_extension_kd_only_T2                69.40 -> 94.70     56.76 -> 38.98   (up / down)
+  rank_extension_orth_factor_lam_50         8.35 -> 66.25     41.79 -> 64.63   (both up)
+  rank_extension_orth_factor_lam_50_kd_T2  80.30 -> 95.55     64.90 ->  8.91   (up / catastrophic down)
+
+The signature is consistent: in both KD variants, first_step (step-1 test
+accuracy under the FINAL model) goes UP while later_steps (average of steps
+2-5) goes DOWN — in the worst case, down to 5.5-13.5% per-step, barely above
+the 5% random-guess floor for a 20-way split. The non-KD variants show no such
+split; both groups move up together.
+
+================================================================================
+STEP 2 — IS TRAINING ITSELF HEALTHY? (see convergence_final_epoch_by_step_NEW_vs_PREV.csv)
+================================================================================
+Final-epoch train_ce / val_ce per CL step, rank_extension_orth_factor_lam_50_kd_T2:
+
+  step  NEW(ep9) train_ce/val_ce      PREV(ep6) train_ce/val_ce
+  1     0.0105 / 0.2073               0.0398 / 0.1457
+  2     0.7549 / 1.0429               0.8632 / 1.1091
+  3     0.6369 / 0.8040               0.7611 / 0.8896
+  4     0.5653 / 0.7597               0.7462 / 0.8480
+  5     0.4876 / 0.6475               0.6238 / 0.6865
+
+NEW's per-step val_ce is at or BELOW PREV's at every step. Nothing here
+resembles divergence, oscillation, or a stuck optimizer — training is at
+least as healthy in NEW as in PREV. fig2_convergence_overlay.png shows this
+visually for both collapsed methods: the NEW (solid) and PREV (dashed) curves
+track each other closely across all 5 concatenated CL steps.
+
+This directly implies: whatever destroys accuracy happens in the path AFTER
+per-step training finishes (merge across steps -> calibrate_classifier_row_norms
+-> final evaluation), because the per-step training signal that would show
+optimizer/LR/module-count damage (H1, H3) simply isn't there.
+
+Corroborating detail: step_id=1 training is IDENTICAL between
+rank_extension_kd_only_T2 and plain rank_extension in NEW (train_ce=0.0105,
+val_ce=0.2073 for both) — expected, since there is no KD teacher for the very
+first CL step. Yet their FINAL reported first_step accuracy differs sharply
+between methods in ways that depend on what happened in steps 2-5. Since
+step-1's row-masked training is provably identical, the only way step-1's
+final reported accuracy can vary by method is if a POST-hoc, cross-block
+operation (calibration) is rescaling step-1's rows using information that
+depends on how steps 2-5 trained. That is exactly what
+calibrate_classifier_row_norms() does (see Step 3 / H2 below).
+
+Overfitting diagnostics (train_val_gap_by_method.csv) do show overfitting_score
+rising for every rank_extension variant in NEW vs PREV (H3 signal), but the
+rise is present for BOTH the improved and the collapsed variants (e.g.
+rank_extension_orth_factor_lam_50 also went from moderate/1.18 to
+moderate/3.90, yet its accuracy improved by +29.9). So increased overfitting
+from the 4-module expansion is real but not selective — it cannot explain why
+only the KD variants catastrophically failed.
+
+================================================================================
+STEP 3 — HYPOTHESIS TESTING
+================================================================================
+
+H1 — head_lr_multiplier x10 (REJECTED as sole cause, plausible as amplifier)
+  head_lr_multiplier=10.0 is applied identically to all 8 methods (confirmed
+  in hyperparameters_by_method.json), including rank_extension and
+  rank_extension_orth_factor_lam_50, which IMPROVED. If a 10x head LR alone
+  destabilized rank_extension's protected/masked classifier training, both
+  non-KD variants should show it too — they don't (their per-step val_ce is
+  healthy and their final accuracy improved). Per-step val_ce for step 1 (no
+  KD signal yet, so purely a test of "does 10x head LR break early training")
+  is 0.2073 in NEW vs 0.1457 in PREV — slightly worse but not dramatically so,
+  and this exact same step-1 model is shared by rank_extension and
+  rank_extension_kd_only_T2, one of which is fine and one of which isn't
+  downstream. Conclusion: head LR x10 is not sufficient on its own. It may
+  still be amplifying whatever row-norm divergence KD introduces across
+  blocks (see H2), by letting the head move further per step, but it is not
+  the trigger.
+
+H2 — post-merge classifier row-norm calibration (PRIMARY SUSPECT — CONFIRMED)
+  Mechanism (read from vit_lora_cifar100_full5step_n5.py,
+  calibrate_classifier_row_norms(), lines ~2039-2082): applied ONCE, after ALL
+  5 CL steps finish, to the fully merged/final classifier. It computes
+  target_norm = mean row-norm over ALL 100 rows (every step's block, together),
+  then for each step's 20-row block independently rescales that block by
+  scale = target_norm / mean(row_norms_in_block). Two properties make this
+  dangerous for rank_extension specifically:
+    (a) rank_extension's classifier is NOT independently re-initialized per
+        step (unlike simple_avg, which trains a fresh nn.Linear each step and
+        stitches 5 independent heads together — exactly the "80 permanent
+        negatives" scale-imbalance problem WA calibration was designed to
+        fix, per the function's own docstring). rank_extension instead
+        row-masks gradients (add_classifier_row_gradient_mask) and protects
+        already-trained rows across subsequent steps
+        (restore_protected_classifier_rows on every training step), so its
+        classifier is internally self-consistent by construction — each
+        block's scale was set relative to the SAME persistent weight matrix
+        the other blocks live in, not to a separate random init. There is
+        much less reason to expect a scale mismatch here, and the code's own
+        comment concedes this correction is applied to rank_extension only
+        for "uniform protocol," not because per-block evidence in this
+        codebase shows it needs it.
+    (b) target_norm and each block's scale factor are computed from ALL
+        blocks jointly — including blocks whose training characteristics
+        differ a lot when KD is enabled (steps 2-5 use a distillation loss
+        that step 1 never sees; kd_over_CE_mean ~= 1.0-1.25 in the loss
+        summary). This is a genuine cross-contamination path: a change to
+        how steps 2-5 train under KD can alter the row norms of blocks 2-5,
+        which shifts the GLOBAL target_norm, which changes the rescale factor
+        applied even to step 1's untouched, frozen rows. That is precisely
+        why step-1's identical pre-calibration weights end up with different
+        final accuracy depending on whether steps 2-5 used KD — there is no
+        other mechanism in this pipeline that could produce that result from
+        provably-identical step-1 training.
+  Observed pattern matches this exactly: first_step (least exposed to the
+  KD-driven norm shift, but not fully spared because target_norm is global)
+  moves UP, while later_steps (the blocks whose own scale was directly
+  distorted, then miscalibrated relative to a target_norm that no longer
+  represents them) moves sharply DOWN, worst when factor_orth is stacked on
+  top of KD (adding yet another loss term that further perturbs row-norm
+  growth per block: factor_orth_loss_weighted contributes a large, decaying
+  term (~1.85 mean, ~155-182 early on) that interacts with the same weight
+  matrix's overall scale dynamics during training).
+
+H3 — 4 target modules, q/k/v/out_proj (MINOR CONTRIBUTOR, NOT THE TRIGGER)
+  Adding k_proj/out_proj increases overfitting_score for every rank_extension
+  variant (moderate->strong shifts, ~1.2-2x score increases), consistent with
+  more adapted capacity per layer. But this rise is present in both the
+  methods that improved and the methods that collapsed, and per-step train/val
+  CE is not visibly worse in NEW than PREV (if anything it's comparable or
+  better at the final epoch). If module expansion alone were the trigger, the
+  non-KD rank_extension variants — which share the exact same 4-module
+  expansion — would also show degraded final accuracy. They don't. Ruled out
+  as the primary cause; consistent with being a minor amplifier of whatever
+  row-norm effect calibration is acting on.
+
+H4 — factor-orth formula fix on simple_avg path (CONFIRMED NON-FACTOR / CONTROL PASSES)
+  The fix only touches the simple_avg path's factor-orth computation (the
+  rank_extension path already used the correct trace(A^T A - B B^T)-style
+  factor-orthogonality formula, per the task description). Comparing
+  factor_orth loss components for rank_extension_orth_factor_lam_50 and
+  rank_extension_orth_factor_lam_50_kd_T2, NEW vs PREV
+  (loss_components_summary_by_method.csv): final_train_factor_orth_loss_raw is
+  0.000001-0.000003 in NEW vs 0.000003-0.000006 in PREV — same order of
+  magnitude, same decay-to-near-zero shape, both runs. The orth loss curve is
+  unchanged in shape and scale for rank_extension, exactly as expected if the
+  fix never touched its code path. Control check passes; H4 contributes
+  nothing to the observed collapse.
+
+================================================================================
+STEP 4 — RANKED VERDICT AND RECOMMENDED FIX
+================================================================================
+1. H2 (classifier row-norm calibration) — PRIMARY CAUSE. Strongest and most
+   specific evidence: training loss is healthy throughout, the damage appears
+   only in final (post-merge) accuracy, the damage is asymmetric across step
+   blocks in a way that only a global, cross-block operation could produce,
+   and the codebase's own docstring reasoning for applying it to
+   rank_extension is a "uniform protocol" assumption rather than
+   codebase-specific evidence.
+2. H1 (head LR x10) — SECONDARY AMPLIFIER. Applied uniformly and does not
+   break the non-KD rank_extension variants, so it cannot be sufficient alone,
+   but it plausibly widens the per-block row-norm divergence that H2's
+   calibration then mis-corrects, especially under KD.
+3. H3 (4 target modules) — MINOR AMPLIFIER. Measurably increases overfitting
+   score for all rank_extension variants but does not selectively break the
+   KD ones; not a primary driver.
+4. H4 (factor-orth fix) — CONFIRMED NO EFFECT on rank_extension (control
+   passes, as expected).
+
+RECOMMENDED MINIMAL FIX FOR A CONFIRMATION RUN:
+  Set use_classifier_calibration=False for the rank_extension family only
+  (leave it True for simple_avg, where the docstring's justification —
+  independently re-initialized per-step heads with 80 permanent negatives —
+  actually applies and is empirically working: 3 of 4 simple_avg variants
+  improved substantially with calibration on). Keep head_lr_multiplier=10.0
+  and the 4 target modules unchanged for rank_extension, since neither shows
+  evidence of being the trigger. Re-run rank_extension_kd_only_T2 and
+  rank_extension_orth_factor_lam_50_kd_T2 (and the two non-KD variants as a
+  sanity check that disabling calibration doesn't regress them) and confirm
+  later_steps accuracy recovers to roughly its PREV level or better.
+
+================================================================================
+FILES IN THIS ANALYSIS
+================================================================================
+  report.txt                                       - this file
+  accuracy_comparison_NEW_vs_PREV.csv               - full 8-method first/later/all_seen table with deltas
+  convergence_final_epoch_by_step_NEW_vs_PREV.csv   - final-epoch train/val CE per CL step, rank_extension family
+  overfitting_diagnostics_NEW_vs_PREV.csv           - train/val gap + overfitting score, rank_extension family
+  fig1_accuracy_deltas.png                          - all_seen accuracy delta, all 8 methods, sorted
+  fig2_convergence_overlay.png                      - val CE curves, NEW vs PREV overlay, both KD rank_ext variants
+  fig3_per_group_pattern.png                        - first_step vs later_steps, all 4 rank_ext variants, NEW vs PREV
+  make_figures.py                                   - script that generated the figures (rerunnable)

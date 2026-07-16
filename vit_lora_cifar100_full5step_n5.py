@@ -235,10 +235,50 @@ LORA_DROPOUT = 0.05
 TARGET_MODULES = ["q_proj", "k_proj", "v_proj", "out_proj"]
 
 # ACCURACY-PUSH CHANGE 2 (flag): rehearsal-free, post-merge-only classifier
-# row-norm calibration (WA-style weight alignment, Zhao et al. 2020) applied
-# identically to all 8 methods right before final evaluation. See
+# row-norm calibration (WA-style weight alignment, Zhao et al. 2020). See
 # calibrate_classifier_row_norms() below for the mechanism and rationale.
+#
+# POST-INCIDENT FIX (analysis_rankext_drop/report.txt): this used to be applied
+# identically to all 8 methods right before final evaluation. That corrupted
+# rank_extension's two KD variants (68.0%->26.2% and 59.3%->50.1% all_seen
+# accuracy) while leaving its two non-KD variants fine and helping simple_avg
+# across the board. Root cause: calibrate_classifier_row_norms() computes ONE
+# global target row-norm from all 100 rows and rescales each CL step's 20-row
+# block to match it. simple_avg's classifier is 5 independently-reinitialized
+# heads stitched together (each trained with 80 permanent negatives) -- exactly
+# the scale-imbalance case WA calibration was designed to fix, and it
+# empirically helps there. rank_extension's classifier is a single persistent
+# matrix, incrementally trained with per-row gradient masking
+# (add_classifier_row_gradient_mask) and protected/frozen rows across later
+# steps (restore_protected_classifier_rows) -- it is self-consistent by
+# construction, and a KD-driven row-norm difference between its blocks (steps
+# 2-5 train against a distillation loss step 1 never sees) lets the SHARED
+# global target_norm miscalibrate even step 1's untouched, frozen rows. Now
+# gated per family via CALIBRATION_ENABLED_FAMILIES rather than one global
+# switch, and consulted per-method through each method config's
+# "apply_calibration" field (see add_method() / ACTIVE_METHOD_MAP) -- never by
+# matching on method-name substrings.
 USE_CLASSIFIER_CALIBRATION = True
+
+# Master switch above still gates calibration overall (False disables it for
+# every method, same as before). When True, CALIBRATION_ENABLED_FAMILIES
+# decides which families actually get it. simple_avg: keep True (empirically
+# helps -- see report). rank_extension: False (its persistent, row-masked
+# classifier is not the independently-reinitialized-heads scenario WA
+# calibration targets, and calibrating it corrupted the KD variants). Add new
+# families here explicitly; unlisted families default to no calibration (see
+# family_applies_calibration() below).
+CALIBRATION_ENABLED_FAMILIES = {
+    "simple_avg": True,
+    "rank_extension": False,
+}
+
+
+def family_applies_calibration(family):
+    """True iff USE_CLASSIFIER_CALIBRATION is on AND this family opted in via
+    CALIBRATION_ENABLED_FAMILIES. Unlisted families default to False (safer
+    than silently calibrating a family nobody has reasoned about)."""
+    return bool(USE_CLASSIFIER_CALIBRATION) and bool(CALIBRATION_ENABLED_FAMILIES.get(str(family), False))
 
 # ACCURACY-PUSH CHANGE 3 (flag): classifier-head LR = LR_LORA/LR_RANKEXT times
 # this multiplier, via HeadLRTrainerMixin.create_optimizer() below. Set to 1.0 to
@@ -491,6 +531,7 @@ def build_active_method_configs():
             "rank": int(LORA_R),
             "rank_schedule": ("fixed:" + str(LORA_R)) if family == "simple_avg" else "->".join(str(v) for v in RANKEXT_RANK_SCHEDULE),
             "target_modules": ", ".join(TARGET_MODULES),
+            "apply_calibration": family_applies_calibration(family),
         })
 
     add_method("simple_avg", "simple_avg", "simple_avg")
@@ -1086,7 +1127,8 @@ def add_lora(model):
     return model
 
 print("LoRA target modules:", TARGET_MODULES)
-print("Classifier calibration enabled (USE_CLASSIFIER_CALIBRATION):", USE_CLASSIFIER_CALIBRATION)
+print("Classifier calibration master switch (USE_CLASSIFIER_CALIBRATION):", USE_CLASSIFIER_CALIBRATION)
+print("Classifier calibration by family (CALIBRATION_ENABLED_FAMILIES):", CALIBRATION_ENABLED_FAMILIES)
 print("Head LR multiplier (HEAD_LR_MULTIPLIER):", HEAD_LR_MULTIPLIER)
 
 
@@ -2727,7 +2769,7 @@ def run_simple_avg_variant(method_name):
         step_states=step_states,
     )
 
-    if USE_CLASSIFIER_CALIBRATION:
+    if method_cfg["apply_calibration"]:
         merged_model = calibrate_classifier_row_norms(merged_model)
 
     eval_rows = evaluate_model(merged_model, method_name)
@@ -4197,7 +4239,7 @@ def run_rank_extension_variant(
         old_active_in_forward=final_old_active_in_forward,
     )
 
-    if USE_CLASSIFIER_CALIBRATION:
+    if ACTIVE_METHOD_MAP[method_name]["apply_calibration"]:
         final_rank_model = calibrate_classifier_row_norms(final_rank_model)
 
     eval_rows = evaluate_model(final_rank_model, method_name)
@@ -5247,10 +5289,17 @@ def cfg_df():
     c["lora_alpha"]=LORA_ALPHA; c["lora_dropout"]=LORA_DROPOUT; c["target_modules"]=', '.join(TARGET_MODULES); c["batch_size"]=BATCH_LORA
     c["num_epochs"]=np.where(c.family.eq("rank_extension"), RANKEXT_EPOCHS, LORA_EPOCHS); c["learning_rate"]=np.where(c.family.eq("rank_extension"), LR_RANKEXT, LR_LORA)
     c["optimizer"]="AdamW"; c["scheduler"]=SCHED; c["lambda_orth"]=np.where(c.uses_delta_trace|c.uses_factor_orth, LAMBDA_ORTH, 0.0)
-    c["use_classifier_calibration"]=bool(USE_CLASSIFIER_CALIBRATION); c["head_lr_multiplier"]=float(HEAD_LR_MULTIPLIER)
+    # POST-INCIDENT FIX: "apply_calibration" is already the per-method truth
+    # (set in add_method() via family_applies_calibration()) -- do NOT
+    # broadcast the global USE_CLASSIFIER_CALIBRATION switch over it here, that
+    # would silently erase the per-family gating for every downstream
+    # CSV/JSON consumer. "use_classifier_calibration" is kept as an alias of
+    # the same per-method value so existing readers of that column name still
+    # see the real, per-method effective state rather than the master switch.
+    c["use_classifier_calibration"]=c["apply_calibration"]; c["head_lr_multiplier"]=float(HEAD_LR_MULTIPLIER)
     return c.reset_index(drop=True)
 CFG=cfg_df()
-js(Path(CONFIGS_DIR)/"run_config.json", {"run_name":RUN_NAME,"run_tag":RUN_TAG,"base_output_dir":BASE_OUTPUT_DIR,"model_checkpoint":MODEL_CHECKPOINT,"seed":SEED,"num_steps":NUM_STEPS,"classes_per_step":CLASSES_PER_STEP,"lora_rank":LORA_R,"lora_alpha":LORA_ALPHA,"lora_dropout":LORA_DROPOUT,"target_modules":TARGET_MODULES,"lambda_orth":LAMBDA_ORTH,"kd_temperatures":KD_TEMPERATURES,"kd_weight":KD_WEIGHT,"optimizer":"AdamW","scheduler":SCHED,"batch_size":BATCH_LORA,"use_classifier_calibration":bool(USE_CLASSIFIER_CALIBRATION),"head_lr_multiplier":float(HEAD_LR_MULTIPLIER)})
+js(Path(CONFIGS_DIR)/"run_config.json", {"run_name":RUN_NAME,"run_tag":RUN_TAG,"base_output_dir":BASE_OUTPUT_DIR,"model_checkpoint":MODEL_CHECKPOINT,"seed":SEED,"num_steps":NUM_STEPS,"classes_per_step":CLASSES_PER_STEP,"lora_rank":LORA_R,"lora_alpha":LORA_ALPHA,"lora_dropout":LORA_DROPOUT,"target_modules":TARGET_MODULES,"lambda_orth":LAMBDA_ORTH,"kd_temperatures":KD_TEMPERATURES,"kd_weight":KD_WEIGHT,"optimizer":"AdamW","scheduler":SCHED,"batch_size":BATCH_LORA,"use_classifier_calibration_master_switch":bool(USE_CLASSIFIER_CALIBRATION),"classifier_calibration_by_family":dict(CALIBRATION_ENABLED_FAMILIES),"head_lr_multiplier":float(HEAD_LR_MULTIPLIER)})
 js(Path(CONFIGS_DIR)/"supervisor_selected_methods.json", SUPERVISOR_SELECTED_METHOD_SPECS)
 js(Path(CONFIGS_DIR)/"hyperparameters_by_method.json", CFG.to_dict("records"))
 

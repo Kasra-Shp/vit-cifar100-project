@@ -232,7 +232,34 @@ LORA_DROPOUT = 0.05
 # on top of R3/R4 already flagging mild overfitting signatures at the smaller
 # 2-module setting -- worth watching in the results, not just assuming a win.
 # Revert to ["q_proj", "v_proj"] to disable (and update the pinned assert below).
+#
+# REVERT (2026-07-16, analysis_rankext_firststep/report.txt): this expansion is
+# now FAMILY-CONDITIONAL, same pattern as CALIBRATION_ENABLED_FAMILIES below.
+# rank_extension reverts to its BASELINE-proven 2-module setup
+# (q_proj/v_proj only) -- the diagnostic report traced rank_extension's
+# factor-orth collapse (first_step 8.35%->0.10%) partly to the 4-module
+# expansion doubling the number of simultaneous per-layer orthogonality
+# constraints enforced at every CL-step boundary, on top of head_lr x10 (see
+# HEAD_LR_MULTIPLIER_BY_FAMILY below). simple_avg keeps the 4-module setup
+# (it was never implicated in that collapse and benefits from the extra
+# capacity: SimpleAvg+FactorOrth was the best single method in the calibfix
+# run at 75.5%). TARGET_MODULES itself remains the simple_avg / default value
+# (also used by any legacy/disabled training path below that predates
+# family-conditional target modules); use TARGET_MODULES_BY_FAMILY /
+# family_target_modules() for anything that knows its family.
 TARGET_MODULES = ["q_proj", "k_proj", "v_proj", "out_proj"]
+
+TARGET_MODULES_BY_FAMILY = {
+    "simple_avg": list(TARGET_MODULES),
+    "rank_extension": ["q_proj", "v_proj"],
+}
+
+
+def family_target_modules(family):
+    """Per-family LoRA target modules. Unlisted families fall back to the
+    global TARGET_MODULES default (never matched by method-name substring --
+    same principle as family_applies_calibration() below)."""
+    return list(TARGET_MODULES_BY_FAMILY.get(str(family), TARGET_MODULES))
 
 # ACCURACY-PUSH CHANGE 2 (flag): rehearsal-free, post-merge-only classifier
 # row-norm calibration (WA-style weight alignment, Zhao et al. 2020). See
@@ -283,7 +310,32 @@ def family_applies_calibration(family):
 # ACCURACY-PUSH CHANGE 3 (flag): classifier-head LR = LR_LORA/LR_RANKEXT times
 # this multiplier, via HeadLRTrainerMixin.create_optimizer() below. Set to 1.0 to
 # fully disable (falls back to the untouched stock Trainer.create_optimizer()).
+#
+# REVERT (2026-07-16, analysis_rankext_firststep/report.txt): now FAMILY-
+# CONDITIONAL, same pattern as CALIBRATION_ENABLED_FAMILIES /
+# TARGET_MODULES_BY_FAMILY. rank_extension reverts to x1.0 (BASELINE, no
+# multiplier) -- the report flagged head_lr x10 as a plausible AMPLIFIER
+# (not sole cause) of the transient step-boundary CE spike that factor-orth
+# enlarges for rank_extension, since a 10x classifier LR turns a noisy
+# transient loss spike into a much larger one-shot weight change. It was
+# REJECTED as a *sufficient* cause on its own (applied uniformly in the
+# calibfix run to all 4 rank_extension variants, only 2 of which collapsed),
+# but reverting it removes one more untested variable while we test the
+# lambda-warmup fix below, and BASELINE (x1.0) is the config that actually
+# produced rank_extension's 68.0 historical best. simple_avg keeps x10 (never
+# implicated; SimpleAvg+FactorOrth's 75.5% was achieved WITH it).
 HEAD_LR_MULTIPLIER = 10.0
+
+HEAD_LR_MULTIPLIER_BY_FAMILY = {
+    "simple_avg": float(HEAD_LR_MULTIPLIER),
+    "rank_extension": 1.0,
+}
+
+
+def family_head_lr_multiplier(family):
+    """Per-family classifier-head LR multiplier. Unlisted families fall back
+    to the global HEAD_LR_MULTIPLIER default."""
+    return float(HEAD_LR_MULTIPLIER_BY_FAMILY.get(str(family), HEAD_LR_MULTIPLIER))
 
 
 REPLAY_PER_CLASS = 20
@@ -296,6 +348,75 @@ LAMBDA_ORTH_FACTOR = LAMBDA_ORTH
 KD_WEIGHT = 1.0
 KD_TEMPERATURES = [2.0]
 KD_TEMPERATURE = KD_TEMPERATURES[-1]
+
+# ACCURACY-PUSH CANDIDATE (flag, default ON): SimpleAvg+FactorOrth+KD applies
+# BOTH penalties at their full single-mechanism strength (lambda_orth=50,
+# kd_weight=1.0 -- identical to simple_avg_factor_orth and simple_avg_kd_T2
+# individually) and in the calibfix run this scored 63.71% all_seen -- BELOW
+# both components alone (SimpleAvg+FactorOrth 75.54%, SimpleAvg+KD 71.51%).
+#
+# Evidence for a full-strength MAGNITUDE conflict, checked directly against
+# training_loss_history_by_epoch.csv from the calibfix run before choosing
+# this fix over a timing-based one:
+#   - factor_orth_loss_weighted for simple_avg_factor_orth_kd_T2 is a violent
+#     transient, 100-3200x train_ce_loss, concentrated ENTIRELY in
+#     local_epoch==1 of each step (e.g. step 5: weighted orth=3218 vs
+#     train_ce=2.54, kd_weighted=1.19 -- orth outweighs CE+KD combined by
+#     roughly 850x at that single epoch), then collapses 3-4 orders of
+#     magnitude by local_epoch==2 and is negligible for the rest of the step.
+#   - kd_loss_weighted over the SAME step is NOT spiking or front-loaded the
+#     same way -- it declines smoothly and monotonically across all 9 epochs
+#     (step 5: 1.19 -> 0.67, roughly halving, comparable in scale to
+#     train_ce_loss throughout). KD does not exhibit the kind of transient
+#     that would point to a TIMING mismatch (e.g. "KD dominates late while
+#     orth dominates early") -- both terms are largest at the SAME moment
+#     (local_epoch==1), not different moments. This is why the chosen fix
+#     below is magnitude-scaling, not a KD annealing schedule (see the
+#     REJECTED alternative noted next to
+#     COMBINED_ORTH_WARMUP_ENABLED further down).
+# Halving each term's contribution ONLY when both are simultaneously active
+# is a standard multi-objective balancing move (the combined method must be
+# tuned as a combination, not a naive sum of two full-strength single-purpose
+# settings), not a removal of either mechanism. It changes ONLY this one
+# method's own hyperparameters -- simple_avg_factor_orth and simple_avg_kd_T2
+# keep their original, independently-proven full-strength values unchanged
+# (enforced in build_active_method_configs() via the lambda_orth_scale /
+# kd_weight_scale args to add_method(), applied only to the
+# simple_avg_factor_orth_kd_T2 call site -- and visible in the per-method
+# config tables, since this method's lambda_orth/kd_weight columns will now
+# read differently from its two single-penalty siblings).
+# NOTE: "combined >= max(components)" is the hypothesis this scaling is meant
+# to test, not a guaranteed outcome -- verify against the actual rerun.
+# Set to False to restore the naive full-strength sum (the calibfix
+# behavior that produced 63.71%).
+COMBINED_LOSS_SCALE_ENABLED = True
+COMBINED_LAMBDA_ORTH_SCALE = 0.5
+COMBINED_KD_WEIGHT_SCALE = 0.5
+
+# ACCURACY-PUSH CANDIDATE (flag, default OFF): additional/alternative lever --
+# ramp lambda_orth for the SAME combined method over the first
+# COMBINED_ORTH_WARMUP_EPOCHS epochs of each step, using the same
+# orth_lambda_warmup_multiplier() mechanism as rank_extension's
+# RANKEXT_ORTH_LAMBDA_WARMUP_ENABLED above, gated additionally on KD actually
+# being active this step (teacher_active) so it only ever touches the combined
+# method, never plain simple_avg_factor_orth. Directly targets the same
+# local_epoch==1 spike described above rather than its magnitude -- a
+# complementary lever, not a replacement for COMBINED_LOSS_SCALE_ENABLED.
+# Off by default so COMBINED_LOSS_SCALE_ENABLED's effect can be isolated and
+# validated on its own first; stacking two untested changes at once would
+# make a rerun's result impossible to attribute to either one.
+#
+# REJECTED ALTERNATIVE: a KD-side annealing schedule ("orth warmup while KD
+# anneals within each step", as originally proposed). Checked directly
+# against the loss histories above and NOT implemented: kd_loss_weighted does
+# not spike or front-load the way factor_orth_loss_weighted does -- it is
+# already a smooth, gently-decaying curve of comparable magnitude to
+# train_ce_loss across the WHOLE step, so there is no timing-mismatch signal
+# in the data for a KD-specific schedule to correct. Annealing a term that is
+# not misbehaving would add a second free parameter with no evidence behind
+# its shape, so it is left out.
+COMBINED_ORTH_WARMUP_ENABLED = False
+COMBINED_ORTH_WARMUP_EPOCHS = 1.0
 
 VALIDATION_PER_CLASS = 25
 LOSS_NA_FILL = 0.0
@@ -439,6 +560,84 @@ RANKEXT_DIAGNOSTICS = True
 RANKEXT_RANK_SCHEDULE = [16, 32, 48, 64, 80]
 RANKEXT_ALPHA_PER_RANK = 2.0
 
+# ACCURACY-PUSH CANDIDATE (flag, default OFF): wider per-step rank budget.
+# The default schedule gives each CL step only 16 fresh trainable ranks per
+# target module, vs simple_avg retraining its full LORA_R=80 ranks from
+# scratch every step. analysis_rankext_firststep/table1 shows rank_extension
+# trailing simple_avg by a wide margin on later_steps/all_seen in BOTH runs,
+# consistent with (in addition to, not instead of, the forgetting-time issue
+# documented in that report's Target 1c) a plain capacity bottleneck. This is
+# an INDEPENDENT lever from RANKEXT_ORTH_LAMBDA_WARMUP_ENABLED below -- keep
+# them off together first and enable one at a time so a rerun can attribute
+# any change to a single cause, per the report's "attribute honestly" standard.
+# Parameter cost: final total_rank 160 vs 80 -- roughly doubles trainable
+# rank-extension LoRA parameters per step by the last CL step (2 target
+# modules x wider rank, still less total than the calibfix run's 4 modules x
+# narrow rank, but meaningfully more than the 2-module/narrow-rank BASELINE
+# config that actually scored 68.0). Watch train_val_gap_by_method.csv
+# (overfitting score) if this is enabled -- R3/R4 already flagged mild
+# overfitting signatures at the smaller capacity setting.
+RANKEXT_RANK_SCHEDULE_WIDE = [32, 64, 96, 128, 160]
+USE_RANKEXT_RANK_SCHEDULE_WIDE = False
+assert len(RANKEXT_RANK_SCHEDULE_WIDE) == NUM_STEPS
+assert all(RANKEXT_RANK_SCHEDULE_WIDE[i] > RANKEXT_RANK_SCHEDULE_WIDE[i - 1] for i in range(1, NUM_STEPS))
+
+
+def active_rankext_rank_schedule():
+    """Resolves to RANKEXT_RANK_SCHEDULE_WIDE when USE_RANKEXT_RANK_SCHEDULE_WIDE
+    is on, else the default RANKEXT_RANK_SCHEDULE. Single source of truth for
+    every consumer (rank-triplet computation, reporting columns, hyperparameter
+    dumps) so the flag can't drift out of sync between training and reporting."""
+    return list(RANKEXT_RANK_SCHEDULE_WIDE) if USE_RANKEXT_RANK_SCHEDULE_WIDE else list(RANKEXT_RANK_SCHEDULE)
+
+
+# ACCURACY-PUSH CANDIDATE (flag, default OFF): ramp lambda_orth from 0 up to
+# its full configured value linearly over the first
+# RANKEXT_ORTH_LAMBDA_WARMUP_EPOCHS epochs of EACH CL step's local training
+# (self.state.epoch resets to ~0 at the start of every step's own Trainer, so
+# this is a per-step ramp, not a single ramp over the whole run), instead of
+# applying it at full strength from local_epoch 0.
+#
+# Evidence (analysis_rankext_firststep/table4_factororth_trajectory_stats.csv
+# and table4b): for rank_extension_orth_factor_lam_50, train_ce_loss at
+# local_epoch==1 of every step transition (step>1) is consistently 1.5-3.4x
+# higher than plain rank_extension's at the same point, and this ratio GROWS
+# with step index (1.47x at step2 -> 3.37x at step5 in the calibfix run) --
+# i.e. the orth penalty is punishing the fresh, barely-trained new rank block
+# before it has had a chance to fit the task, and this gets worse as more
+# frozen blocks accumulate. table4b separately shows END-of-step convergence
+# (val_ce) is never worse for the orth variant than for plain rank_extension
+# at any step in either run -- so the penalty isn't damaging final per-step
+# fit, only this specific early-epoch transient. And the raw orth violation
+# itself decays 2-4 orders of magnitude within 1-2 epochs on its own (table4:
+# e.g. NEW step 5 weighted orth 33.0 at epoch1 -> 0.08 at epoch2), so a short
+# ramp should be able to skip past the worst of the spike -- while the
+# constraint is already both small and evidently harmless by the time it
+# would re-engage at full strength.
+# Default OFF: BASELINE (no warmup, immediate full strength) is the config
+# that produced rank_extension's proven 68.0 result; this is an untested
+# hypothesis to validate in a rerun, not a confirmed fix.
+RANKEXT_ORTH_LAMBDA_WARMUP_ENABLED = False
+RANKEXT_ORTH_LAMBDA_WARMUP_EPOCHS = 1.0
+
+
+def orth_lambda_warmup_multiplier(epoch_val, warmup_epochs, enabled):
+    """Linear 0->1 ramp over the first `warmup_epochs` epochs of local
+    (per-CL-step) training; always 1.0 (full strength, no-op) when `enabled`
+    is False, `warmup_epochs` <= 0, or `epoch_val` is unavailable/NaN. Shared
+    by both the rank_extension (Objective 1) and simple_avg-combined
+    (Objective 2) warmup mechanisms below -- same formula, independently
+    gated per call site."""
+    if not enabled:
+        return 1.0
+    warmup_epochs = float(warmup_epochs)
+    if warmup_epochs <= 0.0 or epoch_val is None:
+        return 1.0
+    epoch_val = float(epoch_val)
+    if np.isnan(epoch_val):
+        return 1.0
+    return float(min(1.0, max(0.0, epoch_val / warmup_epochs)))
+
 
 # FIX 2: restrict the active method set to EXACTLY the 8 supervisor-selected
 # methods (see SUPERVISOR_SELECTED_METHOD_SPECS / SUPERVISOR_SELECTED_INTERNAL_METHODS
@@ -513,7 +712,7 @@ def kd_temperature_tag(temp):
 def build_active_method_configs():
     configs = []
 
-    def add_method(method_name, family, base_method, uses_kd=False, kd_temperature=0.0, uses_delta_trace=False, uses_factor_orth=False):
+    def add_method(method_name, family, base_method, uses_kd=False, kd_temperature=0.0, uses_delta_trace=False, uses_factor_orth=False, lambda_orth_scale=1.0, kd_weight_scale=1.0):
         if not METHODS_TO_RUN.get(base_method, False):
             return
         configs.append({
@@ -522,15 +721,24 @@ def build_active_method_configs():
             "base_method": str(base_method),
             "uses_kd": bool(uses_kd),
             "kd_temperature": float(kd_temperature) if uses_kd else 0.0,
-            "kd_weight": float(KD_WEIGHT if uses_kd else 0.0),
+            "kd_weight": float(KD_WEIGHT if uses_kd else 0.0) * float(kd_weight_scale),
             "uses_delta_trace": bool(uses_delta_trace),
             "uses_factor_orth": bool(uses_factor_orth),
-            "lambda_orth": float(LAMBDA_ORTH if (uses_delta_trace or uses_factor_orth) else 0.0),
+            "lambda_orth": float(LAMBDA_ORTH if (uses_delta_trace or uses_factor_orth) else 0.0) * float(lambda_orth_scale),
+            # ACCURACY-PUSH CANDIDATE bookkeeping: 1.0 for every method except
+            # simple_avg_factor_orth_kd_T2 when COMBINED_LOSS_SCALE_ENABLED is
+            # on -- recorded explicitly so the per-method config tables make
+            # the scaling visible rather than silently folding it into
+            # lambda_orth/kd_weight with no trace of *why* those differ from
+            # the single-penalty siblings.
+            "lambda_orth_scale": float(lambda_orth_scale),
+            "kd_weight_scale": float(kd_weight_scale),
             "uses_replay": False,
             "uses_zero_old": False,
             "rank": int(LORA_R),
-            "rank_schedule": ("fixed:" + str(LORA_R)) if family == "simple_avg" else "->".join(str(v) for v in RANKEXT_RANK_SCHEDULE),
-            "target_modules": ", ".join(TARGET_MODULES),
+            "rank_schedule": ("fixed:" + str(LORA_R)) if family == "simple_avg" else "->".join(str(v) for v in active_rankext_rank_schedule()),
+            "target_modules": ", ".join(family_target_modules(family)),
+            "head_lr_multiplier": family_head_lr_multiplier(family),
             "apply_calibration": family_applies_calibration(family),
         })
 
@@ -543,9 +751,18 @@ def build_active_method_configs():
         kd_tag = kd_temperature_tag(kd_temp)
         add_method(f"simple_avg_delta_orth_kd_{kd_tag}", "simple_avg", "simple_avg_delta_orth_kd", uses_kd=True, kd_temperature=kd_temp, uses_delta_trace=True)
     add_method("simple_avg_factor_orth", "simple_avg", "simple_avg_factor_orth", uses_factor_orth=True)
+    # Objective 2: scaling applies ONLY to this combined call site (both KD
+    # and factor-orth active at once) -- simple_avg_factor_orth above and
+    # simple_avg_kd_T2 below are untouched and keep full-strength values.
+    _combined_lambda_scale = float(COMBINED_LAMBDA_ORTH_SCALE) if COMBINED_LOSS_SCALE_ENABLED else 1.0
+    _combined_kd_scale = float(COMBINED_KD_WEIGHT_SCALE) if COMBINED_LOSS_SCALE_ENABLED else 1.0
     for kd_temp in KD_TEMPERATURES:
         kd_tag = kd_temperature_tag(kd_temp)
-        add_method(f"simple_avg_factor_orth_kd_{kd_tag}", "simple_avg", "simple_avg_factor_orth_kd", uses_kd=True, kd_temperature=kd_temp, uses_factor_orth=True)
+        add_method(
+            f"simple_avg_factor_orth_kd_{kd_tag}", "simple_avg", "simple_avg_factor_orth_kd",
+            uses_kd=True, kd_temperature=kd_temp, uses_factor_orth=True,
+            lambda_orth_scale=_combined_lambda_scale, kd_weight_scale=_combined_kd_scale,
+        )
 
     add_method("rank_extension", "rank_extension", "rank_extension")
     for kd_temp in KD_TEMPERATURES:
@@ -590,14 +807,29 @@ assert LORA_ALPHA == 160
 assert LORA_R == RANKEXT_RANK_SCHEDULE[-1]
 assert float(RANKEXT_ALPHA_PER_RANK * RANKEXT_RANK_SCHEDULE[-1]) == float(LORA_ALPHA)
 # ACCURACY-PUSH CHANGE 1: pinned set updated from ["q_proj", "v_proj"] to include
-# k_proj/out_proj. Keep this assert in sync with TARGET_MODULES above -- it exists
-# to catch silent drift between the two, not to gate the value itself.
+# k_proj/out_proj. This is now the simple_avg-family value specifically (see
+# TARGET_MODULES_BY_FAMILY REVERT note above) -- keep this assert in sync with
+# TARGET_MODULES above -- it exists to catch silent drift between the two,
+# not to gate the value itself.
 assert TARGET_MODULES == ["q_proj", "k_proj", "v_proj", "out_proj"]
+# REVERT (2026-07-16): rank_extension's target modules are pinned back to the
+# BASELINE-proven 2-module set. Keep in sync with TARGET_MODULES_BY_FAMILY.
+assert TARGET_MODULES_BY_FAMILY["rank_extension"] == ["q_proj", "v_proj"]
+assert TARGET_MODULES_BY_FAMILY["simple_avg"] == TARGET_MODULES
 assert set(ENABLED_METHOD_FAMILIES) == EXPECTED_ENABLED_METHOD_FAMILIES
 assert not any(cfg["uses_replay"] for cfg in ACTIVE_METHOD_CONFIGS)
 assert not any(cfg["uses_zero_old"] for cfg in ACTIVE_METHOD_CONFIGS)
 assert all(cfg["rank"] == LORA_R for cfg in ACTIVE_METHOD_CONFIGS)
-assert all(cfg["target_modules"] == ", ".join(TARGET_MODULES) for cfg in ACTIVE_METHOD_CONFIGS)
+# Per-family target_modules check (was a single global comparison before the
+# REVERT above made this family-conditional).
+assert all(
+    cfg["target_modules"] == ", ".join(family_target_modules(cfg["family"]))
+    for cfg in ACTIVE_METHOD_CONFIGS
+)
+assert all(
+    cfg["head_lr_multiplier"] == family_head_lr_multiplier(cfg["family"])
+    for cfg in ACTIVE_METHOD_CONFIGS
+)
 
 kd_method_temperature_map = {}
 for cfg in ACTIVE_METHOD_CONFIGS:
@@ -840,7 +1072,10 @@ print({
     "LORA_R": LORA_R,
     "LORA_ALPHA": LORA_ALPHA,
     "LORA_DROPOUT": LORA_DROPOUT,
-    "TARGET_MODULES": TARGET_MODULES,
+    "TARGET_MODULES (default/simple_avg)": TARGET_MODULES,
+    "TARGET_MODULES_BY_FAMILY": TARGET_MODULES_BY_FAMILY,
+    "HEAD_LR_MULTIPLIER_BY_FAMILY": HEAD_LR_MULTIPLIER_BY_FAMILY,
+    "RANKEXT_RANK_SCHEDULE_active": active_rankext_rank_schedule(),
 })
 
 print("\nOrth/KD config:")
@@ -862,7 +1097,12 @@ print({
 
 print("\nRank extension:")
 print({
-    "RANKEXT_RANK_SCHEDULE": RANKEXT_RANK_SCHEDULE,
+    "RANKEXT_RANK_SCHEDULE (default)": RANKEXT_RANK_SCHEDULE,
+    "RANKEXT_RANK_SCHEDULE_WIDE": RANKEXT_RANK_SCHEDULE_WIDE,
+    "USE_RANKEXT_RANK_SCHEDULE_WIDE": USE_RANKEXT_RANK_SCHEDULE_WIDE,
+    "active_rankext_rank_schedule()": active_rankext_rank_schedule(),
+    "RANKEXT_ORTH_LAMBDA_WARMUP_ENABLED": RANKEXT_ORTH_LAMBDA_WARMUP_ENABLED,
+    "RANKEXT_ORTH_LAMBDA_WARMUP_EPOCHS": RANKEXT_ORTH_LAMBDA_WARMUP_EPOCHS,
     "RANKEXT_ALPHA_PER_RANK": RANKEXT_ALPHA_PER_RANK,
     "LR_RANKEXT": LR_RANKEXT,
     "REPLAY_PER_CLASS": REPLAY_PER_CLASS,
@@ -1108,16 +1348,21 @@ def disable_incompatible_torchao_for_peft():
     except ImportError:
         return
 
-def add_lora(model):
+def add_lora(model, target_modules=None):
     """
-    Add LoRA to the CLIP-ViT attention projection modules listed in TARGET_MODULES.
+    Add LoRA to the CLIP-ViT attention projection modules listed in
+    `target_modules` (defaults to the global TARGET_MODULES for callers that
+    predate family-conditional target modules -- see TARGET_MODULES_BY_FAMILY
+    / family_target_modules() above; the simple_avg-family training loop
+    passes family_target_modules("simple_avg") explicitly).
     """
     disable_incompatible_torchao_for_peft()
+    resolved_target_modules = list(TARGET_MODULES) if target_modules is None else list(target_modules)
 
     lora_config = LoraConfig(
         r=LORA_R,
         lora_alpha=LORA_ALPHA,
-        target_modules=TARGET_MODULES,
+        target_modules=resolved_target_modules,
         lora_dropout=LORA_DROPOUT,
         bias="none",
         modules_to_save=["classifier"],
@@ -1126,10 +1371,20 @@ def add_lora(model):
     model = get_peft_model(model, lora_config)
     return model
 
-print("LoRA target modules:", TARGET_MODULES)
+print("LoRA target modules (default/simple_avg):", TARGET_MODULES)
+print("LoRA target modules by family (TARGET_MODULES_BY_FAMILY):", TARGET_MODULES_BY_FAMILY)
 print("Classifier calibration master switch (USE_CLASSIFIER_CALIBRATION):", USE_CLASSIFIER_CALIBRATION)
 print("Classifier calibration by family (CALIBRATION_ENABLED_FAMILIES):", CALIBRATION_ENABLED_FAMILIES)
-print("Head LR multiplier (HEAD_LR_MULTIPLIER):", HEAD_LR_MULTIPLIER)
+print("Head LR multiplier (default/simple_avg, HEAD_LR_MULTIPLIER):", HEAD_LR_MULTIPLIER)
+print("Head LR multiplier by family (HEAD_LR_MULTIPLIER_BY_FAMILY):", HEAD_LR_MULTIPLIER_BY_FAMILY)
+print("Rank-extension rank schedule in effect:", active_rankext_rank_schedule(),
+      "(wide schedule enabled)" if USE_RANKEXT_RANK_SCHEDULE_WIDE else "(default schedule)")
+print("Rank-extension orth-lambda warmup enabled:", RANKEXT_ORTH_LAMBDA_WARMUP_ENABLED,
+      "| warmup_epochs:", RANKEXT_ORTH_LAMBDA_WARMUP_EPOCHS)
+print("Combined SimpleAvg+FactorOrth+KD loss scaling enabled:", COMBINED_LOSS_SCALE_ENABLED,
+      "| lambda_orth_scale:", COMBINED_LAMBDA_ORTH_SCALE, "| kd_weight_scale:", COMBINED_KD_WEIGHT_SCALE)
+print("Combined SimpleAvg+FactorOrth+KD orth warmup enabled:", COMBINED_ORTH_WARMUP_ENABLED,
+      "| warmup_epochs:", COMBINED_ORTH_WARMUP_EPOCHS)
 
 
 # In[ ]:
@@ -2404,10 +2659,20 @@ def build_head_lr_param_groups(model, decay_parameter_names, base_lr, head_lr_mu
 class HeadLRTrainerMixin:
     """
     ACCURACY-PUSH CHANGE 3: overrides create_optimizer() to give the classifier
-    head HEAD_LR_MULTIPLIER times the base LR. When HEAD_LR_MULTIPLIER == 1.0
-    this is a no-op that defers to the untouched stock
-    Trainer.create_optimizer() (single global LR, identical to before this
-    change), so the flag fully disables the change, not just neutralizes it.
+    head a per-family multiplier times the base LR (REVERT 2026-07-16: now
+    resolved per-instance via family_head_lr_multiplier(), not the bare
+    HEAD_LR_MULTIPLIER global -- see HEAD_LR_MULTIPLIER_BY_FAMILY above).
+    When the resolved multiplier == 1.0 this is a no-op that defers to the
+    untouched stock Trainer.create_optimizer() (single global LR, identical to
+    before this change), so the flag fully disables the change for that
+    family, not just neutralizes it.
+
+    Every class that mixes this in (IndependentLoraOrthTrainer,
+    RankExtensionTrainer) already sets self.method_name in __init__ before
+    training starts, and every active method name is a key in
+    ACTIVE_METHOD_MAP with a "family" field -- so the family lookup below is
+    always resolvable at the point create_optimizer() actually runs (during
+    Trainer.train(), never before __init__ returns).
 
     This project never uses SageMaker model-parallel training, so (unlike stock
     Trainer.create_optimizer()) this always reads self.model directly rather
@@ -2418,7 +2683,11 @@ class HeadLRTrainerMixin:
         if self.optimizer is not None:
             return self.optimizer
 
-        if float(HEAD_LR_MULTIPLIER) == 1.0:
+        method_name = getattr(self, "method_name", None)
+        family = ACTIVE_METHOD_MAP.get(str(method_name), {}).get("family")
+        head_lr_multiplier = family_head_lr_multiplier(family) if family is not None else float(HEAD_LR_MULTIPLIER)
+
+        if float(head_lr_multiplier) == 1.0:
             return super().create_optimizer()
 
         opt_model = self.model
@@ -2427,7 +2696,7 @@ class HeadLRTrainerMixin:
             model=opt_model,
             decay_parameter_names=decay_parameter_names,
             base_lr=float(self.args.learning_rate),
-            head_lr_multiplier=float(HEAD_LR_MULTIPLIER),
+            head_lr_multiplier=float(head_lr_multiplier),
             weight_decay=float(self.args.weight_decay),
         )
 
@@ -2505,9 +2774,25 @@ class IndependentLoraOrthTrainer(HeadLRTrainerMixin, Trainer):
             orth_loss_used = factor_comps["factor_total_mean"]
             orth_loss_raw = orth_loss_used
 
-        weighted_orth = float(self.lambda_orth) * orth_loss_used
         kd_loss = torch.tensor(0.0, device=ce_loss.device, dtype=ce_loss.dtype)
         teacher_active = self.teacher_model is not None and self.kd_weight > 0.0
+
+        # Objective 2 (optional lever, off by default -- see
+        # COMBINED_ORTH_WARMUP_ENABLED): ramps lambda_orth up over the first
+        # COMBINED_ORTH_WARMUP_EPOCHS epochs of each step, but ONLY when KD is
+        # ALSO active this step (teacher_active) and orth_mode is
+        # "factor_orth" -- so this only ever touches
+        # simple_avg_factor_orth_kd_T2 (the combined method), never plain
+        # simple_avg_factor_orth (kd_weight=0 there, teacher_active is always
+        # False). Independent of, and stackable with, COMBINED_LOSS_SCALE_ENABLED.
+        epoch_val = float(self.state.epoch) if self.state.epoch is not None else np.nan
+        combined_warmup_multiplier = orth_lambda_warmup_multiplier(
+            epoch_val,
+            COMBINED_ORTH_WARMUP_EPOCHS,
+            bool(COMBINED_ORTH_WARMUP_ENABLED and teacher_active and self.orth_mode == "factor_orth"),
+        )
+        effective_lambda_orth = float(self.lambda_orth) * combined_warmup_multiplier
+        weighted_orth = effective_lambda_orth * orth_loss_used
 
         if teacher_active:
             if not self._teacher_ready:
@@ -2531,7 +2816,6 @@ class IndependentLoraOrthTrainer(HeadLRTrainerMixin, Trainer):
         kd_loss_v = float(kd_loss.detach().cpu().item())
         weighted_kd_v = float(weighted_kd.detach().cpu().item())
         total_loss_v = float(loss.detach().cpu().item())
-        epoch_val = float(self.state.epoch) if self.state.epoch is not None else np.nan
         row = {
             "method": self.method_name,
             "step": int(self.step_idx + 1),
@@ -2544,6 +2828,11 @@ class IndependentLoraOrthTrainer(HeadLRTrainerMixin, Trainer):
             "orth_loss": orth_used_v,
             "orth_loss_used": orth_used_v,
             "lambda_orth": float(self.lambda_orth),
+            # Objective 2 transparency: nominal (configured, already reflects
+            # COMBINED_LAMBDA_ORTH_SCALE for the combined method) vs the
+            # warmup-scaled value actually applied this batch. Equal whenever
+            # COMBINED_ORTH_WARMUP_ENABLED is off (the default).
+            "lambda_orth_warmup_multiplier": float(combined_warmup_multiplier),
             "lambda_orth_times_loss": weighted_orth_v,
             "orth_ratio_abs_weighted_over_ce": abs(weighted_orth_v) / (ce_v + float(self.orth_eps)),
             "weighted_orth_over_CE": abs(weighted_orth_v) / (ce_v + float(self.orth_eps)),
@@ -2554,8 +2843,8 @@ class IndependentLoraOrthTrainer(HeadLRTrainerMixin, Trainer):
             "factor_A_penalty_mean": float(factor_comps["factor_A_mean"].detach().cpu().item()),
             "factor_B_penalty_mean": float(factor_comps["factor_B_mean"].detach().cpu().item()),
             "factor_total_penalty_mean": float(factor_comps["factor_total_mean"].detach().cpu().item()),
-            "weighted_factor_orth_mean": float((float(self.lambda_orth) * factor_comps["factor_total_mean"]).detach().cpu().item()),
-            "weighted_factor_orth_over_CE": abs(float((float(self.lambda_orth) * factor_comps["factor_total_mean"]).detach().cpu().item())) / (ce_v + float(self.orth_eps)),
+            "weighted_factor_orth_mean": float((effective_lambda_orth * factor_comps["factor_total_mean"]).detach().cpu().item()),
+            "weighted_factor_orth_over_CE": abs(float((effective_lambda_orth * factor_comps["factor_total_mean"]).detach().cpu().item())) / (ce_v + float(self.orth_eps)),
             "mean_A_overlap": float(factor_comps["mean_A_overlap"].detach().cpu().item()),
             "mean_B_overlap": float(factor_comps["mean_B_overlap"].detach().cpu().item()),
             "kd_loss": kd_loss_v,
@@ -2565,7 +2854,7 @@ class IndependentLoraOrthTrainer(HeadLRTrainerMixin, Trainer):
             "kd_temperature": float(self.kd_temperature),
             "teacher_active": bool(teacher_active),
             "total_loss": total_loss_v,
-            "effective_lambda": float(self.lambda_orth),
+            "effective_lambda": float(effective_lambda_orth),
         }
         self._rows.append(row)
 
@@ -2574,7 +2863,8 @@ class IndependentLoraOrthTrainer(HeadLRTrainerMixin, Trainer):
                 f"[simple orth/kd train] method={self.method_name} | step={row['step']} | epoch={row['epoch']:.4f} | "
                 f"ce={row['ce_loss']:.6f} | orth={row['orth_loss_used']:.6f} | "
                 f"kd={row['kd_loss']:.6f} | total={row['total_loss']:.6f} | "
-                f"lambda={row['lambda_orth']:.6g} | kd_weight={row['kd_weight']:.6g}"
+                f"lambda={row['lambda_orth']:.6g} (warmup x{row['lambda_orth_warmup_multiplier']:.3g}) | "
+                f"kd_weight={row['kd_weight']:.6g}"
             )
 
         return (loss, outputs) if return_outputs else loss
@@ -2596,6 +2886,7 @@ def train_independent_loras(
     kd_weight=0.0,
     kd_temperature=2.0,
     orth_train_records=None,
+    lambda_orth=None,
 ):
     step_states = []
     # PRE-THESIS FIX 2: {step_idx: accuracy_fraction} -- the accuracy of THIS
@@ -2608,10 +2899,19 @@ def train_independent_loras(
     # incrementally, so there is no single evolving "model at step i".
     specialist_diagonal_accuracy = {}
     active_orth_mode = None if orth_mode is None else str(orth_mode)
+    # `lambda_orth=None` (the default) preserves the pre-Objective-2 behavior
+    # of deriving the value from the global LAMBDA_ORTH; callers that need a
+    # per-method override (e.g. run_simple_avg_variant() passing
+    # method_cfg["lambda_orth"], which reflects COMBINED_LAMBDA_ORTH_SCALE for
+    # simple_avg_factor_orth_kd_T2) pass it explicitly so the value actually
+    # used in training matches what the config tables report -- same
+    # single-source-of-truth principle as apply_calibration.
+    resolved_lambda_orth = float(LAMBDA_ORTH if use_orth else 0.0) if lambda_orth is None else float(lambda_orth)
+    simple_avg_target_modules = family_target_modules("simple_avg")
 
     for step_idx in range(NUM_STEPS):
         model = fresh_pretrained_model()
-        model = add_lora(model)
+        model = add_lora(model, target_modules=simple_avg_target_modules)
         model.print_trainable_parameters()
 
         teacher_model = None
@@ -2635,7 +2935,7 @@ def train_independent_loras(
         print(
             f"\n===== {method_name} | step {step_idx + 1}/{NUM_STEPS} | "
             f"replay_per_class={replay_per_class} | orth={use_orth} | orth_mode={active_orth_mode} | "
-            f"lambda_orth={float(LAMBDA_ORTH if use_orth else 0.0):.6g} | use_kd={use_kd} | "
+            f"lambda_orth={resolved_lambda_orth:.6g} | use_kd={use_kd} | "
             f"teacher_active={teacher_model is not None} ====="
         )
 
@@ -2643,7 +2943,7 @@ def train_independent_loras(
         trainer_kwargs = {
             "reference_weights": reference_weights,
             "factor_reference_state": factor_reference_state,
-            "lambda_orth": float(LAMBDA_ORTH if use_orth else 0.0),
+            "lambda_orth": resolved_lambda_orth,
             "orth_mode": "none" if not use_orth else active_orth_mode,
             "teacher_model": teacher_model,
             "kd_weight": float(kd_weight) if teacher_model is not None else 0.0,
@@ -2760,6 +3060,12 @@ def run_simple_avg_variant(method_name):
         kd_weight=float(method_cfg["kd_weight"]),
         kd_temperature=float(method_cfg["kd_temperature"]),
         orth_train_records=train_diagnostic_rows,
+        # Objective 2: threads method_cfg["lambda_orth"] through so
+        # COMBINED_LAMBDA_ORTH_SCALE actually reaches training for
+        # simple_avg_factor_orth_kd_T2, not just the reported config tables --
+        # every other method's lambda_orth_scale is 1.0 so this is a no-op for
+        # them (identical to the previous LAMBDA_ORTH-derived behavior).
+        lambda_orth=float(method_cfg["lambda_orth"]),
     )
     simple_avg_step_states[method_name] = step_states
 
@@ -3242,18 +3548,19 @@ def get_parent_module_and_child_name(model, module_name):
     return parent, parts[-1]
 
 
-def find_clip_target_linear_modules(model):
+def find_clip_target_linear_modules(model, target_modules=None):
+    resolved_target_modules = list(TARGET_MODULES) if target_modules is None else list(target_modules)
     target_names = []
     for name, module in model.named_modules():
-        if isinstance(module, nn.Linear) and any(name.endswith(target_name) for target_name in TARGET_MODULES):
+        if isinstance(module, nn.Linear) and any(name.endswith(target_name) for target_name in resolved_target_modules):
             target_names.append(name)
     return target_names
 
 
 def get_rank_extension_rank_schedule():
-    schedule = [int(v) for v in RANKEXT_RANK_SCHEDULE]
+    schedule = [int(v) for v in active_rankext_rank_schedule()]
     if len(schedule) != NUM_STEPS:
-        raise ValueError(f"RANKEXT_RANK_SCHEDULE must have NUM_STEPS={NUM_STEPS} entries, got {schedule}")
+        raise ValueError(f"active rank schedule must have NUM_STEPS={NUM_STEPS} entries, got {schedule}")
     for i in range(1, len(schedule)):
         if schedule[i] <= schedule[i - 1]:
             raise ValueError(f"RANKEXT_RANK_SCHEDULE must be strictly increasing, got {schedule}")
@@ -3281,14 +3588,15 @@ def build_rank_extension_model(previous_rank_state=None, step_idx=0, old_active_
         p.requires_grad = True
 
     total_rank, expected_frozen_rank, expected_new_rank = get_rank_extension_rank_triplet(step_idx)
-    target_names = find_clip_target_linear_modules(model)
+    rankext_target_modules = family_target_modules("rank_extension")
+    target_names = find_clip_target_linear_modules(model, target_modules=rankext_target_modules)
     model._rank_extension_target_names = list(target_names)
     model._rank_extension_old_active_in_forward = bool(old_active_in_forward)
 
     print(f"[rank_extension] Step {step_idx + 1}")
     print(f"  total_rank: {total_rank}")
     print(f"  target linear modules: {len(target_names)}")
-    print(f"  target module names: {TARGET_MODULES}")
+    print(f"  target module names: {rankext_target_modules}")
     print(f"  rank schedule: {get_rank_extension_rank_schedule()}")
     print(f"  expected_frozen_rank: {expected_frozen_rank}")
     print(f"  expected_new_rank: {expected_new_rank}")
@@ -3831,7 +4139,20 @@ class DeltaOrthRankExtensionTrainer(RankExtensionTrainer):
         else:
             raise ValueError(f"Unknown orth_mode={self.orth_mode}")
 
-        weighted = float(self.lambda_orth) * orth_loss_used
+        # Objective 1b: RANKEXT_ORTH_LAMBDA_WARMUP_ENABLED ramps lambda_orth up
+        # over the first RANKEXT_ORTH_LAMBDA_WARMUP_EPOCHS epochs of THIS CL
+        # step's local training (self.state.epoch resets to ~0 at the start of
+        # every step's own Trainer -- see build_rank_extension_model()/
+        # run_rank_extension_variant(), a fresh model+Trainer per step_idx).
+        # No-op (multiplier stays 1.0) when the flag is off -- see the
+        # justification comment next to the flag definition above.
+        epoch_val_for_warmup = float(self.state.epoch) if self.state.epoch is not None else np.nan
+        orth_warmup_multiplier = orth_lambda_warmup_multiplier(
+            epoch_val_for_warmup, RANKEXT_ORTH_LAMBDA_WARMUP_EPOCHS, RANKEXT_ORTH_LAMBDA_WARMUP_ENABLED,
+        )
+        effective_lambda_orth = float(self.lambda_orth) * orth_warmup_multiplier
+
+        weighted = effective_lambda_orth * orth_loss_used
         kd_loss = torch.tensor(0.0, device=ce_loss.device, dtype=ce_loss.dtype)
         teacher_active = self.teacher_model is not None and self.kd_weight > 0.0
 
@@ -3865,13 +4186,12 @@ class DeltaOrthRankExtensionTrainer(RankExtensionTrainer):
         factor_total_v = float(comps["factor_total_mean"].detach().cpu().item())
         mean_a_overlap_v = float(comps["mean_A_overlap"].detach().cpu().item())
         mean_b_overlap_v = float(comps["mean_B_overlap"].detach().cpu().item())
-        weighted_factor_v = float((float(self.lambda_orth) * comps["factor_total_mean"]).detach().cpu().item())
+        weighted_factor_v = float((effective_lambda_orth * comps["factor_total_mean"]).detach().cpu().item())
         weighted_factor_ratio_v = abs(weighted_factor_v) / (ce_v + float(self.orth_eps))
-        epoch_val = float(self.state.epoch) if self.state.epoch is not None else np.nan
         row = {
             "method": self.method_name,
             "step": int(self.step_idx + 1),
-            "epoch": epoch_val,
+            "epoch": epoch_val_for_warmup,
             "ce_loss": ce_v,
             "raw_inner": raw_inner_v,
             "abs_inner": abs_inner_v,
@@ -3880,6 +4200,10 @@ class DeltaOrthRankExtensionTrainer(RankExtensionTrainer):
             "orth_loss": orth_used_v,
             "orth_loss_used": orth_used_v,
             "lambda_orth": float(self.lambda_orth),
+            # Objective 1b transparency: nominal (configured) lambda_orth vs
+            # the warmup-scaled value actually applied this batch. Equal
+            # whenever RANKEXT_ORTH_LAMBDA_WARMUP_ENABLED is off (the default).
+            "lambda_orth_warmup_multiplier": float(orth_warmup_multiplier),
             "lambda_orth_times_loss": weighted_v,
             "orth_ratio_abs_weighted_over_ce": ratio_v,
             "weighted_orth_over_CE": ratio_v,
@@ -3901,7 +4225,7 @@ class DeltaOrthRankExtensionTrainer(RankExtensionTrainer):
             "kd_temperature": float(self.kd_temperature),
             "teacher_active": bool(teacher_active),
             "total_loss": total_loss_v,
-            "effective_lambda": float(self.lambda_orth),
+            "effective_lambda": float(effective_lambda_orth),
         }
         self._rows.append(row)
 
@@ -3910,8 +4234,8 @@ class DeltaOrthRankExtensionTrainer(RankExtensionTrainer):
                 f"[orth train] method={self.method_name} | step={row['step']} | epoch={row['epoch']:.4f} | "
                 f"ce={row['ce_loss']:.6f} | orth={row['orth_loss_used']:.6f} | "
                 f"kd={row['kd_loss']:.6f} | total={row['total_loss']:.6f} | "
-                f"lambda={row['lambda_orth']:.6g} | kd_weight={row['kd_weight']:.6g} | "
-                f"ratio={row['orth_ratio_abs_weighted_over_ce']:.6f}"
+                f"lambda={row['lambda_orth']:.6g} (warmup x{row['lambda_orth_warmup_multiplier']:.3g}) | "
+                f"kd_weight={row['kd_weight']:.6g} | ratio={row['orth_ratio_abs_weighted_over_ce']:.6f}"
             )
 
         return (loss, outputs) if return_outputs else loss
@@ -4465,7 +4789,7 @@ def safe_ratio(numer, denom, eps=1e-12):
 
 
 def rankext_new_rank_per_step_string():
-    schedule = [int(v) for v in RANKEXT_RANK_SCHEDULE]
+    schedule = [int(v) for v in active_rankext_rank_schedule()]
     new_blocks = [schedule[0]] + [schedule[i] - schedule[i - 1] for i in range(1, len(schedule))]
     return "->".join(str(v) for v in new_blocks)
 
@@ -5285,21 +5609,29 @@ def variant(m): return VARIANT.get(str(m), "Other")
 
 def cfg_df():
     c=pd.DataFrame(ACTIVE_METHOD_CONFIGS); c=c[c.method.isin(REQ)].copy(); c["method"]=pd.Categorical(c.method, REQ, ordered=True); c=c.sort_values("method")
-    c["display_method_name"]=c.method.astype(str).map(METHOD_DISPLAY_NAME_MAP).fillna(c.method.astype(str)); c["lora_rank"]=np.where(c.family.eq("rank_extension"), RANKEXT_RANK_SCHEDULE[-1], LORA_R)
-    c["lora_alpha"]=LORA_ALPHA; c["lora_dropout"]=LORA_DROPOUT; c["target_modules"]=', '.join(TARGET_MODULES); c["batch_size"]=BATCH_LORA
+    c["display_method_name"]=c.method.astype(str).map(METHOD_DISPLAY_NAME_MAP).fillna(c.method.astype(str)); c["lora_rank"]=np.where(c.family.eq("rank_extension"), active_rankext_rank_schedule()[-1], LORA_R)
+    c["lora_alpha"]=LORA_ALPHA; c["lora_dropout"]=LORA_DROPOUT; c["batch_size"]=BATCH_LORA
     c["num_epochs"]=np.where(c.family.eq("rank_extension"), RANKEXT_EPOCHS, LORA_EPOCHS); c["learning_rate"]=np.where(c.family.eq("rank_extension"), LR_RANKEXT, LR_LORA)
-    c["optimizer"]="AdamW"; c["scheduler"]=SCHED; c["lambda_orth"]=np.where(c.uses_delta_trace|c.uses_factor_orth, LAMBDA_ORTH, 0.0)
-    # POST-INCIDENT FIX: "apply_calibration" is already the per-method truth
-    # (set in add_method() via family_applies_calibration()) -- do NOT
-    # broadcast the global USE_CLASSIFIER_CALIBRATION switch over it here, that
-    # would silently erase the per-family gating for every downstream
-    # CSV/JSON consumer. "use_classifier_calibration" is kept as an alias of
-    # the same per-method value so existing readers of that column name still
-    # see the real, per-method effective state rather than the master switch.
-    c["use_classifier_calibration"]=c["apply_calibration"]; c["head_lr_multiplier"]=float(HEAD_LR_MULTIPLIER)
+    c["optimizer"]="AdamW"; c["scheduler"]=SCHED
+    # POST-INCIDENT FIX: "apply_calibration", "target_modules", "head_lr_multiplier",
+    # and "lambda_orth"/"kd_weight" (including their Objective-2 scale factors)
+    # are already the per-method truth (set in add_method() via
+    # family_applies_calibration() / family_target_modules() /
+    # family_head_lr_multiplier() / lambda_orth_scale / kd_weight_scale) -- do
+    # NOT broadcast the corresponding globals (TARGET_MODULES,
+    # HEAD_LR_MULTIPLIER, LAMBDA_ORTH, USE_CLASSIFIER_CALIBRATION) over them
+    # here, that would silently erase every per-family/per-method override for
+    # every downstream CSV/JSON consumer -- this bug already bit
+    # "target_modules" and "head_lr_multiplier" once (both were being
+    # broadcast-overwritten here until this fix) after "apply_calibration" was
+    # already correctly fixed. "use_classifier_calibration" is kept as an
+    # alias of the same per-method value so existing readers of that column
+    # name still see the real, per-method effective state rather than the
+    # master switch.
+    c["use_classifier_calibration"]=c["apply_calibration"]
     return c.reset_index(drop=True)
 CFG=cfg_df()
-js(Path(CONFIGS_DIR)/"run_config.json", {"run_name":RUN_NAME,"run_tag":RUN_TAG,"base_output_dir":BASE_OUTPUT_DIR,"model_checkpoint":MODEL_CHECKPOINT,"seed":SEED,"num_steps":NUM_STEPS,"classes_per_step":CLASSES_PER_STEP,"lora_rank":LORA_R,"lora_alpha":LORA_ALPHA,"lora_dropout":LORA_DROPOUT,"target_modules":TARGET_MODULES,"lambda_orth":LAMBDA_ORTH,"kd_temperatures":KD_TEMPERATURES,"kd_weight":KD_WEIGHT,"optimizer":"AdamW","scheduler":SCHED,"batch_size":BATCH_LORA,"use_classifier_calibration_master_switch":bool(USE_CLASSIFIER_CALIBRATION),"classifier_calibration_by_family":dict(CALIBRATION_ENABLED_FAMILIES),"head_lr_multiplier":float(HEAD_LR_MULTIPLIER)})
+js(Path(CONFIGS_DIR)/"run_config.json", {"run_name":RUN_NAME,"run_tag":RUN_TAG,"base_output_dir":BASE_OUTPUT_DIR,"model_checkpoint":MODEL_CHECKPOINT,"seed":SEED,"num_steps":NUM_STEPS,"classes_per_step":CLASSES_PER_STEP,"lora_rank":LORA_R,"lora_alpha":LORA_ALPHA,"lora_dropout":LORA_DROPOUT,"target_modules_default":TARGET_MODULES,"target_modules_by_family":{k:list(v) for k,v in TARGET_MODULES_BY_FAMILY.items()},"lambda_orth":LAMBDA_ORTH,"kd_temperatures":KD_TEMPERATURES,"kd_weight":KD_WEIGHT,"optimizer":"AdamW","scheduler":SCHED,"batch_size":BATCH_LORA,"use_classifier_calibration_master_switch":bool(USE_CLASSIFIER_CALIBRATION),"classifier_calibration_by_family":dict(CALIBRATION_ENABLED_FAMILIES),"head_lr_multiplier_default":float(HEAD_LR_MULTIPLIER),"head_lr_multiplier_by_family":{k:float(v) for k,v in HEAD_LR_MULTIPLIER_BY_FAMILY.items()},"rankext_rank_schedule_active":active_rankext_rank_schedule(),"rankext_rank_schedule_wide_enabled":bool(USE_RANKEXT_RANK_SCHEDULE_WIDE),"rankext_orth_lambda_warmup_enabled":bool(RANKEXT_ORTH_LAMBDA_WARMUP_ENABLED),"rankext_orth_lambda_warmup_epochs":float(RANKEXT_ORTH_LAMBDA_WARMUP_EPOCHS),"combined_loss_scale_enabled":bool(COMBINED_LOSS_SCALE_ENABLED),"combined_lambda_orth_scale":float(COMBINED_LAMBDA_ORTH_SCALE),"combined_kd_weight_scale":float(COMBINED_KD_WEIGHT_SCALE),"combined_orth_warmup_enabled":bool(COMBINED_ORTH_WARMUP_ENABLED),"combined_orth_warmup_epochs":float(COMBINED_ORTH_WARMUP_EPOCHS)})
 js(Path(CONFIGS_DIR)/"supervisor_selected_methods.json", SUPERVISOR_SELECTED_METHOD_SPECS)
 js(Path(CONFIGS_DIR)/"hyperparameters_by_method.json", CFG.to_dict("records"))
 

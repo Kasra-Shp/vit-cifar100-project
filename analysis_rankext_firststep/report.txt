@@ -1,0 +1,380 @@
+================================================================================
+RANK_EXTENSION FAMILY: FIRST_STEP ACCURACY AND FACTOR-ORTH ANALYSIS
+================================================================================
+Runs compared:
+  BASELINE = R3/results_EPOCH6_20260711_light/.../MAIN_20260711_214100
+             EPOCHS=6, target_modules=[q,v]_proj, no classifier calibration,
+             no head-LR multiplier (=1.0 implicit), lora_dropout=0.10,
+             pre-factor-orth-fix, no best-epoch selection (final epoch used).
+  NEW      = R3/results_calibfix_20260716_light/.../MAIN_20260716_133338
+             EPOCHS=9, target_modules=[q,k,v,out]_proj, classifier calibration
+             ON for simple_avg family / OFF for rank_extension family
+             (family-conditional, confirmed in configs/hyperparameters_by_method.json),
+             head_lr_multiplier=10.0 (uniform, all 8 methods),
+             lora_dropout=0.05, corrected factor-orth formula on the simple_avg
+             path only (rank_extension's formula was already correct and is
+             confirmed unchanged: lambda_factor_orth=50.0 in both runs, same as
+             simple_avg's), best-epoch selection ON (selected_epoch used for
+             reporting per method/step; see best_epoch_selected_by_method_step.csv).
+
+Many settings changed simultaneously between these runs (epochs, modules,
+dropout, head-LR, calibration policy). Where a specific cause cannot be
+isolated from a single changed variable, this report says so explicitly
+rather than assigning single-cause blame.
+
+PRIOR CONTEXT (analysis_rankext_drop/, 2026-07-15): an earlier run
+(results_4mod_20260715_light) had calibration ON for ALL methods including
+rank_extension, and that was diagnosed as the primary cause of a KD-variant
+collapse in that run. The NEW run analyzed here (results_calibfix_20260716)
+is the confirmation run after disabling calibration for rank_extension
+specifically. That fix is CONFIRMED WORKING: rank_extension_kd_only_T2 and
+rank_extension_orth_factor_lam_50_kd_T2 both recovered to within a few points
+of BASELINE's all_seen accuracy (63.51 vs 59.29, and 62.89 vs 67.98) instead
+of the catastrophic 50.12 / 26.24 seen with calibration mistakenly applied to
+rank_extension. The finding in THIS report — a new, near-total first_step
+collapse specific to rank_extension_orth_factor_lam_50 (non-KD) — is a
+DIFFERENT, previously undocumented phenomenon that appears only once
+calibration is correctly turned off, and is not explained by H2 from that
+earlier analysis.
+
+================================================================================
+EXECUTIVE SUMMARY
+================================================================================
+TARGET 1 — first_step accuracy does NOT drop uniformly across the
+rank_extension family. Two of four variants IMPROVED (plain RankExt +8.2pp,
+RankExt+KD +6.8pp); only the two factor-orth variants declined, and only the
+non-KD one collapsed catastrophically (RankExt+FactorOrth: 8.35% -> 0.10%,
+loss 5.75 -> 11.39; RankExt+FactorOrth+KD: a mild -2.15pp). The premise "the
+family drops" should be narrowed to "the factor-orth variants drop, severely
+for non-KD."
+
+The strongest, cleanest finding in this whole analysis: for ALL FOUR variants
+in BOTH runs, step-1's own training converges to a low, healthy validation CE
+(~0.14-0.21) and this value is IDENTICAL across all 4 method variants within
+a run, because orth/KD mechanisms are structurally inactive during step 1
+(no prior blocks to be orthogonal to, no teacher to distill from yet). Yet the
+FINAL first_step evaluation loss (measured after all 5 CL steps finish)
+ranges 0.70-11.39 -- a 4.8x to 68.7x inflation over the training-time value.
+This proves the degradation is a FORGETTING-TIME phenomenon (something that
+happens to step-1's knowledge during steps 2-5), not a training-time
+phenomenon. This holds for every method in every run, including the ones that
+improved -- rank_extension's first-step forgetting is a pre-existing property
+of the method, not something newly introduced.
+
+TARGET 2 — the thesis "factor-orth helps simple_avg but is redundant-to-
+harmful for rank_extension" is PARTIALLY supported, but the picture is more
+specific and time-dependent than a flat statement: in BASELINE, factor-orth
+was a net POSITIVE for rank_extension too (all_seen +11.5pp non-KD, +8.7pp
+KD) -- just a smaller positive than for simple_avg. It only flips to net
+NEGATIVE in NEW (all_seen -5.7pp non-KD, -0.6pp KD), and the flip is almost
+entirely attributable to the catastrophic first_step collapse of the non-KD
+variant (-71pp vs its simple_avg counterpart in NEW, vs only -7.6pp behind in
+BASELINE). Structurally, the orth penalty IS close to redundant for
+rank_extension in both runs -- its magnitude relative to CE at the moment it
+could matter is 20-300x smaller than for simple_avg, because a freshly
+initialized new-rank block starts close to orthogonal to the frozen old
+blocks by construction, so there is little violation to correct. But
+"redundant" is not the same as "harmless": in both runs, adding factor-orth
+measurably enlarges the transient training-CE spike at the start of every new
+CL step relative to plain rank_extension, and this relative penalty GROWS
+with CL step index (more frozen blocks to respect) and is *more pronounced in
+NEW than in BASELINE* (step-5 CE ratio orth/plain: 2.48x in BASELINE vs 3.37x
+in NEW). NEW differs from BASELINE in exactly two ways that plausibly explain
+why the same underlying tension tips over into catastrophic failure only in
+NEW: 4 target modules (roughly doubling the number of simultaneous
+orthogonality constraints per step) and head_lr_multiplier=10 (which was
+absent in BASELINE and would amplify whatever noisy classifier-head gradient
+this transient spike produces). This causal chain is plausible and consistent
+with all available evidence, but cannot be fully proven from these saved CSVs
+alone (no per-row classifier weight norms are logged) -- it is reported as
+the best-supported hypothesis, not a certainty.
+
+================================================================================
+TARGET 1 -- FIRST_STEP ACCURACY IN THE RANK_EXTENSION FAMILY
+================================================================================
+
+1.0  QUANTIFYING THE DROP (table2_rankext_perstep_and_forgetting.csv,
+     fig1_first_step_accuracy_deltas.png)
+
+  method                      BASELINE    NEW      delta      later_steps delta
+  --------------------------------------------------------------------------
+  rank_extension                 3.75%   11.95%   +8.20 pp         +19.25 pp
+  rank_extension_kd_only_T2     69.40%   76.20%   +6.80 pp          +3.58 pp
+  rank_extension_orth_factor_50  8.35%    0.10%   -8.25 pp          +1.83 pp
+  rank_extension_orth_50_kd_T2  80.30%   78.15%   -2.15 pp          -5.83 pp
+
+  Only the two factor-orth variants declined; the non-KD one is a
+  near-total collapse (loss 5.75 -> 11.39, i.e. the model is effectively
+  outputting near-zero probability mass on the correct class for step-1's
+  test images once all 5 steps have finished).
+
+1.a  DOES FIRST-STEP DEGRADATION CORRELATE WITH MORE LATER-STEP LEARNING?
+     (classic forgetting: more adaptation capacity in NEW interferes more
+     with frozen step-1 representations)
+
+  NOT SUPPORTED as a family-wide explanation. If more later-step learning
+  drove more step-1 interference, the method with the LARGEST later_steps
+  gain should show the worst first_step outcome. Instead:
+    - plain rank_extension has the single largest later_steps gain of the
+      four variants (+19.25pp) and its first_step IMPROVED (+8.2pp).
+    - rank_extension_orth_factor_lam_50 -- the one with the catastrophic
+      first_step collapse -- has almost no later_steps change (+1.83pp),
+      the smallest movement of any of the four variants.
+  The data show no positive correlation between later-step learning gains
+  and first-step degradation across this family; if anything the direction
+  is opposite for the two extremes. Hypothesis (a) is REJECTED as the
+  primary driver of the observed collapse.
+
+1.b  CLASSIFIER / HEAD-LR x10 EFFECT: DO STEP-1 CLASSIFIER ROWS GET
+     OVERWRITTEN AS LATER STEPS TRAIN?
+
+  Two config facts, confirmed directly from configs/hyperparameters_by_method.json
+  (table7_hyperparameter_confirmation.csv):
+    - apply_calibration is FALSE for all four rank_extension variants in NEW
+      (and calibration did not exist at all in BASELINE) -- so the post-hoc
+      classifier row-norm calibration mechanism that was the confirmed
+      culprit in the PRIOR run (results_4mod_20260715_light) is NOT active
+      here and cannot explain this collapse.
+    - head_lr_multiplier=10.0 is applied UNIFORMLY to all 8 methods in NEW,
+      including the two rank_extension variants that IMPROVED. If a 10x
+      head LR alone were sufficient to corrupt step-1's classifier rows via
+      overwriting, all four rank_extension variants should show degradation.
+      They don't -- half improved substantially.
+  So head-LR x10 alone is REJECTED as a sufficient cause. It remains a
+  plausible AMPLIFIER of whatever destabilizing signal is specific to the
+  orth variant (see Target 2 below) -- a 10x-larger classifier learning rate
+  would turn a modest transient loss spike into a much larger one-shot
+  weight change -- but it cannot be the trigger by itself since it is
+  identical across all four variants and only two of them fail.
+  Forgetting/backward-transfer columns (final_metrics_all_methods.csv, NEW
+  run) are populated for rank_extension: forgetting_metric is 0.679 (plain)
+  vs 0.752 (orth, both runs -- BASELINE 0.7516 and NEW 0.7524, essentially
+  unchanged) -- interestingly this run-level metric does NOT show the same
+  dramatic jump that first_step accuracy shows for the orth variant. This
+  suggests the metric (likely averaged over multiple steps/tasks) is not
+  sensitive enough to flag the specific first_step catastrophe in isolation,
+  and should not be read as contradicting the accuracy numbers.
+
+1.c  TRAINING-TIME VS FORGETTING-TIME CAUSE (table3_step1_trainingtime_
+     vs_evaltime.csv, fig2_step1_trainingtime_vs_forgetting.png)
+
+  THIS IS THE CLEANEST RESULT IN THE ANALYSIS. Step 1 is the same
+  optimization problem for all 4 rank_extension variants (no KD teacher, no
+  prior block to be orthogonal to), and the per-epoch training history
+  confirms this exactly: BASELINE step-1 training ends at val_ce=0.1457
+  (best across step-1 epochs: 0.1380) for all four variants; NEW step-1
+  training ends at val_ce=0.2073 (best-epoch-selected: 0.1657) for all four
+  variants. These are healthy, convergent, unremarkable numbers.
+
+  Compare to the FINAL first_step evaluation loss (measured after all 5 CL
+  steps finish training):
+    method                          BASELINE final   NEW final   NEW inflation*
+    rank_extension                       6.98            5.88         35.5x
+    rank_extension_kd_only_T2            0.95            0.80          4.8x
+    rank_extension_orth_factor_lam_50    5.75           11.39         68.7x
+    rank_extension_orth_factor_lam_50_kd 0.70            0.82          4.9x
+    (*NEW final loss / NEW step-1 training-time best val_ce of 0.1657)
+
+  Every method-run combination shows a large loss inflation (4.8x-68.7x)
+  between "how well the step-1 model scored right after training on step 1"
+  and "how well that knowledge survives to the end of the full 5-step run."
+  This is true even for the methods that IMPROVED. Conclusion: rank_extension
+  first-step forgetting is a FORGETTING-TIME phenomenon happening during
+  steps 2-5, not a training-time convergence problem at step 1 -- in every
+  run, every variant. What changed between BASELINE and NEW is not whether
+  this forgetting happens (it always does), but how SEVERE it is for one
+  specific variant (rank_extension_orth_factor_lam_50: 39.5x in BASELINE ->
+  68.7x in NEW, the worst inflation of all 8 method-run combinations).
+
+1.d  RANKED HYPOTHESES (most to least supported by evidence)
+
+  1. [CONFIRMED, applies to the whole family] First-step degradation is a
+     forgetting-time effect (steps 2-5 corrupting step-1's already-converged
+     state), not a training-time effect. Directly evidenced by table3: step-1
+     training is uniformly healthy and near-identical across variants and
+     runs; only the post-hoc, cross-step evaluation loss diverges.
+  2. [WELL-SUPPORTED, specific to the orth variant] Factor-orth introduces an
+     extra, growing transient CE spike at every step boundary for
+     rank_extension (see Target 2 below in full), and this spike is larger in
+     NEW than BASELINE at the later steps. Combined with head_lr x10 (new to
+     this run, applied uniformly) and 4 target modules (also new, doubling
+     the number of simultaneous orthogonality constraints), this plausibly
+     explains why the SAME structural forgetting-time weakness of
+     rank_extension became catastrophic specifically for the orth+non-KD
+     variant in NEW while it was mildly beneficial in BASELINE. Plausible and
+     consistent with all evidence gathered, but not provable from these CSVs
+     alone (no per-row classifier weight logs available).
+  3. [REJECTED as primary cause] More later-step learning capacity causing
+     more interference (hypothesis a) -- contradicted by the method with the
+     largest later-steps gain (plain rank_extension) also having the largest
+     first-step improvement, not degradation.
+  4. [REJECTED as sufficient cause] head_lr x10 alone (hypothesis b) --
+     applied uniformly to all 4 variants, but only 2 of 4 collapsed. Cannot
+     be the sole trigger, though it remains a plausible amplifier (see #2).
+     Classifier row-norm calibration (H2 from the prior 2026-07-15 analysis)
+     is confirmed OFF for rank_extension in this run and is therefore ruled
+     out entirely as an explanation here.
+
+================================================================================
+TARGET 2 -- WHY RANK_EXTENSION + FACTOR_ORTH REMAINS WEAK
+================================================================================
+
+2.a  FACTOR-ORTH LOSS TRAJECTORIES: RANK_EXT VS SIMPLE_AVG
+     (table4_factororth_trajectory_stats.csv, fig3_factororth_trajectories_
+     by_family.png)
+
+  lambda_factor_orth=50.0 is confirmed IDENTICAL for both families (not a
+  lambda-mismatch artifact; table7). At the start of each new CL step
+  (local_epoch=1, step>1), factor_orth_loss_weighted relative to train_ce_loss
+  (factor_orth_weighted_over_ce):
+
+    rank_extension_orth_factor_lam_50:  BASELINE 1.8x, 3.2x, 60.9x*, 4.6x
+                                         NEW      2.8x, 3.0x, 3.1x, 4.1x
+    simple_avg_factor_orth:             BASELINE 103x, 401x, 768x, 858x
+                                         NEW      149x, 672x, 1226x, 1412x
+    (*BASELINE step-4 rank_ext value is a single-point outlier driven by an
+     unusually large raw orth violation that step, 7.23 vs ~0.2-0.7 at the
+     other three step transitions -- plausibly random-seed variance in that
+     step's new-block initialization, not a systematic pattern.)
+
+  Excluding that one outlier, rank_extension's orth penalty is consistently
+  ~20-300x SMALLER relative to CE than simple_avg's, in both runs. The decay
+  shape is similar (both collapse ~2-4 orders of magnitude within 2 epochs
+  of a step starting -- fig3 shows near-identical shapes on a log scale) but
+  simple_avg's peaks are always three orders of magnitude higher in absolute
+  terms. Read plainly: the orth penalty barely engages for rank_extension
+  in either run.
+
+2.b  DOES FACTOR-ORTH MAKE CONCEPTUAL SENSE FOR RANK_EXT? REDUNDANT OR
+     ACTIVELY HARMFUL?
+
+  rank_extension already enforces block separation structurally: each CL
+  step adds a fresh, randomly-initialized 16-dim rank block
+  (rankext_new_rank_per_step=16, schedule 16->32->48->64->80) while old
+  blocks remain frozen but active in the forward pass
+  (old_active_in_forward=True). A random fresh subspace is, on average,
+  close to orthogonal to a fixed prior subspace in a moderately
+  high-dimensional weight space -- exactly what 2.a's tiny raw factor_orth
+  values at epoch 2+ of every step confirm (down to 1e-4 to 1e-6 by the
+  penultimate epoch). So yes: the orthogonality constraint is close to
+  REDUNDANT for rank_extension by construction, in the sense that there is
+  little violation left for it to correct after the first epoch of each step.
+
+  But redundant is not the same as harmless, and there IS evidence of active
+  (if modest) harm at the moment each new step begins, before the redundancy
+  kicks in:
+    - train_ce_loss at the first epoch of each new step is measurably higher
+      for the orth variant than for plain rank_extension, in both runs, at
+      every step transition (table4). The ratio grows with step index:
+        BASELINE: 1.74x -> 1.96x -> 1.95x -> 2.48x  (steps 2->3->4->5)
+        NEW:      1.47x -> 2.02x -> 2.62x -> 3.37x
+      NEW's ratio is higher than BASELINE's at every step from step 3 onward,
+      and grows faster. This is present in the KD variants too but damped:
+        BASELINE KD: 1.52x -> 1.65x -> 1.69x -> 1.74x
+        NEW KD:      1.33x -> 1.42x -> 1.41x -> 1.44x
+      (KD's distillation loss anchors outputs toward a stable teacher signal,
+      which plausibly damps the destabilizing swing that pure factor-orth
+      introduces -- consistent with the KD variant suffering "to a lesser
+      degree," per Target 2's framing.)
+    - Despite this larger transient at step-start, END-of-step convergence
+      quality is NOT worse for the orth variant -- table4b shows the orth
+      variant's final-epoch val_ce is equal to or BETTER than plain
+      rank_extension's at every one of the 5 steps, in both runs (e.g. NEW
+      step 5: orth 0.110 vs plain 0.127). So factor-orth does not damage
+      each step's own local fit; the harm, if any, is transmitted forward
+      into how well that step's training preserves EARLIER steps' knowledge,
+      not into the current step's own accuracy.
+  Verdict: the data support "redundant AND mildly, transiently harmful at
+  step boundaries, growing worse with more CL steps and worse in NEW than
+  BASELINE" -- not "purely redundant with zero cost," and not "actively and
+  uniformly harmful throughout training" either. It is a narrow, specific
+  cost concentrated in the first epoch of each new step.
+
+2.c  QUANTIFIED COST/GAIN OF FACTOR-ORTH VS PLAIN RANK_EXTENSION
+     (table5_rankext_vs_rankext_orth_headtohead.csv,
+      fig4_rankext_vs_rankext_orth.png)
+
+  non-KD pair (rank_extension vs rank_extension_orth_factor_lam_50):
+    BASELINE:  first_step +4.60pp, later_steps +13.28pp, all_seen +11.54pp
+               (orth HELPS across the board)
+    NEW:       first_step -11.85pp, later_steps -4.15pp, all_seen -5.69pp
+               (orth HURTS across the board; first_step is catastrophic)
+
+  KD pair (rank_extension_kd_only_T2 vs rank_extension_orth_factor_lam_50_kd_T2):
+    BASELINE:  first_step +10.90pp, later_steps +8.14pp, all_seen +8.69pp
+               (orth clearly helps)
+    NEW:       first_step +1.95pp, later_steps -1.26pp, all_seen -0.62pp
+               (roughly a wash, small net negative)
+
+  Factor-orth's effect on rank_extension REVERSED SIGN between the two runs
+  for the non-KD pair, and weakened from clearly-positive to roughly-neutral
+  for the KD pair. The magnitude of the reversal (non-KD, all_seen: +11.5pp
+  -> -5.7pp, a 17.2pp swing) is far larger than what a "mostly redundant,
+  slightly harmful at step boundaries" story alone would predict from 2.a/2.b
+  -- the step-boundary CE ratio only grew moderately (2.48x -> 3.37x at step
+  5). This gap between the modest training-time signal and the large final
+  outcome swing is exactly the same "forgetting-time amplification" pattern
+  documented in Target 1.c: a training-time nudge gets compounded/amplified
+  somewhere in the cross-step merge and final-evaluation path in ways this
+  data can characterize (direction, and rough magnitude of the amplifiers)
+  but not fully decompose.
+
+2.d  IS "FACTOR-ORTH HELPS SIMPLE_AVG BUT IS REDUNDANT-TO-HARMFUL FOR
+     RANK_EXTENSION" SUPPORTED?
+
+  PARTIALLY, and only for the NEW run. The comparison against simple_avg's
+  own factor-orth counterpart (table6_rankext_orth_vs_simpleavg_orth_
+  counterpart_gap.csv) shows:
+
+    non-KD, all_seen:  BASELINE rank_ext+orth trails simple_avg+orth by
+                        -26.53pp; NEW trails by -40.63pp (gap widens)
+    non-KD, first_step: BASELINE rank_ext+orth is AHEAD by +7.55pp (both
+                        low: 8.35% vs 0.8%); NEW trails by -71.10pp
+                        (catastrophic reversal, driven entirely by the
+                        near-zero NEW first_step collapse)
+    KD, all_seen:       BASELINE rank_ext+orth AHEAD by +4.18pp; NEW trails
+                        by only -0.82pp (small gap either direction --
+                        "to a lesser degree," exactly as framed in the task)
+
+  So: in BASELINE, rank_extension's factor-orth variant was NOT clearly
+  weaker than simple_avg's -- on all_seen it under-performed on later_steps
+  specifically (-35.05pp) but this was offset by strength elsewhere, and the
+  KD pair was ahead of its simple_avg counterpart. The "redundant-to-harmful"
+  framing only becomes strongly true in NEW, and almost entirely because of
+  the single catastrophic first_step collapse in the non-KD variant -- remove
+  that one number and the family-level gap (later_steps, all_seen) is
+  present but far more modest (-33 / -40.6pp on later/all_seen, similar
+  order to BASELINE's -35 / -26.5pp).
+
+  Bottom line: the STRUCTURAL argument for redundancy (2.a/2.b: the orth
+  penalty is 20-300x weaker in relative terms for rank_extension, and offers
+  little to correct after step 1 by construction) is well-supported and
+  consistent across both runs. The "harmful" half of the thesis is
+  SUPPORTED ONLY FOR THE NEW RUN, and concentrated almost entirely in a
+  single failure mode (non-KD, first_step, NEW) whose exact trigger this
+  analysis narrows down to "a growing per-step-transition CE spike, likely
+  amplified by the newly-added head_lr x10 and/or the doubled module count,
+  compounding across 5 CL steps into eventual near-total classifier
+  corruption for step 1" -- but cannot fully prove down to the level of
+  individual classifier weight updates from the saved CSVs alone. This
+  should be treated as the leading hypothesis for a follow-up run (e.g. one
+  with head_lr_multiplier=1.0 restored for rank_extension only, holding
+  everything else in NEW fixed, to test whether the collapse disappears).
+
+================================================================================
+FILES IN THIS ANALYSIS
+================================================================================
+  report.txt                                              - this file
+  table1_accuracy_comparison_all_methods.csv               - all 8 methods x 3 eval sets, BASELINE vs NEW, deltas
+  table2_rankext_perstep_and_forgetting.csv                 - rank_ext family: first/later/all_seen deltas, NEW per-step list, forgetting/backward-transfer
+  table3_step1_trainingtime_vs_evaltime.csv                 - step-1 training-time val CE vs final post-all-steps eval loss/acc (Target 1c)
+  table4_factororth_trajectory_stats.csv                    - per-step-boundary CE and factor-orth loss, orth vs plain, both families, both runs (Target 2a/2b)
+  table4b_factororth_endofstep_reconvergence.csv            - end-of-step val CE, orth vs plain rank_ext (shows in-step convergence is fine)
+  table5_rankext_vs_rankext_orth_headtohead.csv              - plain vs orth rank_ext, first/later/all_seen, both KD states, both runs (Target 2c)
+  table6_rankext_orth_vs_simpleavg_orth_counterpart_gap.csv  - rank_ext+orth vs simple_avg+orth counterpart gap (Target 2d)
+  table7_hyperparameter_confirmation.csv                     - apply_calibration / head_lr_multiplier / lambda_factor_orth per method, both runs
+  fig1_first_step_accuracy_deltas.png                        - first_step accuracy delta, 4 rank_ext variants
+  fig2_step1_trainingtime_vs_forgetting.png                  - step-1 training curve overlay + training-time vs final-eval loss inflation
+  fig3_factororth_trajectories_by_family.png                 - factor-orth loss trajectories, rank_ext vs simple_avg, both runs (log scale)
+  fig4_rankext_vs_rankext_orth.png                            - plain vs orth accuracy, 2x2 (run x KD-state)
+  build_tables.py / make_figures.py                          - scripts that generated the above (rerunnable)

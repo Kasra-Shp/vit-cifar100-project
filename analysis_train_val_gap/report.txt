@@ -1,0 +1,241 @@
+================================================================================
+TRAIN-VAL CE GAP INVESTIGATION — is the convergence-plot gap real overfitting?
+Run under investigation: R3/results_strict_20260717_light/
+  clip_vit_lora_cifar100_full_comparison_with_orth_rankext_EPOCH3_MAIN_20260717_015946
+Method: recomputation from saved CSVs only (training_loss_history_by_epoch.csv,
+training_loss_history_by_batch.csv, best_epoch_selected_by_method_step.csv,
+validation_split_summary.csv, merge_mechanism_by_method_step.csv,
+final_metrics_all_methods.csv). No training, no model access needed or used.
+================================================================================
+
+HEADLINE ANSWER: this is real, mild, bounded overfitting — the classic shape
+(train loss keeps falling, val loss bottoms out then drifts slightly back up),
+not a train/val distribution mismatch. It is already being actively and
+substantially counteracted by best-epoch selection (fires in 38/40 (method,
+step) pairs, is not cosmetic). What closes the remaining gap between "val CE
+looks mediocre" and "final accuracy is 70-75%" is (a) CE~0.1-0.35 is not
+actually a bad number — it corresponds to fairly high average confidence in
+the correct class — and (b) for simple_avg specifically, the final merge step
+itself acts as an extra, uncounted regularizer: it measurably shrinks each
+specialist's contribution by roughly half, which is exactly what quiets down
+per-specialist overfitting noise before the model is ever scored. Nothing
+here indicates a bug. Two small, non-urgent improvements are suggested for
+the next run (Section 6).
+
+--------------------------------------------------------------------------
+1. DOES THE GAP GROW WITHIN EACH STEP (OVERFITTING) OR STAY FLAT (DISTRIBUTION
+   MISMATCH)?
+--------------------------------------------------------------------------
+Computed gap = val_ce_loss - train_ce_loss for all 8 methods x 5 steps x 9
+epochs (360 rows, training_loss_history_by_epoch.csv). Two regimes, cleanly
+separated by epoch:
+
+  EPOCH 1: gap is strongly NEGATIVE for every single (method, step) — e.g.
+  simple_avg step 1: -0.921; rank_extension_orth_factor_lam_50 step 5: -5.369.
+  This is a labeling/measurement-timing artifact, not a real "val beats
+  train" phenomenon — confirmed directly from the raw batch log
+  (logs/training_loss_history_by_batch.csv, simple_avg/step=1/epoch<1.0, 594
+  batches): the FIRST batch of epoch 1 has ce_loss=4.79 (a freshly-initialized
+  classifier, near ln(100)=4.6 chance-level loss over 100 classes), the LAST
+  5 batches have ce_loss in [0.05, 0.50], and the epoch's MEAN over all 594
+  batches (what gets logged as that epoch's "train_ce_loss") is 1.198 — while
+  val_ce_loss (0.208) is a single END-OF-EPOCH snapshot, much closer to the
+  epoch's last few batches than to its noisy early-batch average. train_ce_
+  loss in this pipeline is an epoch-wide running average (standard HF
+  Trainer behavior); val_ce_loss is a point-in-time evaluation. Comparing an
+  average-over-training-progress number to a snapshot number always looks
+  like "val is better" in epoch 1 specifically, regardless of what's
+  actually happening — an artifact of what's being averaged, not of model
+  behavior. Not a bug, but worth documenting so a reader doesn't misread
+  epoch 1's negative gap as "the model generalizes better than it fits."
+
+  EPOCH 2 ONWARD: gap turns positive and GROWS MONOTONICALLY (with plateauing,
+  not runaway divergence) in essentially every (method, step) — e.g.
+  rank_extension step 1: epoch2=-0.012 -> epoch4=0.136 -> epoch9=0.203 (rises
+  then flattens); simple_avg step 3: epoch2=-0.031 -> epoch5=0.230 ->
+  epoch9=0.284 (rises further, does not flatten as cleanly). This is the
+  textbook overfitting shape: train CE keeps approaching 0 while val CE
+  bottoms out early and either plateaus or drifts back up. Confirmed
+  quantitatively for all 40 (method, step) pairs via val_ce_loss's own
+  trajectory (not just the gap): every pair's val CE reaches its MINIMUM at
+  an epoch strictly before 9 in 38/40 cases (see Section 3), then rises by a
+  small but nonzero amount (median +0.021, up to +0.116 for simple_avg step
+  3) by epoch 9. Final-epoch (9) train CE across all methods/steps is 0.007-
+  0.06 for non-KD methods and 0.24-0.71 for KD methods (still much lower than
+  their own val CE of 0.11-0.28 and 0.36-0.93 respectively) — train CE really
+  does approach a floor near 0 (near-perfect fit to the ~9,500 training
+  images) while val CE settles at a materially higher floor. This is genuine
+  memorization of the small per-step training set outpacing generalization,
+  not two different data distributions being compared.
+
+--------------------------------------------------------------------------
+2. SAMPLE SIZE CHECK
+--------------------------------------------------------------------------
+tables/validation_split_summary.csv: exactly 475 train / 25 val images for
+EVERY one of the 100 classes, std=0 — a uniform, deterministic 95%/5% split
+of CIFAR-100's 500 train images per class (not touching the separate 100-
+image/class test split used for final accuracy). Per CL step (20 classes):
+
+    train = 20 x 475 = 9,500 images
+    val   = 20 x  25 =   500 images   (5% holdout)
+
+This is IDENTICAL for all 8 methods — tables/method_hyperparameter_summary
+.csv confirms replay_per_class=0 for every method in this run, so no method
+gets extra training data or a different-sized val set. The split is
+representative by construction (stratified evenly across every class, drawn
+from the same pool as the training images, not a different distribution) —
+there is no train/val distribution mismatch to explain the gap. The one
+legitimate caveat: 500 images (25/class) is a SMALL val set, which increases
+the sampling noise of any single epoch's val_ce_loss estimate relative to
+train_ce_loss's much larger 9,500-image base — this explains some of the
+epoch-to-epoch JITTER visible in the convergence plots' val curves, but not
+the systematic, monotonically-growing GAP documented in Section 1 (sampling
+noise would fluctuate, not grow in a consistent direction across 40
+independent method/step pairs).
+
+--------------------------------------------------------------------------
+3. BEST-EPOCH SELECTION: IS IT FIRING, AND HOW MUCH DOES IT RECOVER?
+--------------------------------------------------------------------------
+From tables/best_epoch_selected_by_method_step.csv (40 rows = 8 methods x 5
+steps): selection fires (selected_epoch < 9) in 38/40 pairs (95%). The 2
+exceptions (rank_extension step 5, simple_avg_factor_orth step 4) select
+epoch 9 itself — i.e. val CE was still improving (or tied) at the final
+epoch for those two, no early stop needed.
+
+recovery = final_epoch_val_ce - selected_val_ce (how much worse the final-
+epoch checkpoint would have been vs. the one actually kept):
+
+  Mean recovery, all 40 pairs:         0.0240 CE
+  Mean recovery, the 38 that fired:    0.0253 CE
+  Mean recovery, rank_extension family: 0.0182 CE
+  Mean recovery, simple_avg family:     0.0298 CE
+  Largest single recovery: simple_avg step 3 (selected epoch 2 of 9,
+    selected_val_ce=0.183 vs. final_epoch_val_ce=0.299 -- 0.116 CE recovered)
+  Second largest: simple_avg step 4 (selected epoch 2 of 9, recovery=0.088)
+
+simple_avg selects its best epoch VERY early for 3 of its 5 steps (epoch 2,
+2, 2 for steps 2, 3, 4) — far earlier than rank_extension, which typically
+selects around epoch 3-8. This lines up with simple_avg's head_lr_multiplier
+=10.0 vs. rank_extension's 1.0 (family-conditional setting, unrelated to
+this investigation but directly explains the pattern here): a 10x higher
+classifier-head learning rate converges — and starts overfitting — much
+faster in raw epoch-count, so simple_avg's own best-epoch-selection curve
+peaks and turns over sooner. This is not a flaw in the selection mechanism;
+it is doing exactly its job (picking the epoch that minimizes held-out CE),
+and it is recovering a real, non-trivial amount of val CE specifically where
+overfitting is largest (simple_avg's later steps).
+
+--------------------------------------------------------------------------
+4. RECONCILING WITH FINAL ACCURACY: HOW DOES 72-75% ALL_SEEN COME FROM
+   VAL CE ~0.1-0.35?
+--------------------------------------------------------------------------
+Two things resolve this, neither of which requires "the val CE numbers are
+misleading" — they are consistent, just require translating CE into accuracy
+terms and accounting for what the merge step does.
+
+(a) CE ~0.1-0.35 is not actually bad. Cross-entropy on the TRUE class only
+    (not the full distribution) corresponds roughly to -log(p_true); CE=0.20
+    implies an average assigned probability to the correct class of about
+    e^-0.20 ~= 0.82 (~82% average confidence). This lines up closely with
+    simple_avg's own recorded first-step accuracy (82.0%, per_step_accuracy_
+    by_method.csv) and simple_avg_factor_orth's step-1 val CE (0.193 ->
+    implied ~82% confidence) against its actual step-1 accuracy (71.2% —
+    same ballpark, allowing for calibration slack and the CE-vs-accuracy gap
+    that always exists even in a well-behaved model). A specialist's own
+    validation CE in the 0.1-0.35 range is a GOOD score for a 20-way-relevant
+    classification problem, not a red flag — "val CE isn't 0" does not mean
+    "the model doesn't work," and the actual downstream accuracy is
+    consistent with, not contradicted by, these CE values.
+
+(b) The merge step is an uncounted extra regularizer for simple_avg. No
+    post-merge validation CE is currently logged anywhere in this pipeline —
+    val_total_loss/val CE columns are only ever populated for the individual
+    per-step SPECIALIST models (each independently fine-tuned, pre-merge);
+    the FINAL merged model is only ever scored on TEST-set accuracy (per_step
+    _accuracy_by_method.csv, evaluate_model's 3 aggregate groups), never
+    against a held-out val CE. This is a real gap in the current logging
+    (see Section 6, recommendation), but the merge_mechanism_by_method_step
+    .csv table (added in the prior session's strict review) gives strong
+    indirect evidence for what merging does: averaged over all 48 target-
+    module x layer combinations, the merged delta's norm is only
+    46-53% of the average INDIVIDUAL specialist's own delta norm
+    (simple_avg: 0.491, simple_avg_kd_T2: 0.530, simple_avg_factor_orth:
+    0.460, simple_avg_factor_orth_kd_T2: 0.461 -- all comfortably below 1.0,
+    all close to the classic sqrt(1/5)=0.447 variance-reduction ratio for
+    averaging ~5 partially-independent random directions). This means
+    merging doesn't just "average 5 overfit specialists into one overfit
+    model" — it substantially DAMPS each specialist's individual (partly
+    overfit, partly genuinely task-specific) weight change, the same way
+    weight-averaging/model-souping techniques in the wider literature are
+    known to reduce variance and improve generalization relative to any
+    single fine-tuned checkpoint. This is the mechanism that lets a merged
+    model outperform what any one specialist's own val CE alone would
+    predict, and it is specific to the simple_avg family (rank_extension
+    doesn't merge — it grows a single persistent model, so this smoothing
+    effect does not apply there, and rank_extension's train-val gaps and
+    recoveries are correspondingly smaller and later-onset, consistent with
+    Sections 1 and 3).
+
+Net: simple_avg's chain is "each specialist overfits its own 9,500 images
+mildly, but (i) even its overfit val CE corresponds to a genuinely good
+~80%+ confidence level, (ii) best-epoch selection already pulls back a real
+chunk of that overfitting per specialist, and (iii) merging 5 specialists
+together further damps whatever overfit-specific noise survives (i) and
+(ii)." All 3 stages point the same direction (toward the merged model being
+more reliable than any one specialist's raw val CE would suggest), so a
+72-75% all_seen accuracy from specialists whose val CE looks like "0.1-0.35"
+is expected, not surprising, and not evidence the val CE numbers are wrong.
+
+--------------------------------------------------------------------------
+5. IS THIS A PROBLEM?
+--------------------------------------------------------------------------
+No — by every check performed here, this is ordinary, bounded overfitting of
+the kind expected when fine-tuning a large model on ~9,500 images per CL
+step for 9 epochs, and it is already actively mitigated:
+  - The gap plateaus rather than diverging for most (method, step) pairs
+    (Section 1) — the "runaway overfitting" failure mode (val loss climbing
+    without bound) is not what's happening here.
+  - Best-epoch selection is doing real, substantial work (Section 3), not
+    sitting idle — median recovery ~0.02 CE, with the two most-overfitting
+    (method, step) pairs recovering 0.09-0.12 CE, is a meaningful correction,
+    not noise-level.
+  - The magnitude of val CE at its floor (0.1-0.35 for most methods) is
+    consistent with the actually-reported accuracy numbers, not in tension
+    with them (Section 4a).
+  - For simple_avg specifically, the merge step provides an additional,
+    measurable damping effect on top of best-epoch selection (Section 4b).
+
+--------------------------------------------------------------------------
+6. RECOMMENDATIONS FOR THE NEXT RUN (none urgent; none require re-running
+   R3)
+--------------------------------------------------------------------------
+1. Log a post-merge validation CE for the simple_avg family (evaluate the
+   FINAL merged model against a pooled/reconstructed val set, the same way
+   evaluate_model() already does for TEST-set accuracy) so Section 4b's
+   "merging smooths overfitting" claim can be checked directly with a real
+   number instead of inferred from the merge-mechanism norm-shrinkage proxy.
+   Currently val_total_loss/final_val_total_loss are NaN everywhere in
+   loss_components_summary_by_method.csv precisely because this number does
+   not exist yet.
+2. Document the epoch-1 negative-gap artifact (Section 1) in a code comment
+   near EpochValidationCallback / the convergence-plot titles, so a future
+   reader doesn't misinterpret it as "the model validates better than it
+   trains" — it's purely a mismatch between an epoch-averaged train metric
+   and a point-in-time val metric, not a real effect. Not fixed this
+   session (analysis-only task, no code changes made).
+3. simple_avg's very early best-epoch selection (epoch 2 of 9, 3 of its 5
+   steps) suggests its head_lr_multiplier=10.0 may be pushing convergence
+   (and overfitting onset) faster than the other family-conditional
+   settings account for — worth watching if a future run increases EPOCHS
+   further, since more headroom for the same 10x LR could widen the
+   recoverable gap further; not a change to make now, since best-epoch
+   selection is already absorbing it cleanly at the current EPOCHS=9, and
+   this multiplier was independently tuned/justified in the prior session's
+   audit trail for its effect on final accuracy (not on val-CE overfitting
+   specifically, but the two are not in tension based on this investigation).
+4. Consider a slightly larger val holdout (e.g. 35-40/class instead of 25)
+   if best-epoch selection's noise sensitivity ever becomes a concern —
+   current results already look sensible and monotonic enough (Section 1)
+   that this is a "nice to have," not something the data here shows is
+   actually needed.
+================================================================================

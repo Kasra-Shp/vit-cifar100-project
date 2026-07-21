@@ -1,0 +1,14 @@
+step   open_acc  restricted_acc   recency_bias_gap
+   1       0.0%           99.5%             -99.5pp
+   2       0.5%          100.0%             -99.5pp
+   3      50.5%          100.0%             -49.5pp
+   4      80.0%          100.0%             -20.0pp
+   5     100.0%          100.0%               0.0pp
+
+Interpretation: restricted (closed-set) accuracy is near-ceiling and FLAT
+across all 5 steps (the underlying representation is equally good for every
+step's own classes) -- only the OPEN accuracy shows the step-5-biggest,
+step-1-smallest pattern, driven entirely by the injected row-norm schedule.
+This is the same mechanism calibrate_classifier_row_norms() exists to fix,
+and the same reason apply_calibration=False (rank_extension family) is the
+family whose per-step accuracy swing is most extreme in R3's real numbers.

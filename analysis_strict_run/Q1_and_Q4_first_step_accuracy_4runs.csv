@@ -1,0 +1,9 @@
+method,OLD,CALIBFIX,REVERT,STRICT
+rank_extension,0.8,11.95,0.8,0.8
+rank_extension_kd_only_T2,59.55,76.2,59.55,59.55
+rank_extension_orth_factor_lam_50,2.25,0.1,2.25,2.9000000000000004
+rank_extension_orth_factor_lam_50_kd_T2,71.7,78.14999999999999,71.7,68.95
+simple_avg,54.05,82.0,82.0,82.0
+simple_avg_factor_orth,0.8,71.2,71.2,71.2
+simple_avg_factor_orth_kd_T2,11.8,85.1,80.45,77.75
+simple_avg_kd_T2,74.5,88.9,88.9,88.9

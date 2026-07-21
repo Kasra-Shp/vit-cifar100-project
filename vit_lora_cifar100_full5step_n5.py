@@ -597,16 +597,17 @@ RANKEXT_DIAGNOSTICS = True
 RANKEXT_RANK_SCHEDULE = [16, 32, 48, 64, 80]
 RANKEXT_ALPHA_PER_RANK = 2.0
 
-# ACCURACY-PUSH CANDIDATE (flag, default OFF): wider per-step rank budget.
-# The default schedule gives each CL step only 16 fresh trainable ranks per
-# target module, vs simple_avg retraining its full LORA_R=80 ranks from
-# scratch every step. analysis_rankext_firststep/table1 shows rank_extension
-# trailing simple_avg by a wide margin on later_steps/all_seen in BOTH runs,
-# consistent with (in addition to, not instead of, the forgetting-time issue
-# documented in that report's Target 1c) a plain capacity bottleneck. This is
-# an INDEPENDENT lever from RANKEXT_ORTH_LAMBDA_WARMUP_ENABLED below -- keep
-# them off together first and enable one at a time so a rerun can attribute
-# any change to a single cause, per the report's "attribute honestly" standard.
+# ACCURACY-PUSH CANDIDATE (flag; now ON -- see "CAPACITY TEST" note below):
+# wider per-step rank budget. The default schedule gives each CL step only 16
+# fresh trainable ranks per target module, vs simple_avg retraining its full
+# LORA_R=80 ranks from scratch every step. analysis_rankext_firststep/table1
+# shows rank_extension trailing simple_avg by a wide margin on
+# later_steps/all_seen in BOTH runs, consistent with (in addition to, not
+# instead of, the forgetting-time issue documented in that report's Target 1c)
+# a plain capacity bottleneck. This was originally an INDEPENDENT lever from
+# RANKEXT_ORTH_LAMBDA_WARMUP_ENABLED below, kept off together with it so a
+# rerun could attribute any change to a single cause, per the report's
+# "attribute honestly" standard.
 # Parameter cost: final total_rank 160 vs 80 -- roughly doubles trainable
 # rank-extension LoRA parameters per step by the last CL step (2 target
 # modules x wider rank, still less total than the calibfix run's 4 modules x
@@ -614,8 +615,28 @@ RANKEXT_ALPHA_PER_RANK = 2.0
 # config that actually scored 68.0). Watch train_val_gap_by_method.csv
 # (overfitting score) if this is enabled -- R3/R4 already flagged mild
 # overfitting signatures at the smaller capacity setting.
+#
+# CAPACITY TEST (next run, code-only change, no training this session):
+# USE_RANKEXT_RANK_SCHEDULE_WIDE flipped OFF -> ON for the NEXT run, per
+# explicit supervisor-relevant request, to directly test whether
+# rank_extension's underperformance vs simple_avg is (at least partly) a
+# capacity bottleneck: rank_extension has always been capped at final rank 80
+# (2 target modules) while simple_avg gets full rank 80 over 4 target
+# modules. This run intentionally gives rank_extension MORE total LoRA
+# parameters than simple_avg (schedule [32,64,96,128,160] vs simple_avg's
+# fixed 80) -- that asymmetry is the point of the test, not an oversight; see
+# the "more parameters than simple_avg" note in CHANGES.md.
+# NOTE this is no longer isolated from RANKEXT_ORTH_LAMBDA_WARMUP_ENABLED
+# (already ON, adopted from the strict-review run) -- unlike the original
+# "one lever per run" plan, this run combines the capacity change with the
+# already-adopted warmup fix, so any accuracy change here should be
+# attributed to "wide schedule, on top of warmup" rather than to capacity in
+# isolation. LAMBDA_ORTH is explicitly NOT rescaled (see CHANGES.md) --
+# rank_extension's factor-orth loss is already 20-300x smaller than
+# simple_avg's at the default rank, and rescaling lambda here would confound
+# the capacity test with an orthogonality-strength change.
 RANKEXT_RANK_SCHEDULE_WIDE = [32, 64, 96, 128, 160]
-USE_RANKEXT_RANK_SCHEDULE_WIDE = False
+USE_RANKEXT_RANK_SCHEDULE_WIDE = True
 assert len(RANKEXT_RANK_SCHEDULE_WIDE) == NUM_STEPS
 assert all(RANKEXT_RANK_SCHEDULE_WIDE[i] > RANKEXT_RANK_SCHEDULE_WIDE[i - 1] for i in range(1, NUM_STEPS))
 
@@ -626,6 +647,20 @@ def active_rankext_rank_schedule():
     every consumer (rank-triplet computation, reporting columns, hyperparameter
     dumps) so the flag can't drift out of sync between training and reporting."""
     return list(RANKEXT_RANK_SCHEDULE_WIDE) if USE_RANKEXT_RANK_SCHEDULE_WIDE else list(RANKEXT_RANK_SCHEDULE)
+
+
+def active_rankext_lora_alpha():
+    """Effective LoRA alpha implied by RANKEXT_ALPHA_PER_RANK at the active
+    schedule's FINAL rank -- i.e. the rank_extension-family analogue of the
+    global LORA_ALPHA constant (which only ever describes simple_avg's fixed
+    rank=80 config; see CHANGES.md "family-conditional alpha reporting fix").
+    GrowingRankLoRALinear.scaling = RANKEXT_ALPHA_PER_RANK is constant at
+    EVERY step regardless of total_rank (rankext_alpha = ALPHA_PER_RANK *
+    total_rank, scaling = rankext_alpha / total_rank = ALPHA_PER_RANK), so the
+    2:1 alpha/rank ratio this returns is preserved at every growth step, not
+    just the final one -- this is a reporting convenience, not a separate
+    scaling path."""
+    return float(RANKEXT_ALPHA_PER_RANK) * float(active_rankext_rank_schedule()[-1])
 
 
 # ACCURACY-PUSH CANDIDATE (flag, default OFF): ramp lambda_orth from 0 up to
@@ -863,6 +898,14 @@ assert LORA_R == 80
 assert LORA_ALPHA == 160
 assert LORA_R == RANKEXT_RANK_SCHEDULE[-1]
 assert float(RANKEXT_ALPHA_PER_RANK * RANKEXT_RANK_SCHEDULE[-1]) == float(LORA_ALPHA)
+# CAPACITY TEST verification: whichever schedule is ACTIVE (default or WIDE),
+# the alpha/rank ratio GrowingRankLoRALinear actually uses at every growth
+# step is exactly RANKEXT_ALPHA_PER_RANK (see that class's scaling formula --
+# it cancels total_rank out identically at rank 16, 32, ..., 160), so this is
+# a single reporting-consistency check, not a per-step re-derivation:
+# active_rankext_lora_alpha() must equal ALPHA_PER_RANK * the active
+# schedule's own final rank, for both the default and the wide schedule.
+assert float(active_rankext_lora_alpha()) == float(RANKEXT_ALPHA_PER_RANK) * float(active_rankext_rank_schedule()[-1])
 # ACCURACY-PUSH CHANGE 1: pinned set updated from ["q_proj", "v_proj"] to include
 # k_proj/out_proj. This is now the simple_avg-family value specifically (see
 # TARGET_MODULES_BY_FAMILY REVERT note above) -- keep this assert in sync with
@@ -930,6 +973,18 @@ best_epoch_selection_rows = []
 # model, plus the raw ingredients for backward_transfer/forward_transfer (see
 # evaluate_per_step_accuracy() and the run_*_variant functions below).
 per_step_accuracy_rows = []
+# EVAL-PIPELINE AUDIT ADD (analysis_pipeline_audit/report.txt): closed-set
+# companion to per_step_accuracy_rows above. Same model, same eval_ds, same
+# forward pass (computed alongside the open-set accuracy in
+# evaluate_per_step_accuracy(), not a separate re-evaluation) -- only the
+# argmax candidate set differs (restricted to the eval subset's own classes,
+# instead of open over all NUM_CLASSES). See restricted_argmax_accuracy() for
+# why this was added: it isolates a step's own representation quality from
+# cross-class classifier-row-norm competition (which the report shows is the
+# dominant driver of "step_5 always looks best", especially for
+# apply_calibration=False methods). One row per (method, step_id), long
+# format, mirrors per_step_accuracy_rows's schema exactly.
+per_step_accuracy_restricted_rows = []
 # PRE-THESIS FIX 2: {method_name: {step_idx: {task_step: accuracy_fraction}}} --
 # only populated for rank_extension family (the only family with a genuinely
 # evolving model to checkpoint mid-training); used to draw a true forgetting
@@ -1085,7 +1140,19 @@ def refresh_live_convergence(method_name):
         ax.set_ylabel("CE loss")
         disp = METHOD_DISPLAY_NAME_MAP.get(method_name, method_name)
         last_step = int(df["step_id"].max())
-        ax.set_title(f"{disp} -- live convergence (through step {last_step}/{NUM_STEPS})")
+        # EVAL-PIPELINE AUDIT ADD: val CE here is each CL step's OWN local
+        # validation split, evaluated with the model AS IT STOOD during that
+        # step's own training -- it is a different measurement from the
+        # retrospective per-step accuracy in per_task_accuracy_heatmap.png /
+        # per_step_accuracy_by_method.csv (which evaluates the method's FINAL
+        # model on the same class group, after every later step has run). See
+        # analysis_pipeline_audit/report.txt for why conflating the two reads
+        # as an inconsistency that isn't one.
+        ax.set_title(
+            f"{disp} -- live convergence (through step {last_step}/{NUM_STEPS})\n"
+            "val CE = this step's OWN local val split, model as of THIS step (in-context, not retrospective)",
+            fontsize=10,
+        )
         ax.legend(loc="upper right", fontsize=8.5)
         fig.tight_layout()
         fig.savefig(os.path.join(PLOTS_DIR, f"live_convergence_{method_name}.png"), dpi=200, bbox_inches="tight")
@@ -1985,6 +2052,46 @@ def evaluate_single_step_accuracy(model, step_idx):
     return float(out["eval_accuracy"])
 
 
+def restricted_argmax_accuracy(logits, labels, allowed_class_ids):
+    """
+    EVAL-PIPELINE AUDIT ADD (analysis_pipeline_audit/report.txt "root cause"
+    section). Same accuracy definition as compute_metrics() -- argmax over the
+    classifier's logits, compared to the ground-truth label -- except the
+    argmax candidate set is masked down to EXACTLY `allowed_class_ids` first,
+    instead of being left open over all NUM_CLASSES.
+
+    Why this exists: compute_metrics()'s open-100-way argmax is the standard,
+    intended class-incremental-learning evaluation protocol and is NOT being
+    replaced here. But it is only a fair cross-step comparison if every
+    class's classifier row is on a comparable scale, and this codebase's own
+    calibrate_classifier_row_norms() docstring already documents that this
+    does not hold in general (WA-style row-norm imbalance), with calibration
+    only enabled for the simple_avg family (CALIBRATION_ENABLED_FAMILIES).
+    For rank_extension (calibration off), the most-recently-trained class
+    group's rows compete on an artificially favorable scale under the open
+    argmax, which is the verified mechanism behind "step_5 always looks best"
+    (see the report). This function computes the SAME model's accuracy on the
+    SAME eval subset with that specific confound removed, so the two numbers
+    can be compared side by side per (method, step) without re-training or
+    re-evaluating -- it is computed from the identical logits produced by the
+    single forward pass in evaluate_per_step_accuracy(), not a second model
+    call.
+
+    `logits`: ndarray [N, NUM_CLASSES]. `labels`: ndarray [N] of global class
+    ids. `allowed_class_ids`: iterable of the class ids that are actually
+    valid answers for this eval subset (everything else is masked to -inf
+    before argmax, so it can never win).
+    """
+    logits = np.asarray(logits, dtype=np.float64)
+    labels = np.asarray(labels)
+    mask = np.full(logits.shape[1], -np.inf, dtype=np.float64)
+    allowed = sorted({int(c) for c in allowed_class_ids})
+    mask[allowed] = 0.0
+    masked_logits = logits + mask[None, :]
+    preds = np.argmax(masked_logits, axis=1)
+    return float((preds == labels).mean())
+
+
 def evaluate_per_step_accuracy(model, method_name):
     """
     Evaluate `model` (intended to be each method's FINAL merged/final model,
@@ -1999,8 +2106,18 @@ def evaluate_per_step_accuracy(model, method_name):
     needs to be callable here since the simple_avg family's training loop runs
     (and calls this function) before that later definition is reached.
 
+    EVAL-PIPELINE AUDIT ADD: also computes and logs, into the module-global
+    per_step_accuracy_restricted_rows accumulator, a closed-set companion
+    accuracy per step (see restricted_argmax_accuracy() docstring) -- from the
+    SAME trainer.predict() call used for the existing open-set number, so this
+    adds no extra forward passes and cannot change the pre-existing open-set
+    per_step_map/per_step_accuracy_rows values at all (same model state, same
+    eval_ds, same uniform evaluation function across every step; the only new
+    thing is a second, masked accuracy computed from the same logits).
+
     Returns a {step_idx: accuracy_fraction} map (0..1, NOT percent) for the
-    caller to also use in backward_transfer/forward_transfer computations.
+    caller to also use in backward_transfer/forward_transfer computations --
+    this is the OPEN-set map, unchanged from before this diagnostic was added.
     """
     args = get_training_args(
         output_dir=os.path.join(MODELS_DIR, "tmp_per_step_eval"),
@@ -2018,10 +2135,19 @@ def evaluate_per_step_accuracy(model, method_name):
         compute_metrics=compute_metrics,
     )
     per_step_map = {}
+    restricted_map = {}
     for step_idx in range(NUM_STEPS):
-        eval_ds = make_eval_dataset(classes_for_step(step_idx))
-        out = trainer.evaluate(eval_dataset=eval_ds)
-        per_step_map[step_idx] = float(out["eval_accuracy"])
+        current_classes = classes_for_step(step_idx)
+        eval_ds = make_eval_dataset(current_classes)
+        pred_out = trainer.predict(eval_ds)
+        logits = np.asarray(pred_out.predictions)
+        labels = np.asarray(pred_out.label_ids)
+        # Same computation compute_metrics() would have done -- kept
+        # inline (not called through compute_metrics) so both the open and
+        # restricted numbers come from exactly one forward pass's logits.
+        open_acc = float((np.argmax(logits, axis=1) == labels).mean())
+        per_step_map[step_idx] = open_acc
+        restricted_map[step_idx] = restricted_argmax_accuracy(logits, labels, current_classes)
 
     for step_idx in range(NUM_STEPS):
         acc = per_step_map.get(step_idx, np.nan)
@@ -2029,6 +2155,14 @@ def evaluate_per_step_accuracy(model, method_name):
             "method": method_name,
             "step_id": int(step_idx + 1),
             "accuracy": float(acc) * 100.0 if not np.isnan(acc) else np.nan,
+        })
+        racc = restricted_map.get(step_idx, np.nan)
+        per_step_accuracy_restricted_rows.append({
+            "method": method_name,
+            "step_id": int(step_idx + 1),
+            "accuracy_restricted": float(racc) * 100.0 if not np.isnan(racc) else np.nan,
+            "accuracy_open": float(acc) * 100.0 if not np.isnan(acc) else np.nan,
+            "recency_bias_gap": (float(acc) - float(racc)) * 100.0 if not (np.isnan(acc) or np.isnan(racc)) else np.nan,
         })
     return per_step_map
 
@@ -4975,7 +5109,16 @@ method_config_df["lora_rank_or_current_rank"] = np.where(
     method_config_df["rank"].astype(int).astype(str),
     method_config_df["rank_schedule"],
 )
-method_config_df["lora_alpha"] = float(LORA_ALPHA)
+# CAPACITY TEST fix: same family-conditional lora_alpha fix as cfg_df() above
+# -- see active_rankext_lora_alpha() docstring. This feeds
+# method_hyperparameter_summary.csv (via summary_table) and was previously
+# stamping every method, including rank_extension, with the simple_avg-only
+# global LORA_ALPHA.
+method_config_df["lora_alpha"] = np.where(
+    method_config_df["family"] == "rank_extension",
+    active_rankext_lora_alpha(),
+    float(LORA_ALPHA),
+)
 method_config_df["internal_method_name"] = method_config_df["method"]
 
 supervisor_method_mapping_df = pd.DataFrame(SUPERVISOR_SELECTED_METHOD_SPECS)
@@ -5770,7 +5913,18 @@ def variant(m): return VARIANT.get(str(m), "Other")
 def cfg_df():
     c=pd.DataFrame(ACTIVE_METHOD_CONFIGS); c=c[c.method.isin(REQ)].copy(); c["method"]=pd.Categorical(c.method, REQ, ordered=True); c=c.sort_values("method")
     c["display_method_name"]=c.method.astype(str).map(METHOD_DISPLAY_NAME_MAP).fillna(c.method.astype(str)); c["lora_rank"]=np.where(c.family.eq("rank_extension"), active_rankext_rank_schedule()[-1], LORA_R)
-    c["lora_alpha"]=LORA_ALPHA; c["lora_dropout"]=LORA_DROPOUT; c["batch_size"]=BATCH_LORA
+    # CAPACITY TEST fix: lora_alpha must be family-conditional like lora_rank
+    # just above -- LORA_ALPHA (160) only ever describes simple_avg's fixed
+    # rank=80 config. Before this fix, every method (including rank_extension)
+    # was stamped with the SAME global LORA_ALPHA regardless of family; this
+    # was a latent bug that happened to be invisible while rank_extension's
+    # default schedule's final rank (80) coincided with simple_avg's rank (80)
+    # -- now that USE_RANKEXT_RANK_SCHEDULE_WIDE can make rank_extension's
+    # final rank 160, reporting 160 for LORA_ALPHA would be silently wrong.
+    # See active_rankext_lora_alpha() for why this is the correct value at
+    # EVERY step of the active schedule, not just the final one.
+    c["lora_alpha"]=np.where(c.family.eq("rank_extension"), active_rankext_lora_alpha(), LORA_ALPHA)
+    c["lora_dropout"]=LORA_DROPOUT; c["batch_size"]=BATCH_LORA
     c["num_epochs"]=np.where(c.family.eq("rank_extension"), RANKEXT_EPOCHS, LORA_EPOCHS); c["learning_rate"]=np.where(c.family.eq("rank_extension"), LR_RANKEXT, LR_LORA)
     c["optimizer"]="AdamW"; c["scheduler"]=SCHED
     # POST-INCIDENT FIX: "apply_calibration", "target_modules", "head_lr_multiplier",
@@ -5800,7 +5954,7 @@ def cfg_df():
     c["seed"]=int(SEED)
     return c.reset_index(drop=True)
 CFG=cfg_df()
-js(Path(CONFIGS_DIR)/"run_config.json", {"run_name":RUN_NAME,"run_tag":RUN_TAG,"base_output_dir":BASE_OUTPUT_DIR,"model_checkpoint":MODEL_CHECKPOINT,"seed":SEED,"num_steps":NUM_STEPS,"classes_per_step":CLASSES_PER_STEP,"lora_rank":LORA_R,"lora_alpha":LORA_ALPHA,"lora_dropout":LORA_DROPOUT,"target_modules_default":TARGET_MODULES,"target_modules_by_family":{k:list(v) for k,v in TARGET_MODULES_BY_FAMILY.items()},"lambda_orth":LAMBDA_ORTH,"kd_temperatures":KD_TEMPERATURES,"kd_weight":KD_WEIGHT,"optimizer":"AdamW","scheduler":SCHED,"batch_size":BATCH_LORA,"use_classifier_calibration_master_switch":bool(USE_CLASSIFIER_CALIBRATION),"classifier_calibration_by_family":dict(CALIBRATION_ENABLED_FAMILIES),"head_lr_multiplier_default":float(HEAD_LR_MULTIPLIER),"head_lr_multiplier_by_family":{k:float(v) for k,v in HEAD_LR_MULTIPLIER_BY_FAMILY.items()},"rankext_rank_schedule_active":active_rankext_rank_schedule(),"rankext_rank_schedule_wide_enabled":bool(USE_RANKEXT_RANK_SCHEDULE_WIDE),"rankext_orth_lambda_warmup_enabled":bool(RANKEXT_ORTH_LAMBDA_WARMUP_ENABLED),"rankext_orth_lambda_warmup_epochs":float(RANKEXT_ORTH_LAMBDA_WARMUP_EPOCHS),"combined_loss_scale_enabled":bool(COMBINED_LOSS_SCALE_ENABLED),"combined_lambda_orth_scale":float(COMBINED_LAMBDA_ORTH_SCALE),"combined_kd_weight_scale":float(COMBINED_KD_WEIGHT_SCALE),"combined_orth_warmup_enabled":bool(COMBINED_ORTH_WARMUP_ENABLED),"combined_orth_warmup_epochs":float(COMBINED_ORTH_WARMUP_EPOCHS)})
+js(Path(CONFIGS_DIR)/"run_config.json", {"run_name":RUN_NAME,"run_tag":RUN_TAG,"base_output_dir":BASE_OUTPUT_DIR,"model_checkpoint":MODEL_CHECKPOINT,"seed":SEED,"num_steps":NUM_STEPS,"classes_per_step":CLASSES_PER_STEP,"lora_rank":LORA_R,"lora_alpha":LORA_ALPHA,"lora_alpha_note":"lora_rank/lora_alpha above describe simple_avg only; rank_extension is family-conditional, see rankext_rank_schedule_active / rankext_alpha_per_rank / rankext_lora_alpha_active","lora_dropout":LORA_DROPOUT,"target_modules_default":TARGET_MODULES,"target_modules_by_family":{k:list(v) for k,v in TARGET_MODULES_BY_FAMILY.items()},"lambda_orth":LAMBDA_ORTH,"kd_temperatures":KD_TEMPERATURES,"kd_weight":KD_WEIGHT,"optimizer":"AdamW","scheduler":SCHED,"batch_size":BATCH_LORA,"use_classifier_calibration_master_switch":bool(USE_CLASSIFIER_CALIBRATION),"classifier_calibration_by_family":dict(CALIBRATION_ENABLED_FAMILIES),"head_lr_multiplier_default":float(HEAD_LR_MULTIPLIER),"head_lr_multiplier_by_family":{k:float(v) for k,v in HEAD_LR_MULTIPLIER_BY_FAMILY.items()},"rankext_rank_schedule_active":active_rankext_rank_schedule(),"rankext_rank_schedule_wide_enabled":bool(USE_RANKEXT_RANK_SCHEDULE_WIDE),"rankext_alpha_per_rank":float(RANKEXT_ALPHA_PER_RANK),"rankext_lora_alpha_active":float(active_rankext_lora_alpha()),"rankext_more_params_than_simple_avg":bool(USE_RANKEXT_RANK_SCHEDULE_WIDE),"rankext_orth_lambda_warmup_enabled":bool(RANKEXT_ORTH_LAMBDA_WARMUP_ENABLED),"rankext_orth_lambda_warmup_epochs":float(RANKEXT_ORTH_LAMBDA_WARMUP_EPOCHS),"combined_loss_scale_enabled":bool(COMBINED_LOSS_SCALE_ENABLED),"combined_lambda_orth_scale":float(COMBINED_LAMBDA_ORTH_SCALE),"combined_kd_weight_scale":float(COMBINED_KD_WEIGHT_SCALE),"combined_orth_warmup_enabled":bool(COMBINED_ORTH_WARMUP_ENABLED),"combined_orth_warmup_epochs":float(COMBINED_ORTH_WARMUP_EPOCHS)})
 js(Path(CONFIGS_DIR)/"supervisor_selected_methods.json", SUPERVISOR_SELECTED_METHOD_SPECS)
 js(Path(CONFIGS_DIR)/"hyperparameters_by_method.json", CFG.to_dict("records"))
 
@@ -5844,6 +5998,24 @@ else:
 per_step_acc_path = Path(TABLES_DIR) / "per_step_accuracy_by_method.csv"
 per_step_acc_df.to_csv(per_step_acc_path, index=False)
 print("Saved per-step accuracy:", per_step_acc_path)
+
+# EVAL-PIPELINE AUDIT ADD (analysis_pipeline_audit/report.txt): closed-set
+# companion table. accuracy_open here is identical (same forward pass) to
+# per_step_acc_df's "accuracy" column above -- this table exists so the two
+# numbers and their gap are auditable side by side per (method, step) without
+# cross-referencing two CSVs by hand. recency_bias_gap = accuracy_open -
+# accuracy_restricted; large positive values are the signature the report
+# investigates (a step whose open-set accuracy is propped up by winning the
+# argmax against classes it should never be competing with).
+per_step_acc_restricted_df = pd.DataFrame(per_step_accuracy_restricted_rows)
+if len(per_step_acc_restricted_df) > 0:
+    per_step_acc_restricted_df = per_step_acc_restricted_df[per_step_acc_restricted_df["method"].isin(REQ)].copy()
+    per_step_acc_restricted_df = per_step_acc_restricted_df.sort_values(["method", "step_id"]).reset_index(drop=True)
+else:
+    per_step_acc_restricted_df = pd.DataFrame(columns=["method", "step_id", "accuracy_restricted", "accuracy_open", "recency_bias_gap"])
+per_step_acc_restricted_path = Path(TABLES_DIR) / "per_step_accuracy_open_vs_restricted_by_method.csv"
+per_step_acc_restricted_df.to_csv(per_step_acc_restricted_path, index=False)
+print("Saved per-step accuracy (open vs. closed-set):", per_step_acc_restricted_path)
 
 
 def per_step_accuracy_json(method_name):
@@ -5982,7 +6154,12 @@ def lossgrid(metric,ylabel,name,title,methods=None,log=False,pos=False):
     fig.legend([Line2D([0],[0],color=VCOL[v],linestyle=VSTYLE[v],lw=3) for v in SUPERVISOR_VARIANT_ORDER], SUPERVISOR_VARIANT_ORDER, loc="center left", bbox_to_anchor=(.915,.52), frameon=False); fig.tight_layout(rect=[.02,.02,.90,.95]); plt.savefig(Path(PLOTS_DIR)/name,dpi=DPI,bbox_inches="tight"); plt.close()
 if len(E)>0:
     lossgrid("train_ce_loss","Train CE loss","train_ce_loss_by_method.png","Train CE Loss by Method and CL Step")
-    lossgrid("val_ce_loss","Validation CE loss","validation_ce_loss_by_method.png","Validation CE Loss by Method and CL Step"); lossgrid("val_ce_loss","Validation CE loss","validation_ce_loss_clean.png","Validation CE Loss by CL Step")
+    # EVAL-PIPELINE AUDIT ADD: val CE per (step, epoch) panel here is each CL
+    # step's OWN local val split, model as of THAT step (in-context) -- NOT
+    # the retrospective final-model accuracy in the per-step heatmaps/CSVs.
+    # See analysis_pipeline_audit/report.txt.
+    _val_ce_caption = "\n(each step's OWN local val split, model as of THAT step -- in-context, not retrospective)"
+    lossgrid("val_ce_loss","Validation CE loss","validation_ce_loss_by_method.png","Validation CE Loss by Method and CL Step"+_val_ce_caption); lossgrid("val_ce_loss","Validation CE loss","validation_ce_loss_clean.png","Validation CE Loss by CL Step"+_val_ce_caption)
     kd=[m for m in REQ if ACTIVE_METHOD_MAP[m]["uses_kd"]]; fo=[m for m in REQ if ACTIVE_METHOD_MAP[m]["uses_factor_orth"]]
     lossgrid("kd_loss_weighted","Weighted KD loss","kd_loss_by_method.png","KD Loss by Method",kd,pos=True); lossgrid("factor_orth_loss_weighted","Weighted factor-orth loss","factor_orth_loss_by_method.png","Factor-Orth Loss by Method",fo,pos=True)
     lossgrid("factor_orth_loss_weighted","Weighted factor-orth loss","factor_orth_weighted_loss_log.png","Factor-Orth Weighted Loss (log)",fo,log=True,pos=True); lossgrid("train_total_loss","Total train loss","total_loss_by_method.png","Total Loss by Method"); lossgrid("train_total_loss","Total train loss","total_loss_by_method_log.png","Total Loss by Method (log)",log=True,pos=True)

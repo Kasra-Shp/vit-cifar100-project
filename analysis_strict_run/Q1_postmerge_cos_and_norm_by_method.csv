@@ -1,0 +1,5 @@
+method,mean_cos_dW1_merged,std_cos_dW1_merged,mean_merged_norm_ratio,std_merged_norm_ratio
+simple_avg,0.4594,0.0146,0.4906,0.0167
+simple_avg_factor_orth,0.595,0.0919,0.4603,0.0112
+simple_avg_factor_orth_kd_T2,0.5403,0.1134,0.4606,0.0071
+simple_avg_kd_T2,0.3382,0.0313,0.53,0.0204

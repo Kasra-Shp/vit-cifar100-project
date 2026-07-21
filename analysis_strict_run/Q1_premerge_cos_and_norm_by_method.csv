@@ -1,0 +1,5 @@
+method,mean_cos_t2plus,std_cos_t2plus,mean_norm_ratio_t2plus
+simple_avg,0.012,0.0098,0.9088
+simple_avg_factor_orth,0.0018,0.0028,0.6957
+simple_avg_factor_orth_kd_T2,0.0044,0.0062,0.8337
+simple_avg_kd_T2,0.0216,0.0165,1.3078

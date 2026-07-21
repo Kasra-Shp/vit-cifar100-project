@@ -1,0 +1,9 @@
+method,OLD,CALIBFIX,REVERT,STRICT
+rank_extension,21.82,40.6,21.82,21.82
+rank_extension_kd_only_T2,58.85,63.51,58.85,58.85
+rank_extension_orth_factor_lam_50,34.03,34.910000000000004,34.03,31.21
+rank_extension_orth_factor_lam_50_kd_T2,67.66,62.89,67.66,65.34
+simple_avg,48.02,72.09,72.09,72.09
+simple_avg_factor_orth,62.53,75.53999999999999,75.53999999999999,75.53999999999999
+simple_avg_factor_orth_kd_T2,64.16,63.71,69.13,70.17999999999999
+simple_avg_kd_T2,41.84,71.50999999999999,71.50999999999999,71.50999999999999

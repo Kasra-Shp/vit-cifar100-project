@@ -1,0 +1,9 @@
+method,family,target_modules,n_target_modules,head_lr_multiplier,apply_calibration,num_epochs,learning_rate,final_rank,rank_schedule,lora_alpha,trainable_lora_params,uses_kd,kd_temperature,kd_weight,uses_factor_orth,lambda_orth,lambda_orth_scale,kd_weight_scale,combined_orth_warmup_enabled,rankext_orth_lambda_warmup_enabled,rankext_rank_schedule_wide_enabled,seed
+simple_avg,simple_avg,"q_proj,k_proj,v_proj,out_proj",4,10.0,True,9,5e-05,80,fixed:80,160.0,5898240,False,0.0,0.0,False,0.0,1.0,1.0,False,False,True,42
+simple_avg_kd_T2,simple_avg,"q_proj,k_proj,v_proj,out_proj",4,10.0,True,9,5e-05,80,fixed:80,160.0,5898240,True,2.0,1.0,False,0.0,1.0,1.0,False,False,True,42
+simple_avg_factor_orth,simple_avg,"q_proj,k_proj,v_proj,out_proj",4,10.0,True,9,5e-05,80,fixed:80,160.0,5898240,False,0.0,0.0,True,50.0,1.0,1.0,False,False,True,42
+simple_avg_factor_orth_kd_T2,simple_avg,"q_proj,k_proj,v_proj,out_proj",4,10.0,True,9,5e-05,80,fixed:80,160.0,5898240,True,2.0,0.5,True,15.0,0.3,0.5,True,False,True,42
+rank_extension,rank_extension,"q_proj,v_proj",2,1.0,False,9,0.0001,160,32->64->96->128->160,320.0,5898240,False,0.0,0.0,False,0.0,1.0,1.0,False,False,True,42
+rank_extension_kd_only_T2,rank_extension,"q_proj,v_proj",2,1.0,False,9,0.0001,160,32->64->96->128->160,320.0,5898240,True,2.0,1.0,False,0.0,1.0,1.0,False,False,True,42
+rank_extension_orth_factor_lam_50,rank_extension,"q_proj,v_proj",2,1.0,False,9,0.0001,160,32->64->96->128->160,320.0,5898240,False,0.0,0.0,True,50.0,1.0,1.0,False,True,True,42
+rank_extension_orth_factor_lam_50_kd_T2,rank_extension,"q_proj,v_proj",2,1.0,False,9,0.0001,160,32->64->96->128->160,320.0,5898240,True,2.0,1.0,True,50.0,1.0,1.0,False,True,True,42

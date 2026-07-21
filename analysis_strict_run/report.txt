@@ -1,0 +1,256 @@
+================================================================================
+STRICT/INSTRUMENTED RUN: DEFINITIVE ANSWERS TO Q1-Q3 + RUN VERDICT
+================================================================================
+Run analyzed: R3/results_strict_20260717_light/..._MAIN_20260717_015946
+Comparison runs: OLD (20260715_014445), CALIBFIX (20260716_133338),
+REVERT (20260716_193538). All work performed from saved CSVs/logs only --
+no training was run this session.
+
+================================================================================
+EXECUTIVE SUMMARY
+================================================================================
+
+Q1 (factor-orth old-class damage): PROVEN, but not the mechanism originally
+hypothesized. merge_mechanism_by_method_step.csv shows factor-orth does push
+pre-merge cos(dW1, dWt) closer to zero (0.0018 vs 0.0120 baseline), but plain
+simple_avg is ALREADY nearly orthogonal without any penalty (high-dimensional
+independent adapters are naturally near-orthogonal) -- so this alone is a small
+effect. The dominant, strongly-correlated mechanism is MAGNITUDE, not
+direction: factor-orth shrinks tasks 2-5's own update norm relative to task 1's
+(0.696 vs 0.909 baseline), and the fraction of task-1's own trained-delta
+magnitude that survives into the final merged, deployed weight collapses from
+45.5% (plain simple_avg) to 34.0% (simple_avg_factor_orth). This retained-
+magnitude percentage ranks the 4 simple_avg variants in EXACTLY the same order
+as first_step accuracy (r=0.95): kd_T2 (65.6% retained -> 88.90% acc) >
+simple_avg (45.5% -> 82.00%) > factor_orth_kd_T2 (38.7% -> 77.75%) >
+factor_orth (34.0% -> 71.20%). Post-merge DIRECTIONAL alignment with dW1 is
+actually HIGHER for factor-orth (cos=0.595) than baseline (cos=0.459) --
+the opposite of a "cancellation" story. rank_extension is immune because it
+never merges: frozen_rank_blocks max_abs_diff = 0.0 at every step, confirmed
+again in this run.
+
+Q2 (decomposition figure legend/bend): Regenerated from THIS run's data.
+Identity re-verified exactly: max|train_ce - train_total| = 0.000e+00 for the
+Base variant (90 rows, both families, all steps), and reconstructed total vs.
+logged total matches to 2.83e-6 across all methods. The redesigned one-panel-
+per-variant figure with shared legend, built in the prior session, is confirmed
+to still work correctly end-to-end on new data.
+
+Q3 (rank_ext KD rise): Confirmed persistent in the control
+(rank_extension_kd_only_T2, unaffected by the orth-warmup lever): +26% to +35%
+KD rise at every step transition, identical to the pre-instrumentation
+baseline. NEW finding enabled by this run: with orth-lambda warmup ON for
+rank_extension_orth_factor_lam_50_kd_T2, the measured "rise %" balloons to
++75% (S2) up to +386% (S5) -- but this is a baseline-suppression artifact, not
+a shape change: epoch-2 peak (~0.9-1.27) and epoch-9 steady-state (~0.83-1.18)
+are both nearly identical to the control's, at every step. What differs is
+epoch 1: the still-active (warmed-up, not fully off) factor-orth loss competes
+with CE for gradient budget during epoch 1, so the model drifts less that
+epoch, staying closer to the frozen KD teacher (hence a lower KD epoch-1 floor
+that shrinks further at later steps, 0.727->0.187, as the orth penalty itself
+grows with more accumulated frozen blocks, 0.33->2.11). The underlying
+shared-weight tug-of-war mechanism (established previously) is unchanged.
+
+RUN VERDICT:
+- SimpleAvg+FactorOrth+KD v2 tuning (lambda x0.3 + warmup): all_seen 70.18%,
+  up from REVERT's 69.13% (+1.05pp) but STILL BELOW plain KD's 71.51% floor
+  (-1.33pp) and well below FactorOrth-alone's 75.54% (-5.36pp). Did NOT exceed
+  either target. Trade-off shifted (first_step 77.75% down from 80.45%, but
+  later_steps 68.29% up from 66.30%) -- net small gain, not a breakthrough.
+- RankExt+FactorOrth+KD with orth warmup: all_seen 65.34%, DOWN from its own
+  67.66% historical best (REVERT/OLD, warmup OFF) by -2.32pp. Did NOT exceed
+  68.0. Warmup made this variant slightly WORSE on every metric (first_step
+  -2.75pp, later_steps -2.21pp, forgetting 0.244 vs 0.208 -- more forgetting).
+- SimpleAvg+FactorOrth sanity: 75.54% all_seen, bit-identical to CALIBFIX and
+  REVERT (config untouched). CONFIRMED still ~75.5%.
+- Full table: Q4_full_per_method_table_4runs.csv.
+
+================================================================================
+Q1 -- "IT'S STILL WEIRD THAT FACTOR-ORTH DAMAGES OLD-CLASS PERFORMANCE THAT
+MUCH" -- PROOF FROM merge_mechanism_by_method_step.csv
+================================================================================
+
+1a. PRE-MERGE: does factor-orth drive cos(dW1, dWt) toward zero?
+    (Q1_premerge_cos_and_norm_by_method.csv, mean over 48 target modules,
+    t=2..5, STRICT run)
+
+      method                          mean_cos(dW1,dWt) t2-5   mean ||dWt||/||dW1|| t2-5
+      simple_avg                              0.0120                    0.9088
+      simple_avg_kd_T2                        0.0216                    1.3078
+      simple_avg_factor_orth                  0.0018                    0.6957
+      simple_avg_factor_orth_kd_T2            0.0044                    0.8337
+
+    YES, factor-orth measurably pushes cos closer to zero (0.0018-0.0044 vs
+    0.0120-0.0216 for non-orth) -- an 80-85% reduction relative to the
+    matching non-orth sibling. BUT: even the non-orth baseline is already
+    close to zero (cos~0.01-0.02) -- independently-trained per-task LoRA
+    deltas in a several-hundred-thousand-dimension weight space are naturally
+    near-orthogonal by chance (concentration of measure), with or without a
+    penalty. So the cosine effect is real but incremental, not the dominant
+    lever.
+
+    The clearer effect at pre-merge is on MAGNITUDE: factor-orth's later-task
+    (t=2..5) deltas are only 0.70-0.83x the size of task-1's own delta, vs.
+    0.91-1.31x for the non-orth siblings. The orthogonality penalty competes
+    with steps 2-5's own CE objective during THEIR training and visibly
+    suppresses how large those later updates can grow.
+
+1b. DOES THIS DILUTE THE MERGED RESULT, AND DOES IT CORRELATE WITH ACCURACY?
+    (Q1_postmerge_cos_and_norm_by_method.csv,
+    Q1_step1_magnitude_retention_vs_accuracy.csv)
+
+      method                          cos(dW1,merged)  merged/mean-indiv  merged/dW1  first_step_acc
+      simple_avg_kd_T2                    0.338             0.530           65.6%          88.90
+      simple_avg                          0.459             0.491           45.5%          82.00
+      simple_avg_factor_orth_kd_T2        0.540             0.461           38.7%          77.75
+      simple_avg_factor_orth              0.595             0.460           34.0%          71.20
+
+    Two findings, and they point in DIFFERENT directions:
+      - DIRECTION is NOT diluted -- it is MORE preserved for factor-orth
+        (cos=0.595, the highest of the 4) than for plain averaging
+        (cos=0.459, close to the 1/sqrt(5)=0.447 value you'd get from
+        averaging 5 truly-random independent directions). This is the
+        OPPOSITE of "orthogonal averaging cancels step-1's direction."
+      - MAGNITUDE is diluted, and it is diluted the most for factor-orth: only
+        34.0% of task-1's own trained-delta norm survives into the merged,
+        deployed weight for simple_avg_factor_orth, vs. 45.5% for plain
+        simple_avg and 65.6% for simple_avg_kd_T2. This retained-magnitude
+        percentage puts the 4 variants in EXACTLY the same rank order as
+        first_step accuracy (Pearson r = 0.95 across the 4 points; r = 0.93
+        using the mean-individual-norm-normalized version of the same ratio).
+        Mechanically: because factor-orth shrinks tasks 2-5's own deltas
+        (1a), and simple-averaging weights all 5 tasks equally regardless of
+        their size, the smaller later-task deltas contribute less to
+        reinforcing the merged vector's overall scale -- and task 1's own
+        (undiminished, since orth is inactive during step-1's training)
+        contribution ends up making up a similar or larger SHARE of a
+        SMALLER total, i.e. task 1's absolute footprint in the final weight
+        shrinks even though its relative share/direction does not.
+
+    Historically (OLD run, 4-module/calibration not yet applied): the same
+    direction of effect existed but the magnitude collapse was far more
+    severe (first_step 54.05% -> 0.80%, a near-total wipeout). Classifier
+    calibration + wider target-module coverage (already in place before this
+    run, unchanged by it) fixed most of that -- what's left in this run
+    (82.00% -> 71.20%, -10.8pp) is the residual of the SAME magnitude-dilution
+    mechanism, now graded rather than catastrophic (per_step_accuracy_by_
+    method.csv confirms steps 2-5 for factor_orth are all HIGHER than plain
+    simple_avg's, 78.85/72.35/70.20/85.10 vs 68.00/68.65/61.90/79.90 -- a real
+    trade-off, not an all-or-nothing failure like OLD).
+
+1c. WHY rank_extension IS IMMUNE (re-confirmed this run):
+    rank_extension_orth_factor_lam_50_step_2_frozen_rank_blocks.csv and
+    ..._kd_T2_step_2_frozen_rank_blocks.csv both report A_max_abs_diff =
+    B_max_abs_diff = 0.0 across all 24 logged parameters, every step. There is
+    no merge step for this mechanism to act on -- old rank blocks are frozen
+    and concatenated, never averaged, so there is no "merged_norm/dW1_norm"
+    ratio to shrink in the first place.
+
+VERDICT ON Q1: the merge-mechanism CSV does NOT support the originally
+hypothesized DIRECTIONAL dilution story (post-merge alignment with step-1's
+direction is actually stronger under factor-orth, not weaker). It DOES
+support, with a strong (r=0.95) numeric correlation, a MAGNITUDE dilution
+story: factor-orth suppresses later tasks' own update size, and uniform
+averaging then lets task 1's absolute contribution to the final merged weight
+shrink to a smaller fraction of its own original size than under plain
+averaging. This is specific to simple_avg (which merges by averaging) and
+structurally impossible for rank_extension (which concatenates frozen blocks).
+
+================================================================================
+Q2 -- combined_loss_decomposition: REGENERATED + RE-VERIFIED, THIS RUN
+================================================================================
+Q2_combined_loss_decomposition_STRICT_run_redesigned.png -- built from THIS
+run's tables/training_loss_history_by_epoch.csv (script:
+q2_regenerate_decomposition.py). Re-verified on the new data:
+  - Base variant identity: max|train_ce_loss - train_total_loss| = 0.000e+00
+    across all 90 rows (both families, all 5 steps, all 9 epochs).
+  - Bookkeeping: max|reconstructed_total - logged_total| = 2.83e-6 (floating-
+    point noise) across ALL 8 methods, all epochs.
+Both checks pass exactly as they did on the prior (revert) run -- the redesign
+and the underlying identity are stable properties of the pipeline, not
+something specific to one run's numbers.
+
+================================================================================
+Q3 -- rank_extension KD rise: CONFIRMED + warmup-interaction documented
+================================================================================
+Q3a_rankext_kd_rise_vs_ce_drop_control_STRICT.png /
+Q3a_kd_rise_ce_drop_alignment_control_STRICT.csv -- rank_extension_kd_only_T2
+(no orth loss, so untouched by this run's orth-warmup lever): KD rises
++26.3%/+30.2%/+34.9%/+32.6% at steps 2-5 epoch1->2, CE drops -74.4%/-73.2%/
+-73.7%/-78.1% in the same epoch -- numerically identical in shape to every
+prior run. Confirms the rise is a stable structural property, not touched by
+this session's changes (as expected, since this method has no orth loss).
+
+Q3b_rankext_warmup_vs_control_KD_shape_STRICT.png /
+Q3b_kd_rise_ce_drop_alignment_warmup_STRICT.csv -- NEW this run:
+rank_extension_orth_factor_lam_50_kd_T2 (orth-lambda warmup ON) shows a much
+larger PERCENTAGE rise (+74.7% S2 up to +386.2% S5), but the epoch-2 peak
+(0.91-1.27) and epoch-9 steady-state (0.83-1.17) are nearly identical to the
+control's own peak/steady-state at every step -- the warmup does not change
+where the KD curve ends up, only how low epoch 1 starts. Epoch-1 KD shrinks
+progressively across steps (0.727->0.422->0.286->0.187) as the epoch-1
+factor-orth loss itself grows across steps (0.33->0.83->1.40->2.11, more
+accumulated frozen blocks = a harder orthogonality constraint even under
+warmup damping) -- more of the epoch-1 gradient budget goes to the orth term,
+less net drift happens that epoch, so the model stays closer to the frozen
+teacher and the KD floor before the epoch-2 jump keeps getting lower. The
+warmup changes the STARTING POINT of the same tug-of-war, not its underlying
+mechanism or its resting state.
+
+================================================================================
+RUN VERDICT -- STRICT vs REVERT vs OLD/CALIBFIX
+================================================================================
+Full table: Q4_full_per_method_table_4runs.csv (all 8 methods, all 4 runs,
+first_step/later_steps/all_seen/forgetting/backward_transfer, with
+STRICT-minus-REVERT and STRICT-minus-OLD delta columns).
+
+  method                                    OLD    CALIBFIX  REVERT  STRICT   STRICT-REVERT
+  rank_extension                            21.82  40.60     21.82   21.82     0.00
+  rank_extension_kd_only_T2                 58.85  63.51     58.85   58.85     0.00
+  rank_extension_orth_factor_lam_50         34.03  34.91     34.03   31.21    -2.82
+  rank_extension_orth_factor_lam_50_kd_T2   67.66  62.89     67.66   65.34    -2.32
+  simple_avg                                48.02  72.09     72.09   72.09     0.00
+  simple_avg_factor_orth                    62.53  75.54     75.54   75.54     0.00
+  simple_avg_factor_orth_kd_T2              64.16  63.71     69.13   70.18    +1.05
+  simple_avg_kd_T2                          41.84  71.51     71.51   71.51     0.00
+  (all_seen_accuracy, %)
+
+- SimpleAvg+FactorOrth+KD (v2 tuning: lambda_orth x0.3 + 1-epoch warmup, kd_
+  weight scale unchanged at 0.5): 70.18% all_seen. Did NOT exceed plain
+  SimpleAvg+KD (71.51%, short by 1.33pp) and did NOT exceed SimpleAvg+
+  FactorOrth alone (75.54%, short by 5.36pp). Improved over the prior
+  (REVERT) rescaling by +1.05pp and over CALIBFIX by +6.47pp -- correct
+  direction, incremental progress, target not met.
+- RankExt+FactorOrth+KD (orth-lambda warmup ON): 65.34% all_seen, DOWN 2.32pp
+  from its own 67.66% historical best (achieved with warmup OFF, in both OLD
+  and REVERT). Did NOT exceed 68.0. Every metric moved the wrong way
+  (first_step -2.75pp, later_steps -2.21pp, forgetting worsened 0.208->0.244).
+  The warmup lever, motivated by the same-run evidence that the raw orth
+  violation collapses within 1 epoch (a timing argument, not an accuracy
+  guarantee), did not pay off for this variant in this run.
+- SimpleAvg+FactorOrth (non-KD) sanity: 75.54% all_seen, bit-identical across
+  CALIBFIX/REVERT/STRICT (config untouched by any of this session's changes).
+  CONFIRMED still ~75.5%.
+
+================================================================================
+DELIVERABLES IN analysis_strict_run/
+================================================================================
+  report.txt                                              - this file
+  supervisor_paragraphs.txt                                - 3 paste-ready paragraphs (Q1, Q2, Q3)
+  Q1_premerge_cos_and_norm_by_method.csv                   - pre-merge cos(dW1,dWt) & norm ratio, t2-5, by method
+  Q1_premerge_cos_by_method_step.csv                       - same, broken out per CL step
+  Q1_postmerge_cos_and_norm_by_method.csv                  - post-merge cos(dW1,merged) & merged-norm ratio, by method
+  Q1_mechanism_vs_accuracy_STRICT_run.csv                  - mechanism metrics joined to first_step accuracy, 4 variants
+  Q1_step1_magnitude_retention_vs_accuracy.csv             - the key table: %-of-dW1-norm retained in merged weight vs accuracy
+  Q1_and_Q4_first_step_accuracy_4runs.csv                  - first_step accuracy, all methods, all 4 runs
+  Q2_combined_loss_decomposition_STRICT_run_redesigned.png - regenerated decomposition figure, this run
+  q2_regenerate_decomposition.py                           - regenerates the above + prints identity checks (rerunnable, no training)
+  Q3a_rankext_kd_rise_vs_ce_drop_control_STRICT.png        - control KD-rise figure (kd_only_T2)
+  Q3a_kd_rise_ce_drop_alignment_control_STRICT.csv         - control alignment table
+  Q3b_rankext_warmup_vs_control_KD_shape_STRICT.png        - warmup-vs-control comparison figure
+  Q3b_kd_rise_ce_drop_alignment_warmup_STRICT.csv          - warmup variant alignment table (incl. factor_orth_epoch1, steady-state)
+  q3_kd_rise_figures.py                                    - regenerates both Q3 figures/tables (rerunnable, no training)
+  Q4_full_per_method_table_4runs.csv                       - full 8-method x 4-run table, all metrics, with STRICT deltas
+  Q4_raw_metrics_all_runs_long.csv                         - long-format version of the same data
+  q4_full_verdict_table.py                                 - builds the above (rerunnable)
+  q1_mechanism_analysis.py, q1b_mechanism_vs_accuracy.py   - build the Q1 tables (rerunnable, no training)

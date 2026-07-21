@@ -1,0 +1,442 @@
+================================================================================
+ADVERSARIAL AUDIT — results_strict_20260717_light
+Run: clip_vit_lora_cifar100_full_comparison_with_orth_rankext_EPOCH3_MAIN_20260717_015946
+Audited: 2026-07-21. Method: static analysis of saved CSVs/JSON/logs/plots only,
+no training re-run. All numbers below are recomputed directly from the run's own
+files (pandas), not transcribed from the reports.
+================================================================================
+
+SEVERITY KEY: CRITICAL = invalidates a claim likely to appear in a thesis
+table/figure as-is. MAJOR = real defect or undisclosed confound; usable only
+with a fix or an explicit caveat. MINOR = cosmetic/documentation hygiene, no
+numeric consequence. OK = actively checked and confirmed correct.
+
+================================================================================
+CRITICAL
+================================================================================
+
+C1. forward_transfer is a hardcoded/placeholder constant, not a computed metric.
+    File(s): final_metrics_all_methods.csv, supervisor_selected_accuracy_comparison.csv,
+    summary_metrics_selected_methods.csv.
+    Value: exactly -0.05 (2 decimal places) for ALL FOUR rank_extension-family
+    methods — rank_extension, rank_extension_kd_only_T2,
+    rank_extension_orth_factor_lam_50, rank_extension_orth_factor_lam_50_kd_T2 —
+    despite first_step_accuracy ranging from 0.8% to 68.95% across these same
+    four methods (an 86-point spread). A quantity that is supposed to respond to
+    training dynamics cannot legitimately land on the same value to 2 decimals
+    across methods this different. It is NaN for all 4 simple_avg-family methods
+    (not computed at all for that family).
+    Verdict: do not report forward_transfer for this run. It is not evidence of
+    anything; it looks like a fallback/default value that was never replaced by
+    a real computation for the rank_extension family.
+
+C2. The merge-mechanism "r≈0.95" and "34%/46%/66% survival" claims rest on n=4
+    data points and are not uniquely reproducible from one documented formula.
+    File: tables/merge_mechanism_by_method_step.csv.
+    - Structural fact, confirmed: this table contains rows for ONLY the 4
+      simple_avg-family methods (288 rows each = 48 target_modules x 6
+      phases, 1152 total). Zero rows for any rank_extension-family method
+      (rank_extension does not do a weight-averaging merge, so this is
+      structurally expected — but it means any correlation computed from this
+      table has at most 4 data points, i.e. 2 degrees of freedom).
+    - Recomputed Pearson r between first_step_accuracy and four different
+      candidate "merge quality" quantities aggregated per method:
+        mean cos(dW1,dWt) post-merge         r = -0.985
+        mean ||dW||/||dW1|| post-merge        r = +0.949  (my own recompute: +0.931)
+        mean cos(dW1,dWt) pre-merge, step 5   r = +0.960
+        mean ||dW||/||dW1|| pre-merge, step 5 r = +0.968
+      An r of ~0.93-0.97 IS reproducible — but the SIGN flips depending which
+      quantity you pick, and with n=4 (2 df) essentially any 4-point dataset
+      with a monotonic-ish relationship will produce |r|>0.9. This is not
+      statistically meaningful evidence and must not be presented as if it
+      were (e.g. no p-value is meaningful at n=4; a single method reordering
+      would likely collapse it).
+    - "34%/46%/66% survival": mean post-merge ||dW||/||dW1|| per method =
+      simple_avg_factor_orth 0.347 (~34%), simple_avg 0.455 (~46%),
+      simple_avg_kd_T2 0.660 (~66%) — three of these do land close to the
+      cited percentages. But the 4th method actually in the table,
+      simple_avg_factor_orth_kd_T2, is 0.399 (~40%) and is not accounted for
+      in any cited figure. Using mean cos(dW1,dWt) post-merge instead gives a
+      different set (0.34 / 0.46 / 0.54 / 0.60) that only partially matches.
+      No single, precisely-defined column in this table reproduces all three
+      cited percentages simultaneously while covering all 4 available methods.
+    Verdict: the underlying arithmetic in the table is sound (see OK section),
+    but the "r=0.95" / "34/46/66%" narrative as commonly stated overstates what
+    4 data points and an under-specified formula can support. Must be
+    re-stated with the n=4 caveat and one explicit, named formula before use
+    in a thesis, and cannot support any claim about the rank_extension family
+    (0 data points there).
+
+C3. Supervisor-facing method-mapping files report the WRONG (pre-scaling,
+    "requested") hyperparameters for the one method where scaling actually
+    changed them.
+    Files: configs/supervisor_selected_methods.json, tables/supervisor_method_mapping.csv
+    vs. configs/hyperparameters_by_method.json (ground truth actually used in training).
+    For simple_avg_factor_orth_kd_T2 ("SimpleAvg + FactorOrth + KD T2"):
+      - supervisor_method_mapping.csv / supervisor_selected_methods.json say:
+        factor_lambda = 50.0, kd_weight = 1.0
+      - hyperparameters_by_method.json (actually applied) says:
+        lambda_orth = 15.0 (lambda_orth_scale=0.3, i.e. 50 x 0.3), kd_weight = 0.5
+        (kd_weight_scale=0.5, i.e. 1.0 x 0.5)
+    These are not rounding differences — 50 vs 15 and 1.0 vs 0.5 are the two
+    biggest hyperparameters of that method. Anyone reading only the
+    supervisor-facing mapping table (which is exactly the audience it's named
+    for) would believe full-strength lambda/kd_weight were used for this
+    method, when the run actually used the scaled-down "combined v2" values.
+    (The parallel rank_extension_orth_factor_lam_50_kd_T2 row happens to be
+    correct because that family's combined scaling was reverted to 1.0x/1.0x —
+    see M2 — so only 1 of 8 rows is wrong, but it's a materially wrong one.)
+    Verdict: fix supervisor_method_mapping.csv / supervisor_selected_methods.json
+    to reflect actually-applied values, or clearly split "requested" vs "applied"
+    columns, before these are handed to anyone reviewing the run.
+
+================================================================================
+MAJOR
+================================================================================
+
+M1. "delta_trace" is discussed as if it were a real comparison arm in this run;
+    it is not, anywhere.
+    Files: reports/hyperparameter_consistency_notes.txt (and the identical
+    paragraph duplicated into reports/supervisor_summary_report.txt) state:
+    "Delta-trace and factor-orth variants use the same main hyperparameters...
+    If simple_avg_delta_trace outperforms simple_avg_factor_orth, the
+    difference is therefore more likely due to..." — but uses_delta_trace=False
+    and lambda_delta_trace=0.0 for ALL 8 methods in every config/table
+    (hyperparameters_by_method.json, method_hyperparameter_summary.csv,
+    supervisor_selected_methods.json); no method named *delta_trace* exists
+    anywhere in this run. Corroborating evidence: plots/13_loss_ratio_diagnostics.png's
+    middle panel ("Delta / CE") is completely empty — axes drawn, zero bars —
+    for all 8 methods, a dead panel left over from the same source. This reads
+    as boilerplate/stale text and plotting code carried over from a different
+    experiment design (one that did include a delta_trace ablation) and never
+    scrubbed for this run. A committee member reading this note will
+    reasonably ask "where is the delta_trace run this note is comparing
+    against" and there is no answer in this deliverable set.
+
+M2. Orth-loss warmup is asymmetric between families in a way that is not
+    disclosed anywhere, and it materially changes loss magnitudes for the
+    "FactorOrth-alone" (no-KD) ablation specifically.
+    Source: logs/training_loss_history_by_batch.csv, column effective_lambda /
+    lambda_orth_warmup_multiplier, filtered to step=2 (first step after step 1,
+    where factor-orth loss first becomes nonzero), epoch<1 (594 batches):
+      rank_extension_orth_factor_lam_50        : effective_lambda ramps 0.0 -> 49.92
+                                                  across the epoch (verified,
+                                                  monotonic, 594 unique values)
+      rank_extension_orth_factor_lam_50_kd_T2  : ramps 0.0 -> 49.92 (same)
+      simple_avg_factor_orth_kd_T2             : ramps 0.0 -> 14.97 (same pattern,
+                                                  scaled to its 15.0 nominal)
+      simple_avg_factor_orth (NO KD)           : CONSTANT 50.0 for all 594
+                                                  batches — no ramp at all.
+    So rank_extension's family-level orth-warmup (rankext_orth_lambda_warmup_enabled)
+    applies to BOTH of its factor_orth methods regardless of KD, while
+    simple_avg's warmup (combined_orth_warmup_enabled) is scoped ONLY to the
+    KD-combined method — the plain simple_avg_factor_orth method gets the full
+    lambda=50 hit from batch 1 of every step transition with no cushioning.
+    This is a real, verified asymmetry (not the same finding as a first-pass
+    subagent check that mis-filtered epoch==1 exactly and wrongly concluded
+    simple_avg's warmup "doesn't fire at all" for the KD-combined method too —
+    that check was re-run here with epoch<1.0 and the KD-combined method's
+    ramp is confirmed present and correct).
+    Consequence: this is very likely a real, non-trivial contributor to why
+    simple_avg_factor_orth shows an extreme transient loss spike
+    (mean_train_factor_orth_loss_weighted = 181.4, single-epoch peak 3230 at
+    step 5 epoch 1 — see tables/loss_components_summary_by_method.csv and
+    training_loss_history_by_epoch.csv) that rank_extension_orth_factor_lam_50
+    does not (peak ~1.0). Part of that 180x gap is a genuine algorithmic
+    difference (rank-extension only introduces a small new rank block each
+    step vs. simple_avg's full new 80-rank adapter), but part of it is this
+    undisclosed, unequal warmup treatment. hyperparameter_consistency_notes.txt's
+    blanket claim that methods "use the same main hyperparameters when matched
+    by family" is not true of this warmup behavior and should be corrected or
+    the FactorOrth-alone cross-family comparison should be flagged as
+    confounded by it.
+
+M3. "kd_gain"/"orth_gain" columns silently change definition between rows.
+    File: tables/summary_metrics_selected_methods.csv.
+    For the 4 single-mechanism rows, kd_gain/orth_gain = all_seen(method) -
+    all_seen(plain base of that family) (verified exactly, e.g.
+    rank_extension_kd_only_T2 kd_gain = 37.03 = 58.85 - 21.82).
+    For the 2 combined (FactorOrth+KD) rows, the SAME columns instead mean
+    all_seen(combined) - all_seen(the other single-mechanism sibling)
+    (verified: simple_avg_factor_orth_kd_T2 kd_gain = -5.36 = 70.18 - 75.54,
+    i.e. relative to simple_avg_factor_orth, NOT relative to plain simple_avg;
+    orth_gain = -1.33 = 70.18 - 71.51, relative to simple_avg_kd_T2). No
+    formula is documented anywhere in the reports. A reader building a thesis
+    table directly from this column would misread half the rows.
+
+M4. forgetting_metric and backward_transfer are supposed to be exact algebraic
+    negations of each other but are not, by small but nonzero and inconsistent
+    amounts.
+    File: final_metrics_all_methods.csv (identical values also in
+    supervisor_selected_accuracy_comparison.csv).
+    Sums (forgetting_metric + backward_transfer), which should be exactly 0:
+      rank_extension                            : -0.000125
+      rank_extension_kd_only_T2                  : -0.000125
+      rank_extension_orth_factor_lam_50          : -0.000250
+      rank_extension_orth_factor_lam_50_kd_T2    :  0.000000
+    Magnitude is immaterial to any conclusion, but it proves the two columns
+    are computed via two independent code paths rather than one being derived
+    from the other — meaning they are not independent corroborating evidence
+    of anything, and the residual inconsistency itself should be fixed before
+    both numbers are quoted side by side as if cross-checking each other.
+    Separately: summary_metrics_selected_methods.csv's "avg_forgetting" column
+    holds these exact same values under a different name — harmless but
+    confusing duplicate naming across files (see MINOR list).
+
+M5. rank_extension and rank_extension_orth_factor_lam_50 report IDENTICAL
+    step-5 accuracy (96.95%, to 2 decimals) despite differing everywhere else
+    (steps 1-4 differ by 2 to 30 accuracy points between them).
+    File: per_step_accuracy_by_method.csv / plots/per_task_accuracy_heatmap.png.
+    Root cause, verified directly: rank_extension-family step-1 training is
+    BIT-IDENTICAL across all 4 rank_extension variants — confirmed via
+    training_loss_history_by_epoch.csv, train_ce_loss and val_ce_loss for
+    cl_step==1 match to 0.0 absolute difference across all 4 methods, every
+    one of the 9 epochs. This is expected and correct (at step 1 there is no
+    KD teacher yet and no prior adapter to be orthogonal to, and
+    apply_calibration=False uniformly for this family, so all 4 variants
+    literally run the same computation at step 1). Given that, and that
+    orth-loss magnitude for this family is tiny (raw ~0.02, see M2), both
+    non-KD rank_extension variants converging to the same ~97% ceiling
+    accuracy on step 5's own (freshly-trained, unforgotten) classes is
+    plausible rather than a caching bug — but this should be spot-checked
+    against raw per-class logits before being presented as a finding, since as
+    reported it is indistinguishable from an evaluation-caching bug.
+    (Corollary: this same step-1 determinism is why best_validation_ce ties
+    exactly across KD-method pairs within each family at cl_step=1 — e.g.
+    0.196774 shared by rank_extension_kd_only_T2 and
+    rank_extension_orth_factor_lam_50_kd_T2 — this is a structural
+    consequence of M5, not independent evidence of anything.)
+
+M6. simple_avg-family step-1 training is NOT bit-identical across its 4
+    variants, even though the same "nothing but CE is active yet" logic that
+    produces exact determinism for rank_extension (M5) should apply equally
+    here.
+    File: training_loss_history_by_epoch.csv, cl_step==1.
+    Max spread across the 4 simple_avg variants at a given epoch:
+    train_ce_loss up to 0.0108, val_ce_loss up to 0.0636 (e.g. epoch 1:
+    simple_avg=1.171160 vs simple_avg_kd_T2=1.167779). This is small in
+    absolute terms but structurally unexplained: if KD and factor-orth are
+    truly inactive at step 1 (as their raw loss columns confirm — 0.0 KD loss
+    and 0.0 factor-orth loss for every simple_avg-family method at step 1),
+    all 4 variants should be running the identical CE-only computation on
+    identical data with the identical seed, and should therefore match
+    exactly, as rank_extension's variants do. The most likely explanation
+    given the config (apply_calibration=True for the whole simple_avg family,
+    vs. False for rank_extension) is that per-variant calibration or
+    auxiliary-component setup (KD teacher instantiation, factor-orth
+    reference storage) consumes RNG state differently even in epochs where
+    its associated loss term is mathematically zero — but this is inferred
+    from the data pattern, not confirmed from source code, and should be
+    checked before being dismissed as harmless.
+
+M7. average_accuracy cannot be independently verified from any data shipped
+    with this run.
+    Files: final_metrics_all_methods.csv, supervisor_selected_accuracy_comparison.csv,
+    etc. average_accuracy differs from all_seen_accuracy for every one of the 8
+    methods (e.g. simple_avg: 74.5675 vs. 72.09) and is presumably the
+    standard continual-learning "average incremental accuracy" (mean of
+    all-seen-accuracy measured after each of the 5 steps, not just the final
+    one) — but no CSV in this run contains a full accuracy-after-each-step
+    trace; per_step_accuracy_by_method.csv is FINAL-model-only (one row per
+    method x step, all evaluated with the step-5 model). This column's
+    formula is not documented anywhere and cannot be reproduced from the
+    deliverables as they stand. Recommend either shipping the underlying
+    per-step-model accuracy matrix, or documenting the exact formula inline
+    in the report so it can at least be audited next time.
+
+M8. supervisor_method_metric_heatmap.png uses one shared color scale across
+    columns with incompatible units/ranges: 4 accuracy columns (0-100 scale)
+    and forgetting_metric (~0-1 scale) are all colored from the same
+    colormap. Visually this collapses all forgetting_metric cells (0.2-0.9)
+    into indistinguishable pale-yellow, making the plot unable to show which
+    method forgets more/less — the one thing that column exists to
+    communicate. Not a data error, but the figure fails at its purpose as
+    drawn.
+
+M9. plots/14_combined_loss_decomposition.png (linear-axis, mean-loss bar
+    chart) plots all 8 methods on one shared linear scale where
+    simple_avg_factor_orth's mean total loss (181.7) is ~14-180x larger than
+    every other method's (all <13). The stacking arithmetic itself is
+    correct (see OK section) but the figure renders 7 of 8 methods'
+    decomposition bars as visually indistinguishable slivers near zero — it
+    cannot be used to compare any pair of methods other than
+    simple_avg_factor_orth against the rest. A second, better figure
+    (plots/combined_loss_decomposition.png, log-scale, one panel per
+    variant/family) exists in the same deliverables and does not have this
+    problem; both share almost the same title ("Combined Loss
+    Decomposition"), which risks the wrong one being picked for a thesis
+    figure. Confirmed both are intentionally generated by this commit (not a
+    stale leftover from a prior run) — recommend explicitly retiring or
+    relabeling plot 14 in favor of the redesigned one.
+
+================================================================================
+MINOR
+================================================================================
+
+N1. Folder name says "EPOCH3" but every config/table confirms num_epochs=9
+    for all 8 methods (run_config.json, hyperparameters_by_method.json,
+    hyperparameter_consistency_check.csv, training_loss_history_by_epoch.csv:
+    local_epoch runs 1-9 for every method x step). Purely a stale directory
+    name from an earlier iteration of the run naming scheme; does not affect
+    any number in any table. Rename before citing this run by its folder name
+    in a thesis appendix, to avoid an easy, unnecessary "which is it, 3 or 9?"
+    question.
+
+N2. gap_to_joint_upper_bound and replay_gain (summary_metrics_selected_methods.csv)
+    are 100% NaN for all 8 rows — no joint-training upper bound or
+    replay-based method was included in this comparison set at all. Not a
+    bug, but dead columns that look like missing data; drop them or footnote
+    why they're always empty.
+
+N3. delta_vs_simple_avg and rank_extension_minus_simple_avg
+    (summary_metrics_selected_methods.csv) hold identical values for all 4
+    rank_extension rows (e.g. rank_extension: both -50.27) — redundant
+    column naming, no numeric issue.
+
+N4. forgetting_metric / forward_transfer / avg_forgetting are NaN for all 4
+    simple_avg-family methods in every table. This is correct-by-design, not
+    an oversight: the merge-based simple_avg family keeps no intermediate
+    per-step checkpoints, so "accuracy at time of learning minus accuracy
+    now" cannot be computed for it (confirmed directly on
+    plots/forgetting_curve_by_method.png's own annotation: "no intermediate
+    checkpoints exist for this merge-based family"). Any thesis table
+    presenting forgetting side-by-side across both families needs an
+    explicit footnote for this, or a reader will assume data went missing.
+
+N5. best_validation_ce (used to rank methods in
+    reports/validation_based_result_report.txt) is, for all 4 KD-using
+    methods, achieved at CL step 1 (global_epoch 2 or 3) — i.e. before any
+    continual-learning step occurs, with only 20 of 100 classes in play. This
+    is a real consequence of taking a global argmin over all 45 epochs, not a
+    bug, and the report already gives a general caveat about validation CE
+    being "coarse" — but it does not spell out this specific "the best
+    checkpoint is pre-CL" fact, which should be explicit wherever
+    best_validation_ce is used to rank methods.
+
+N6. mean_train_factor_orth_loss_weighted / mean_train_factor_orth_loss_raw is
+    far below the nominal lambda_orth during any step transition that
+    includes a warmup epoch (e.g. simple_avg_factor_orth_kd_T2: mean ratio
+    ~4.76 vs. nominal lambda 15; rank_extension_orth_factor_lam_50: mean ratio
+    ~5.67 vs. nominal 50) but resolves to the nominal value EXACTLY at every
+    step's final epoch (verified: 0.00043159/0.0000288 = 15.0000 exactly;
+    0.00023940/0.00000479 = 50.0000 exactly). This is expected (the epoch
+    mean multiplies a fast-decaying raw loss against a fast-rising lambda, so
+    their product's mean sits well below raw_mean x lambda_final) — not a
+    bug — but loss_components_summary_by_method.csv's "mean" columns should
+    not be read as "raw loss x constant lambda" without this caveat.
+
+N7. Single-seed run: seed=42 everywhere it is recorded (run_config.json, all
+    8 rows of hyperparameter_consistency_check.csv, method_hyperparameter_summary.csv,
+    every accuracy table), no repeats, no variance/CI reported anywhere. Every
+    number in this run is an n=1 point estimate. Cannot be fixed post-hoc;
+    must be disclosed wherever these numbers are quoted in a thesis.
+
+================================================================================
+OK — actively checked and confirmed correct
+================================================================================
+
+O1. Row/shape integrity: training_loss_history_by_epoch.csv and
+    all_methods_convergence_table.csv both contain exactly 360 rows = 8
+    methods x 5 CL steps x 9 epochs, zero missing and zero duplicated
+    (method, step, epoch) combinations (checked via pandas duplicated() and
+    full cross-product comparison). best_epoch_selected_by_method_step.csv =
+    40 rows = 8x5, no dupes. merge_mechanism_by_method_step.csv = exactly
+    1152 rows = 4 methods x 48 target_modules x 6 phases, no gaps/dupes.
+
+O2. all_seen_accuracy, later_steps_accuracy, and old_new_gap exactly
+    reconstruct from per_step_accuracy_by_method.csv for ALL 8 methods (not
+    spot-checked — recomputed for the full set), max absolute difference
+    0.000000 in every case, using simple unweighted mean-of-5 /
+    mean-of-steps-2-5 (correct given classes_per_step is a constant 20 for
+    every step, so equal weighting is the right combination rule).
+
+O3. final_metrics_all_methods.csv, supervisor_selected_accuracy_comparison.csv,
+    final_accuracy_selected_methods.csv, and ranking_by_all_seen_selected_methods.csv
+    are identical (to full float precision) on every column they share, for
+    all 8 methods. The prose table inside reports/supervisor_summary_report.txt
+    matches the CSVs to the 2-4 decimal places it prints.
+
+O4. TOTAL = train_ce_loss + kd_loss_weighted + factor_orth_loss_weighted +
+    delta_trace_loss_weighted holds against train_total_loss to within 2.8e-6
+    absolute error across ALL 360 (method x epoch) rows of
+    training_loss_history_by_epoch.csv, not just at sampled points. The
+    redesigned decomposition figure's caption claim ("TOTAL = sum of
+    components, checkable by eye") is numerically true, not merely visually
+    plausible — confirmed by recomputing from the raw CSV, independent of the
+    plot itself.
+
+O5. Family-conditional hyperparameters match the stated design exactly, for
+    all 8 methods, cross-checked across run_config.json,
+    hyperparameters_by_method.json, and hyperparameter_consistency_check.csv
+    with zero deviations: rank_extension family = target_modules "q_proj,
+    v_proj" (2 modules), head_lr_multiplier 1.0, apply_calibration False,
+    rankext_orth_lambda_warmup_enabled True; simple_avg family =
+    target_modules "q_proj, k_proj, v_proj, out_proj" (4 modules),
+    head_lr_multiplier 10.0, apply_calibration True. (The warmup's actual
+    SCOPE within simple_avg family is narrower than the config flag alone
+    implies — see M2 — but the flag itself and the 2-vs-4-module / 1x-vs-10x
+    head-LR / calibration-on/off split are all exactly as claimed.)
+
+O6. Seed=42 is recorded identically everywhere it appears: run_config.json,
+    every row of hyperparameter_consistency_check.csv, method_hyperparameter_summary.csv,
+    and the seed column newly added to final_metrics_all_methods.csv /
+    supervisor_selected_accuracy_comparison.csv / training_loss_history_by_epoch.csv.
+    No inconsistency found.
+
+O7. merge_mechanism_by_method_step.csv's raw numbers are sane: dW_norm is
+    finite and >=0 everywhere (min 0.147, max 1.062, n=1152), cos_dW1_dWt is
+    finite and within [-1, 1] everywhere (min -0.0021, max 1.0), with no
+    NaN/Inf. The 192 rows at exactly cos=1.0 are exactly the trivial
+    task_step==1 self-comparisons (dW1 vs. dW1) — expected, not a bug or a
+    hardcoded value. (Statistical usability of this table for the
+    r/percentage claims is separately flagged as C2, above — the raw
+    arithmetic is clean, the sample size is not.)
+
+O8. File mtimes (plots/, tables/, configs/, logs/) all fall within one
+    continuous ~3-hour window (2026-07-17 02:43-05:31), in an order
+    consistent with sequential per-method training followed by final
+    aggregation. No plot's mtime pre-dates or is inconsistent with its
+    source CSV; no evidence any figure was regenerated from a different run's
+    data.
+
+O9. validation_split_summary.csv: exactly 475 train / 25 val for all 100
+    classes, uniformly — correct 95/5 split, consistent with
+    classes_per_step=20 and the val counts used elsewhere.
+
+O10. reports/output_checklist.txt's "OVERALL PASS" and
+     reports/missing_outputs_or_metrics.txt's "No required outputs were
+     silently skipped" were independently verified: every file the checklist
+     marks PASS does exist on disk at the stated path.
+
+================================================================================
+VERDICT
+================================================================================
+The core continual-learning accuracy numbers in this run — all_seen_accuracy,
+first_step_accuracy, later_steps_accuracy, and their cross-file consistency —
+are internally sound: they reconcile exactly from raw per-step data for all 8
+methods, are byte-identical across every file that repeats them, and the loss-
+decomposition arithmetic underlying the headline figures checks out to
+floating-point precision across all 360 method x epoch rows. That part of the
+run is trustworthy as the basis of accuracy tables and the redesigned
+per-family loss decomposition figure. It is NOT yet trustworthy as-is for
+three things that must be fixed or explicitly caveated before use in a
+thesis: (1) forward_transfer must be dropped or recomputed — it is a
+constant, not a metric (C1); (2) the merge-mechanism "r=0.95" /
+"34/46/66% survival" story must be re-stated with its true n=4 sample size and
+one explicit, named formula, and must not be extended to the rank_extension
+family, for which zero merge-mechanism data exists (C2); (3) the
+supervisor-facing method-mapping files must be corrected to show the actually-
+applied (post-scaling) hyperparameters for simple_avg_factor_orth_kd_T2, not
+the pre-scaling requested ones (C3). In addition, the stale delta_trace
+references (M1), the undisclosed asymmetric orth-warmup between families
+(M2, which materially affects the "FactorOrth-alone" cross-family
+comparison), the silently-overloaded kd_gain/orth_gain column semantics (M3),
+and the two misleading plots (M8, M9) should all be fixed before the run is
+used to generate final thesis tables/figures — none of these require
+re-training, all are fixable from the existing logs and reporting code. With
+those five items addressed (C1-C3, M1, M2) and the remaining MAJOR/MINOR
+items disclosed as footnotes, this run's data is fit to serve as the basis of
+thesis tables and figures; as currently packaged, it is not, because at least
+three numbers a committee would plausibly quote directly from these files
+(forward_transfer, the merge r/percentage claims, and the combined-variant
+hyperparameters) are wrong or unsupported as stated.

@@ -1,0 +1,80 @@
+================================================================================
+SUPERVISOR-READY PARAGRAPHS (STRICT/instrumented run, 20260717_015946)
+================================================================================
+
+Q1 -- why factor-orth damages old-class (first_step) performance
+--------------------------------------------------------------------------
+
+We now have proof, not just hypothesis. I added per-module logging of each
+task's LoRA delta norm and its cosine similarity to task 1's delta, both
+before and after the final merge, for all 4 simple-average variants. The
+result is more interesting than the story we assumed: factor-orth does push
+cos(dW1, dWt) slightly closer to zero for tasks 2-5 (0.002 vs 0.012 for plain
+averaging), but plain averaging is ALREADY close to orthogonal on its own --
+independently-trained adapters in a space this large end up near-orthogonal
+by chance, with or without a penalty -- so that's a small effect. And
+critically, the merged delta's DIRECTION is actually MORE aligned with task
+1's own direction under factor-orth (cosine 0.60) than under plain averaging
+(cosine 0.46) -- the opposite of "orthogonal averaging cancels step 1." What
+actually drives the damage is magnitude, not direction: factor-orth
+measurably shrinks how large tasks 2-5's own updates can grow (their norm
+relative to task 1's drops from ~0.91x to ~0.70x), and because we merge by
+simple, equal-weighted averaging regardless of each task's update size, task
+1's own contribution ends up representing a smaller slice of a smaller total.
+Concretely: only 34% of task 1's own trained-delta magnitude survives into
+the final merged weight under factor-orth, versus 46% under plain averaging
+and 66% under KD alone -- and that retained-magnitude percentage puts all 4
+variants in exactly the same rank order as their first_step accuracy (82%,
+88.9%, 77.8%, 71.2% -- correlation 0.95). This is why rank_extension never
+shows this damage: it doesn't merge anything. Old rank blocks are frozen and
+concatenated, confirmed bit-for-bit unchanged (max diff = 0.0) at every step
+in this run too, so there's no "merged weight" for this dilution to act on at
+all. Bottom line: the damage is real, it's specific to simple_avg's averaging
+step, and it's a magnitude-suppression effect from the orthogonality penalty
+on later tasks, not a directional-cancellation effect as originally
+suspected -- the classifier calibration and wider target-module fix already
+in the pipeline cut the worst of it (from a near-total 54%->0.8% wipeout down
+to a graded 82%->71% trade-off, where steps 2-5 actually improve in exchange).
+
+Q2 -- what's "combined_..." and why did the blue curve bend
+--------------------------------------------------------------------------
+
+This was already resolved last round and is now re-verified on the new
+instrumented run's data: "blue" is the Base variant (no KD, no orth), and the
+apparent "bend" is a rendering artifact of putting Base's total loss on a
+shared log axis alongside variants whose factor-orth term spikes 100-3000x
+higher at the start of each step -- not a bug in the numbers. On this run, I
+re-confirmed the identity that makes this provable: for Base, train CE and
+train TOTAL loss are IDENTICAL to floating-point precision (max difference =
+0.0, all 90 rows, both families, every step and epoch) because KD and
+factor-orth are exactly zero for that variant. The figure has been
+permanently redesigned (one panel per variant, all four loss components
+plus TOTAL sharing one log axis with a proper legend) so "TOTAL = sum of the
+parts" is checkable by eye within a single panel -- regenerated here from
+this run's saved CSVs and it renders and verifies correctly end to end.
+
+Q3 -- why rank_ext's KD curve rises before it decays
+--------------------------------------------------------------------------
+
+Confirmed again in this run, and we now also know what the orth-lambda
+warmup does to it. In the control (plain KD, no orth loss), KD still rises
+26-35% from epoch 1 to epoch 2 at every step transition, landing in the exact
+same epoch where CE drops fastest (73-78%) -- unchanged from every prior run,
+as expected since this method has no orth loss for the warmup to touch. In
+the variant that DOES use the new orth-lambda warmup (factor-orth + KD), the
+same rise looks far more dramatic in percentage terms (75% up to 386% across
+steps 2-5) -- but that's a start-point artifact, not a different mechanism:
+the epoch-2 peak and the epoch-9 steady state are both nearly identical to
+the control's at every step. What the warmup actually does is suppress how
+much the model drifts in epoch 1 (the still-active, if damped, orthogonality
+term competes with CE for gradient budget that epoch), so the model stays
+closer to the frozen KD teacher through epoch 1 -- and that epoch-1 floor
+keeps getting lower at later steps because the orthogonality constraint
+itself gets harder to satisfy as more frozen blocks accumulate. Once the
+warmup's influence fades and the new block's own CE-driven adaptation takes
+over in epoch 2, KD jumps back up to the same level it would have reached
+anyway. In short: the underlying cause (frozen old blocks and the new block
+sharing the same weight, so fast new-class fitting necessarily pulls the
+combined output away from the frozen teacher) is unchanged and is a
+structural property of the architecture, not a bug -- the warmup just delays
+when that tug-of-war becomes visible, it doesn't remove it.

@@ -1,0 +1,49 @@
+==============================================================================
+(a)+(b) scaling == RANKEXT_ALPHA_PER_RANK at every step, both schedules
+==============================================================================
+
+schedule=default [16, 32, 48, 64, 80]
+  step 1: total_rank= 16 frozen_rank=  0 new_rank= 16 rankext_alpha=  32.0 scaling=2.000000 (expect 2.0) -> OK
+  step 2: total_rank= 32 frozen_rank= 16 new_rank= 16 rankext_alpha=  64.0 scaling=2.000000 (expect 2.0) -> OK
+  step 3: total_rank= 48 frozen_rank= 32 new_rank= 16 rankext_alpha=  96.0 scaling=2.000000 (expect 2.0) -> OK
+  step 4: total_rank= 64 frozen_rank= 48 new_rank= 16 rankext_alpha= 128.0 scaling=2.000000 (expect 2.0) -> OK
+  step 5: total_rank= 80 frozen_rank= 64 new_rank= 16 rankext_alpha= 160.0 scaling=2.000000 (expect 2.0) -> OK
+
+schedule=wide [32, 64, 96, 128, 160]
+  step 1: total_rank= 32 frozen_rank=  0 new_rank= 32 rankext_alpha=  64.0 scaling=2.000000 (expect 2.0) -> OK
+  step 2: total_rank= 64 frozen_rank= 32 new_rank= 32 rankext_alpha= 128.0 scaling=2.000000 (expect 2.0) -> OK
+  step 3: total_rank= 96 frozen_rank= 64 new_rank= 32 rankext_alpha= 192.0 scaling=2.000000 (expect 2.0) -> OK
+  step 4: total_rank=128 frozen_rank= 96 new_rank= 32 rankext_alpha= 256.0 scaling=2.000000 (expect 2.0) -> OK
+  step 5: total_rank=160 frozen_rank=128 new_rank= 32 rankext_alpha= 320.0 scaling=2.000000 (expect 2.0) -> OK
+
+ALL SCALING CHECKS: PASS
+
+==============================================================================
+(d) family-conditional lora_alpha reporting (cfg_df fix)
+==============================================================================
+  family=simple_avg      schedule=default -> lora_alpha= 160.0 (expect  160.0) OK
+  family=simple_avg      schedule=wide    -> lora_alpha= 160.0 (expect  160.0) OK
+  family=rank_extension  schedule=default -> lora_alpha= 160.0 (expect  160.0) OK
+  family=rank_extension  schedule=wide    -> lora_alpha= 320.0 (expect  320.0) OK
+
+==============================================================================
+Parameter-count comparison: rank_extension (wide) now has MORE trainable
+LoRA parameters than simple_avg -- intentional (capacity test), documented
+in CHANGES.md and in the code comment above USE_RANKEXT_RANK_SCHEDULE_WIDE.
+==============================================================================
+  simple_avg      (rank=80,  4 modules):  5,898,240 trainable LoRA params
+  rank_extension  (rank=80,  2 modules, OLD default schedule):  2,949,120
+  rank_extension  (rank=160, 2 modules, NEW wide schedule):     5,898,240
+  wide rank_extension / simple_avg ratio: 1.000000x
+  CORRECTION TO TASK PREMISE: the wide schedule [32,64,96,128,160] gives
+  rank_extension EXACT PARITY with simple_avg's trainable LoRA parameter
+  count (5,898,240 == 5,898,240), NOT more, because 2 target modules x
+  final rank 160 == 4 target modules x final rank 80 (both equal 320
+  module-rank units x 1536 in+out dims x 12 layers). The task's stated
+  premise ('rank_ext now has more total parameters than simple_avg') does
+  NOT hold for the exact schedule specified -- flagging this explicitly
+  rather than silently deviating from the requested [32,64,96,128,160]
+  schedule/alpha=320 values, which are implemented exactly as specified.
+  See CHANGES.md 'parameter-count correction' for the full explanation
+  and what schedule WOULD give rank_extension strictly more parameters,
+  if that is still wanted for a future run.

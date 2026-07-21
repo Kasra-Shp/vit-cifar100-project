@@ -1,0 +1,419 @@
+================================================================================
+EVALUATION-PIPELINE AUDIT — step_5-always-looks-best investigation
+Run under investigation: R3/results_strict_20260717_light/
+  clip_vit_lora_cifar100_full_comparison_with_orth_rankext_EPOCH3_MAIN_20260717_015946
+Method: static code tracing of vit_lora_cifar100_full5step_n5.py (the exact
+script that produced this run) + arithmetic recomputation from its saved
+CSVs, plus a standalone numpy demonstration of the identified mechanism
+(demo_recency_bias_mechanism.py, output reproduced in Section 3). No
+training, no model checkpoint access (none exist for this "light" run — see
+Section 4). Code fixes described here are also detailed in
+analysis_rankext_wide_capacity/CHANGES.md.
+================================================================================
+
+--------------------------------------------------------------------------
+0. HEADLINE ANSWER
+--------------------------------------------------------------------------
+There is NOT a bug where a different model checkpoint or a different
+evaluation function is used for step 5 than for steps 1-4. Every per-step
+accuracy in this run — for every method, every step — is produced by ONE
+single final model object, looped over all 5 class-group eval subsets with
+the identical Trainer/compute_metrics call (verified in Section 2). The
+"model state" and "evaluation function" axes of the question are already
+uniform, exactly as they should be.
+
+What is NOT uniform, and IS the real cause of "step 5 always looks best,"
+is the SCALE of the classifier's per-class weight rows: rows for a step's
+classes are visibly larger in norm the more recently they were trained and
+the more exclusively they were optimized against a real (not phantom)
+gradient, and nothing renormalizes that scale back down for the
+rank_extension family (apply_calibration=False there, a previously
+deliberate, previously-tested design choice — see Section 3c). Every
+accuracy in this run is computed with an OPEN, unrestricted 100-way argmax
+(the standard, intended class-incremental-learning protocol) — which means a
+step's classes don't just need to be recognizable, their logits need to beat
+every other class's logits too. A step whose rows are the largest in norm
+wins that competition almost automatically, independent of how well the
+model would do if only asked to choose among that step's own 20 classes.
+Step 5 is, for every method, the class group whose rows were most recently
+and most exclusively trained — so it wins this competition hardest, every
+time, in every method, exactly as observed.
+
+Separately, and independently: the per-epoch "val CE" in the convergence
+plots is not the same measurement as the retrospective per-step accuracy at
+all — it is each step's OWN local validation split, evaluated with the model
+AS IT STOOD DURING that step's own training, not the final model. That a
+step's local val CE looked "reasonable" while its RETROSPECTIVE (final-model)
+accuracy is near zero is not a contradiction; it is a definition of
+catastrophic forgetting playing out exactly as intended to be visible, once
+the two measurements are correctly told apart (they were not clearly told
+apart on the plots before this session; fixed, see Section 5).
+
+The fix implemented this session is additive: a new, closed-set (candidates
+restricted to the eval subset's own classes) companion accuracy is now
+computed and logged alongside the existing open-set number for every
+(method, step), from the exact same forward pass — so future runs can
+measure the size of this effect directly instead of inferring it. It cannot
+be backfilled for the already-completed R3 run (no saved checkpoints — see
+Section 4), and it does NOT change any existing number in this run's CSVs
+(Section 6).
+
+--------------------------------------------------------------------------
+1. PLOT-BY-PLOT DATA-SOURCE TABLE
+--------------------------------------------------------------------------
+Legend for "Eval basis" column:
+  RETRO/final  = retrospective: the method's FINAL model (after all 5 steps,
+                 post-calibration where applicable), evaluated once per class
+                 group. Open-100-way argmax throughout this run.
+  IN-CONTEXT   = the model AS IT STOOD during a specific CL step's own
+                 training (i.e. NOT the final model for steps < 5).
+  TRAIN-LOSS   = a training-loss quantity, not an evaluation accuracy at all.
+  AGGREGATE-3  = the 3-group aggregate (first_step / later_steps / all_seen),
+                 NOT the 5-step breakdown, despite some filenames suggesting
+                 "step".
+
+file                                              | data source (function/df)         | model/checkpoint          | eval subset                | eval basis
+---------------------------------------------------|------------------------------------|---------------------------|-----------------------------|-------------
+per_task_accuracy_heatmap.png                       | per_step_acc_df (evaluate_per_step_accuracy) | FINAL model, per method | each step's 20-class test split, individually | RETRO/final — the plot under investigation
+supervisor_method_step_accuracy_heatmap.png          | M / metrics_tables() (summary_table)| FINAL model, per method  | union(step1) / union(steps2-5) / union(all)| AGGREGATE-3 — filename says "step" but is NOT the 5-step breakdown (see 1a below)
+supervisor_method_metric_heatmap.png                 | M / metrics_tables()                | FINAL model              | same as above + forgetting_metric col (mixed units, see 1b)| AGGREGATE-3
+17_supervisor_selected_accuracy_comparison.png       | supervisor_selected_accuracy_export_df (summary_table) | FINAL model  | union(step1)/union(steps2-5)/union(all) | AGGREGATE-3
+forgetting_curve_by_method.png (LEFT panel, RankExt) | rank_extension_stepwise_accuracy_by_method (evaluate_seen_step_accuracies) | model AS OF each intermediate CL step | each earlier task's own 20-class test split | IN-CONTEXT (true checkpoint trajectory — this is the one family/plot where a genuine multi-point forgetting curve exists)
+forgetting_curve_by_method.png (RIGHT panel, SimpleAvg) | per_step_acc_df               | FINAL model only          | each step's 20-class test split | RETRO/final (plot itself says so: "no intermediate checkpoints exist for this merge-based family")
+live_convergence_<method>.png (x8)                   | train_diagnostic_rows / epoch_loss_rows | model as of each training epoch (mid-step) | that step's OWN local val split (make_val_dataset) | IN-CONTEXT, per-epoch, TRAIN+VAL CE (not accuracy)
+15_supervisor_selected_train_val_ce.png              | training_loss_history_df            | as above, per epoch       | as above                   | IN-CONTEXT, TRAIN+VAL CE
+train_ce_loss_by_method.png                          | lossgrid("train_ce_loss")/E          | as above                  | training set (not eval)    | TRAIN-LOSS
+validation_ce_loss_by_method.png                     | lossgrid("val_ce_loss")/E            | as above                  | that step's OWN local val split | IN-CONTEXT — title now says so explicitly (fixed this session, was previously unlabeled)
+validation_ce_loss_clean.png                         | lossgrid("val_ce_loss")/E            | as above                  | as above                   | IN-CONTEXT — same fix
+train_val_ce_loss_by_method.png                      | E (train+val overlay)                | as above                  | train set + that step's local val split | TRAIN-LOSS + IN-CONTEXT overlay
+08_ce_loss_by_method.png                             | loss_components_summary_df (mean over ALL epochs/steps) | aggregated, no single checkpoint | training set | TRAIN-LOSS, aggregate mean
+08b_train_val_ce_loss_by_method.png                  | same, mean train vs mean val CE     | aggregated                | training set + local val (aggregated) | TRAIN-LOSS + IN-CONTEXT, aggregate mean
+09_kd_loss_by_method.png                             | same, KD methods only               | aggregated                | training set                | TRAIN-LOSS, aggregate mean
+11_factor_orth_loss_by_method.png                    | same, factor-orth methods only       | aggregated                | training set                | TRAIN-LOSS, aggregate mean
+12_total_loss_by_method.png                          | same, total train loss               | aggregated                 | training set                | TRAIN-LOSS, aggregate mean
+13_loss_ratio_diagnostics.png                        | same, ratio columns                  | aggregated                 | training set                | TRAIN-LOSS ratios; middle "Delta/CE" panel is ALWAYS EMPTY (no delta_trace method exists in this run — pre-existing, unrelated to this investigation, not fixed here as out of scope)
+14_combined_loss_decomposition.png                   | loss_components_summary_df, one bar per method (mean over all epochs) | aggregated | training set | TRAIN-LOSS, aggregate mean, LINEAR x-axis (dominated by one outlier method — see prior audit finding M9)
+combined_loss_decomposition.png                      | E (training_loss_history_by_epoch), per (step,epoch), log-scale per-panel | per epoch | training set | TRAIN-LOSS, NOT aggregated — the "redesigned" figure; TOTAL=sum verified to 2.8e-6 (prior audit, still holds, untouched this session)
+kd_loss_by_method.png, factor_orth_loss_by_method.png, factor_orth_weighted_loss_log.png, total_loss_by_method.png, total_loss_by_method_log.png | lossgrid(...)/E, per (family,step,epoch) grid | per epoch | training set | TRAIN-LOSS, per-epoch grid (not aggregated, unlike the 08-14 numbered set)
+accuracy_vs_validation_ce.png                        | D (valdiag) x M                     | FINAL model (accuracy) / mixed (val CE, see below) | all_seen eval set (accuracy) vs. that method's own step/epoch of best or final CE | mixes RETRO/final accuracy with IN-CONTEXT val CE on one scatter axis
+best_vs_final_validation_ce.png                      | D (valdiag)                          | best-epoch snapshot / final-epoch snapshot | in-context val CE, min-over-all-45-epochs vs. last-epoch | IN-CONTEXT (both points)
+train_val_ce_gap_by_method.png                       | D (valdiag), train_val_ce_gap_final_epoch | final epoch of step 5 | that step's local val split | IN-CONTEXT
+
+1a. supervisor_method_step_accuracy_heatmap.png is misleadingly named: it
+    shows first_step_accuracy / later_steps_accuracy / all_seen_accuracy (3
+    AGGREGATE groups), not a 5-column step-by-step breakdown despite "step"
+    in the filename. The actual 5-step breakdown is per_task_accuracy_heatmap.png
+    (correctly titled "Per-CL-step accuracy... of each method's FINAL model").
+    Pre-existing naming confusion, not touched this session (renaming it now
+    would break the "PASS ... plots/supervisor_method_step_accuracy_heatmap.png"
+    line in output_checklist.txt's hardcoded required-file list, which is out
+    of this session's scope) — flagged here so it is not mistaken for evidence
+    of a per-step evaluation bug; it draws from the 3-group aggregate code
+    path (evaluate_model / metrics_tables), not from evaluate_per_step_accuracy
+    at all.
+
+1b. supervisor_method_metric_heatmap.png plots forgetting_metric (a ~0-1
+    fraction) on the SAME color scale as 4 accuracy columns (0-100 scale) —
+    a pre-existing plot-honesty issue already flagged in the prior strict
+    audit (finding M8), reconfirmed here, not fixed this session (out of
+    this task's scope, which is the step_5 mechanism specifically).
+
+--------------------------------------------------------------------------
+2. EVALUATION PIPELINE TRACED END TO END
+--------------------------------------------------------------------------
+Q: Is per-step accuracy computed from ONE final merged model evaluated on
+   each step's class subset separately, or is it accidentally using a
+   step-specialist model?
+
+A: ONE final model, verified by direct code reading, both families:
+   - simple_avg (run_simple_avg_variant, ~line 3195): merged_model =
+     apply_deltas_to_base(...); calibrate if apply_calibration; THEN
+     evaluate_model(merged_model, ...) AND evaluate_per_step_accuracy(
+     merged_model, ...) — same Python object, both calls, no re-fetch.
+   - rank_extension (run_rank_extension_variant, ~line 4529): the per-step
+     training loop runs first (steps 1-5, each building/discarding its own
+     `model` object as training progresses and `del model; cleanup()` at the
+     end of every step), THEN, after the loop, final_rank_model =
+     build_rank_extension_model(previous_rank_state=<state extracted at the
+     end of step 5's training>, step_idx=NUM_STEPS-1, ...); calibrate if
+     apply_calibration (False for this family); THEN evaluate_model AND
+     evaluate_per_step_accuracy are both called on THIS SAME final_rank_model
+     object. The rebuild-from-extracted-state step is a serialize/deserialize
+     round trip (same pattern used elsewhere in this codebase, e.g.
+     apply_deltas_to_base), not a different model.
+   evaluate_per_step_accuracy() itself (~line 2043, pre-session-edit) builds
+   ONE Trainer and loops `for step_idx in range(NUM_STEPS): eval_ds =
+   make_eval_dataset(classes_for_step(step_idx)); out = trainer.evaluate(...)`
+   — same trainer, same model, only eval_ds changes. Confirmed uniform.
+
+Q: Are the two 97.0-ish values (rank_extension and rank_extension_orth_
+   factor_lam_50, both 96.95% at step 5) bit-identical or a coincidence? If
+   bit-identical, does that alone prove a shared evaluation code path bug?
+
+A: Cannot be distinguished below the CSV's 2-decimal precision (no raw
+   per-image predictions were saved for this run — see Section 4), so
+   "bit-identical" cannot be directly confirmed or refuted from R3's saved
+   files. But "a shared evaluation code path" is true in a much more
+   fundamental and NON-buggy sense: evaluate_model, evaluate_single_step_
+   accuracy, evaluate_per_step_accuracy, and evaluate_seen_step_accuracies
+   all call the exact same compute_metrics() (open, unrestricted
+   argmax(logits, axis=1) over the full NUM_CLASSES=100 logits, global 0-99
+   labels — verified at ~line 1353 and in CLIPVisionForCIFAR100.forward,
+   ~line 1368: classifier = nn.Linear(hidden, 100), loss = F.cross_entropy
+   over all 100). That IS one shared mechanism, used everywhere, by design —
+   it is the intended standard CIL evaluation protocol, not a defect. Given
+   that shared mechanism, an exact tie between two methods that differ ONLY
+   by a factor-orth penalty whose raw magnitude for this family is tiny
+   (~0.02, see the prior strict audit's loss_components_summary_by_method.csv
+   analysis) is unsurprising: both models converge to a near-identical final
+   state on their own step-5 classes, and step 5 is, for every rank_extension
+   variant, at or near a ceiling effect under the recency-biased open argmax
+   (Section 3). Evidence AGAINST a code-sharing/mix-up bug specifically: the
+   2 KD-using rank_extension methods do NOT tie with each other or with the
+   non-KD pair (94.20% and 93.35% respectively) — if step-5 evaluation code
+   were accidentally shared/aliased across methods, a clean "non-KD pair ties
+   exactly, KD pair does not, both KD values plausible and distinct" pattern
+   would be an unlikely thing for a code bug to produce; it is exactly what
+   "two methods whose only difference has negligible effect size converge to
+   the same near-ceiling result" predicts.
+
+Q: Is per-epoch val CE (convergence plots) computed on the SAME evaluation
+   set as accuracy, or on a step-local val split?
+
+A: Step-local val split, confirmed by direct code reading. EpochValidation
+   Callback.on_epoch_end (~line 1727) calls compute_dataset_ce_loss(model,
+   self.eval_dataset), where self.eval_dataset is whatever was passed into
+   train_with_trainer(..., eval_ds=...) — and for rank_extension that call
+   site passes eval_ds = make_val_dataset(current_classes) (~line 4655-ish,
+   inside the per-step training loop, current_classes = that step's own 20
+   classes). make_val_dataset filters a SEPARATE held-out validation split
+   (val_source, 25 images/class, distinct from the test split make_eval_
+   dataset uses for retrospective accuracy) to exactly that step's classes.
+   This is confirmed structurally different from per_step_accuracy_by_method
+   .csv's evaluation (test split, retrospective FINAL model, open over all
+   100 classes) on three independent axes: (1) val split vs. test split,
+   (2) in-context (model as of that step) vs. retrospective (final model),
+   (3) evaluated only against that step's own 20 classes' labels vs. the
+   labels being compared across the open 100-way space in both cases (this
+   axis is actually the SAME in both — the difference that matters for
+   observation (c) is axes 1-2, not the open/restricted axis).
+
+Q: Is the last step evaluated before or after any final merge/calibration
+   step that the earlier steps go through?
+
+A: Both families' retrospective evaluation (evaluate_model / evaluate_per_
+   step_accuracy) happens AFTER calibration for ALL steps simultaneously —
+   there is exactly one calibration call per method, applied to the single
+   final model, which is then evaluated on ALL 5 step class-groups in the
+   same evaluate_per_step_accuracy loop. There is no per-step difference in
+   "before vs. after calibration" — every step's retrospective number comes
+   from the identically-calibrated (or, for rank_extension, identically
+   NOT-calibrated) final model. Confirmed no asymmetry on this axis either.
+
+--------------------------------------------------------------------------
+3. ROOT CAUSE, STATED PLAINLY
+--------------------------------------------------------------------------
+(a) MECHANISM: compute_metrics()'s accuracy is argmax over ALL 100 classes'
+    logits, compared against the true label — standard, correct, and used
+    uniformly everywhere in this codebase (Section 2). This is only a FAIR
+    per-step comparison if every class's classifier row produces logits on
+    a comparable scale for a "typical" image of that class. This codebase's
+    own calibrate_classifier_row_norms() (~line 2500ish) documents, in its
+    own docstring, that this is NOT guaranteed in general — quote: "a
+    well-known recipe for severe cross-group row-norm imbalance" (referring
+    to simple_avg's 5 independently-initialized classifier heads) and "the
+    same row-norm-driven scale bias can still arise across step-groups
+    trained at different points in the schedule" for rank_extension too.
+
+(b) ASYMMETRY: CALIBRATION_ENABLED_FAMILIES = {"simple_avg": True,
+    "rank_extension": False} (~line 312). Calibration corrects exactly this
+    row-norm imbalance (rescales each step's 20-row block to the global mean
+    row norm). simple_avg gets this correction; rank_extension does not.
+    This single asymmetry is sufficient to explain why simple_avg's step-5
+    bump is comparatively mild (79.9% vs. 61.9-68.65% on steps 2-4 — a
+    real but bounded effect) while rank_extension's is severe (96.95% vs.
+    0.8-7.3% on steps 1-4 — an extreme, near-total effect): the correction
+    that would bound this effect for rank_extension is switched off for
+    that family.
+
+(c) WHY IT'S OFF FOR RANK_EXTENSION, AND WHY THIS SESSION DOES NOT TURN IT
+    BACK ON: the code's own comment block (~line 282, "POST-INCIDENT FIX")
+    documents that global calibration was already tried for rank_extension
+    and reverted after it measurably corrupted 2 of its 4 methods
+    (68.0%->26.2% and 59.3%->50.1% all_seen accuracy in that prior run) —
+    root-caused there to rank_extension's classifier being a single
+    persistent, row-masked matrix (not simple_avg's 5 independently-
+    reinitialized heads), for which the SAME global-target-norm calibration
+    formula miscalibrates even step 1's untouched, frozen rows. Turning
+    calibration back on for rank_extension to "fix" the step_5 pattern
+    investigated here would very plausibly re-introduce that already-
+    diagnosed regression elsewhere. This is why the fix implemented this
+    session is a NEW, ADDITIVE diagnostic (Section 5) rather than a change
+    to calibration or training.
+
+(d) WHY STEP 5 SPECIFICALLY: step 5's classifier rows (and, for
+    rank_extension, its newest active rank block) are, for every method, the
+    most-recently and most-exclusively optimized of any step's — there is no
+    step 6 to have since diluted or interfered with them, and (for
+    rank_extension specifically) they were trained with the LARGEST
+    cumulative active rank of any step (16->32->48->64->80 under the OLD
+    schedule; the row-norm argument applies to the classifier regardless of
+    LoRA rank budget). This gives step 5 a structural, mechanical advantage
+    in the open-argmax competition, independent of whether the model's
+    actual REPRESENTATION for step 5's classes is meaningfully better than
+    for any other step's.
+
+(e) QUANTITATIVE DEMONSTRATION (not just an argument): a standalone numpy
+    simulation (analysis_pipeline_audit/demo_recency_bias_mechanism.py,
+    reproduced below) builds 5 synthetic 20-class groups whose classifier
+    rows are given a monotonically-increasing norm schedule (0.3 to 1.6,
+    "step 5 least renormalized") but otherwise well-separated, easily-
+    classifiable directions, and computes both open and restricted
+    (closed-set) accuracy on each:
+
+        step   open_acc   restricted_acc   recency_bias_gap
+           1       0.0%          99.5%           -99.5pp
+           2       0.5%         100.0%           -99.5pp
+           3      50.5%         100.0%           -49.5pp
+           4      80.0%         100.0%           -20.0pp
+           5     100.0%         100.0%             0.0pp
+
+    Restricted accuracy is flat and near-ceiling for every step (the
+    underlying representation IS equally good for all 5 groups by
+    construction) — only the open accuracy reproduces the qualitative shape
+    seen in R3's real numbers (near-zero early steps, ceiling at the step
+    with the least-shrunk row norm). This is not proof that row-norm scale
+    is the ONLY thing happening in the real run (a real model's per-class
+    representation quality does also genuinely vary across CL steps, e.g.
+    forgetting via backbone drift is real and additive to this effect — see
+    (f)) — but it is a concrete, reproducible confirmation that this
+    mechanism ALONE is sufficient to produce the qualitative pattern
+    observed, at a magnitude consistent with what's in R3's tables.
+
+(f) A SECOND, GENUINELY ADDITIVE effect for rank_extension specifically
+    (not a mechanism to "fix", just part of an honest explanation): old_
+    active_in_forward=True (the default for every method in this run —
+    zero_old_merge=False everywhere) means ALL active rank blocks, including
+    ones added by later steps, contribute to the forward pass for EVERY
+    input, including images from earlier steps. Earlier steps' classifier
+    rows and their own frozen rank blocks are protected/restored verbatim
+    (add_classifier_row_gradient_mask + restore_protected_classifier_rows,
+    snapshot_frozen_rank_blocks + check_frozen_rank_blocks_unchanged — all
+    confirmed to run every step), so those PARAMETERS do not silently drift.
+    But the shared backbone's FEATURE representation for an old-class image
+    still changes across steps, because later steps' newly-added rank
+    blocks are summed into the forward pass alongside the old, frozen ones —
+    real cross-task interference in feature space, independent of the
+    row-norm/argmax issue above, and expected/standard for this kind of
+    growing, shared-backbone continual-LoRA design (not a code defect).
+
+--------------------------------------------------------------------------
+4. NO CHECKPOINTS EXIST FOR R3 — WHAT CAN AND CANNOT BE REGENERATED
+--------------------------------------------------------------------------
+`find R3/results_strict_20260717_light -iname "*.safetensors" -o -iname
+"*.bin" -o -iname "*.pt" -o -iname "*.pth"` returns nothing. This is a
+"_light" run by design — no model weights were persisted. Consequently:
+
+CAN be regenerated/verified from saved CSVs alone (done in this report,
+no re-run needed):
+  - The plot-source table (Section 1) — pure code tracing.
+  - The root-cause mechanism (Section 3) — code tracing + a standalone numpy
+    demonstration, no dependency on R3's specific saved numbers.
+  - TOTAL = sum-of-components arithmetic on the loss-decomposition plots —
+    already verified exactly in the prior strict audit (2.8e-6 max error,
+    untouched this session, still holds).
+  - The internal consistency of the recency-bias explanation against R3's
+    OWN saved per_step_accuracy_by_method.csv values (Section 3d, matches
+    qualitatively and directionally for every method, both families).
+
+CANNOT be regenerated from saved CSVs — genuinely requires a re-run with the
+new code in place, because it needs a live model to call .predict() on:
+  - tables/per_step_accuracy_open_vs_restricted_by_method.csv (new this
+    session) — the actual open-vs-restricted accuracy gap, per (method,
+    step), for the REAL trained models. Section 3e's numbers are from a toy
+    synthetic simulation, not from R3's actual weights, and cannot be — the
+    weights no longer exist.
+  - Any plot that would visualize that gap (none exist yet — this is a new
+    diagnostic, so there is no old, wrong version of such a plot to fix or
+    regenerate; it will appear for the first time in the next run that
+    includes this code).
+  - Confirmation of whether the two 96.95% step-5 values are literally
+    bit-identical predictions or a close coincidence (Section 2) — would
+    need per-image predictions, never saved for this run.
+
+--------------------------------------------------------------------------
+5. FIX IMPLEMENTED (code, this session — full detail in CHANGES.md)
+--------------------------------------------------------------------------
+1. New restricted_argmax_accuracy(logits, labels, allowed_class_ids):
+   masks the argmax candidate set down to exactly the eval subset's own
+   classes, computed from the SAME logits the open-set accuracy already
+   uses (no extra forward pass).
+2. evaluate_per_step_accuracy() now calls trainer.predict() once per step
+   (was trainer.evaluate()) and computes BOTH the pre-existing open-set
+   accuracy (byte-identical formula and result to before this change) and
+   the new restricted accuracy from that one call.
+3. New output: tables/per_step_accuracy_open_vs_restricted_by_method.csv
+   (accuracy_open, accuracy_restricted, recency_bias_gap per method/step).
+4. Convergence-plot and validation_ce_loss_by_method.png/_clean.png titles
+   now explicitly state that val CE is "this step's OWN local val split,
+   model as of THIS step (in-context, not retrospective)" — directly
+   addresses observation (c) by making the two measurements impossible to
+   conflate on sight.
+5. Explicitly NOT changed: calibration settings (Section 3c explains why),
+   evaluate_model() (the source of every first_step_accuracy/later_steps_
+   accuracy/all_seen_accuracy number currently in any supervisor table —
+   see Section 6), evaluate_seen_step_accuracies()/evaluate_single_step_
+   accuracy() (used for rank_extension's true forgetting curve and forward-
+   transfer probes — kept untouched to keep this fix surgical).
+
+Verification: `python -m py_compile` and `python -m pyflakes` both clean on
+the edited file (see CHANGES.md). No training was run.
+
+--------------------------------------------------------------------------
+6. CROSS-CHECK AGAINST AGGREGATE NUMBERS — WHAT'S AFFECTED
+--------------------------------------------------------------------------
+first_step_accuracy / later_steps_accuracy / all_seen_accuracy in EVERY
+supervisor table (final_metrics_all_methods.csv, supervisor_selected_
+accuracy_comparison.csv, etc.) come from evaluate_model(), a SEPARATE code
+path from evaluate_per_step_accuracy() — it evaluates 3 fixed unions of
+classes (first_step_classes = step 1's 20 classes; later_step_classes =
+steps 2-5's 80 classes pooled together; all_classes = all 100), not the 5
+individual per-step groups. This function was NOT modified this session.
+Consequently:
+
+  - No previously-reported R3 number is changed, invalidated, or newly
+    suspect as a result of this investigation or this session's code
+    changes. The aggregate accuracy numbers already audited in
+    analysis_strict_audit/audit_report.txt stand as they were.
+  - The aggregate numbers ARE subject to a MILDER version of the same
+    recency-bias mechanism (later_steps_accuracy pools 80 classes across 4
+    steps, so step 5's within-pool advantage is diluted by steps 2-4's
+    within-pool disadvantage, rather than isolated the way per-step
+    accuracy shows it) — this is a real interpretive caveat for
+    later_steps_accuracy and all_seen_accuracy (both are, to some
+    unquantified degree, inflated by step 5's classes disproportionately
+    winning the open argmax within their pool), but it does not mean these
+    numbers are "wrong" under the standard open-set CIL protocol — it means
+    they should be read with the same caveat any open-set CIL accuracy
+    number should be read with, now made explicit and, in future runs,
+    directly measurable via the new restricted-accuracy diagnostic applied
+    to evaluate_model()'s pools too (not implemented this session — the
+    task's investigation centered on per_step_accuracy_by_method.csv /
+    per_task_accuracy_heatmap.png specifically; extending the same
+    restricted-accuracy idea to evaluate_model()'s 3 pooled eval sets would
+    be a natural, small follow-up, not done here to keep this session's
+    diff scoped to what was actually asked).
+  - forgetting_metric / backward_transfer (rank_extension family only,
+    already flagged as CRITICAL/MAJOR in the prior strict audit for other
+    reasons — forward_transfer=-0.05 constant, small forgetting_metric/
+    backward_transfer sum residuals) are unaffected by this session's
+    changes; not revisited here.
+  - per_step_accuracy_by_method.csv itself (the "accuracy" column feeding
+    per_task_accuracy_heatmap.png and the two supervisor heatmaps' first_
+    step/later_steps/all_seen columns) is UNCHANGED by this session's
+    code — the fix is additive (a new CSV/columns alongside it), so R3's
+    existing per_task_accuracy_heatmap.png and per_step_accuracy_by_method
+    .csv remain exactly as they were; they are not "corrected", they are
+    now understood, and the tool to quantify how much of them is recency
+    bias vs. genuine representation quality exists for the next run.
+================================================================================

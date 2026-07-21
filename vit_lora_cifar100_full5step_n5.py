@@ -333,6 +333,53 @@ USE_CLASSIFIER_CALIBRATION = True
 # column in run_config.json / hyperparameters_by_method.json.
 RANKEXT_FAMILY_AWARE_CALIBRATION_ENABLED = True
 
+# ACCURACY-PUSH CHANGE 2c (FIX 2, analysis_recency_fix2/report.txt): confidence
+# -weighted regime-grouped calibration for rank_extension. The FIX 1 run
+# (R3/results_fix1_20260721_light) proved FIX 1's core assumption wrong: for
+# the two NON-KD rank_extension variants, FIX 1's regime_grouped mode achieves
+# essentially PERFECT mean row-norm equalization across all 5 steps (ratio ==
+# 1.0000000 to 7 decimals post-calibration, tables/classifier_row_norm_
+# diagnostics_by_method_step.csv) yet open-argmax accuracy for early/middle
+# steps barely moved (e.g. rank_extension step 1: 0.8%->1.15%, step 3:
+# 2.2%->2.95% -- noise-level, not the ~+30-75pp analysis_recency_fix/
+# projected_improvement.csv projected). Inter-step mean row-norm imbalance was
+# only ever a ~15-29% multiplicative spread pre-calibration for the non-KD
+# variants (far too small to be the sole cause of 50-80pp open-accuracy gaps)
+# and was <5% and NON-monotonic for the KD variants -- yet the gap itself is
+# 20-80pp and has a distinctive BOWL shape (worst at steps 2-3, better at both
+# step 1 and step 5), which does not track row-norm ratio at all. What the gap
+# DOES track, for the KD variants specifically, is each step's own final-epoch
+# validation CE loss (tables/training_loss_history_by_epoch.csv):
+# rank_extension_orth_factor_lam_50_kd_T2's val_ce_loss is 0.23 at step 1,
+# jumps to 0.93 at step 2 (worst), then recovers monotonically through step 5
+# (0.76, 0.75, 0.62) -- the same bowl shape as the accuracy gap (-26, -48,
+# -40, -23, -4). Step 2 is the hardest KD regime (first step with a real
+# teacher, teacher itself only just finished training) and step 1 is KD-free
+# (cleanest signal); FIX 1's plain group-MEAN target treats every step in a
+# group identically regardless of how well-trained it actually was. FIX 2
+# keeps FIX 1's exact grouping (KD: {step1} no-op + {steps2..N} one group;
+# non-KD: all NUM_STEPS steps one group -- unchanged, since Task B found no
+# evidence step 1's no-op status was hurting it) but sets each step's TARGET
+# norm to the group mean times a bounded, monotonic BOOST derived from that
+# step's own final-epoch val_ce_loss relative to its group's mean val_ce_loss
+# (worse-than-average steps get boosted above the group mean, better-than-
+# average steps get pulled slightly below it) -- ONLY for KD variants; the
+# boost is forced to 1.0 (exactly FIX 1's plain mean-match, no-op difference)
+# for non-KD variants, since Task B found no clean val_ce_loss/gap
+# correlation there -- see calibrate_classifier_row_norms_confidence_weighted()
+# for the exact formula and gating.
+# This is still a pure post-hoc, per-step-UNIFORM rescale (restricted accuracy
+# stays exactly invariant, same as FIX 1/the original WA calibration -- no
+# retraining, no new parameters), just with a smarter, evidence-backed target
+# instead of a flat mean. Expected effect is DELIBERATELY modest (single-digit
+# pp on the worst KD steps, near-zero on the non-KD variants where val_ce_loss
+# does not track the gap either -- see report.txt Task B) -- FIX 1 already
+# proved the ceiling on pure scale-only correction is much lower than the
+# original restricted-accuracy upper bound implied. Flag-gated so it can be
+# reverted to plain FIX 1 behavior in one line; when False, CALIBRATION_MODE_
+# BY_FAMILY falls back to "regime_grouped" (FIX 1) exactly as before.
+RANKEXT_CONFIDENCE_WEIGHTED_CALIBRATION_ENABLED = True
+
 # Master switch above still gates calibration overall (False disables it for
 # every method, same as before). When True, CALIBRATION_ENABLED_FAMILIES
 # decides which families actually get it. simple_avg: keep True (empirically
@@ -351,13 +398,25 @@ CALIBRATION_ENABLED_FAMILIES = {
 # Per-family calibration ALGORITHM (only consulted when
 # family_applies_calibration(family) is True). "global": original single
 # target-norm-over-all-rows behavior (Zhao et al. 2020 WA, unchanged for
-# simple_avg). "regime_grouped": FIX 1 above, rank_extension only. "off" is
-# never actually selected while CALIBRATION_ENABLED_FAMILIES also gates the
-# family, but is included so this dict alone documents intent if that
-# invariant is ever changed.
+# simple_avg). "regime_grouped": FIX 1, rank_extension only.
+# "confidence_weighted_regime_grouped": FIX 2 (analysis_recency_fix2/
+# report.txt), rank_extension only -- same grouping as "regime_grouped" but
+# each step's target norm is boosted/damped by its own training-quality
+# signal (see RANKEXT_CONFIDENCE_WEIGHTED_CALIBRATION_ENABLED above and
+# calibrate_classifier_row_norms_confidence_weighted()); only selected when
+# RANKEXT_FAMILY_AWARE_CALIBRATION_ENABLED is ALSO True (FIX 2 is layered on
+# top of FIX 1's grouping, not a replacement for it). "off" is never actually
+# selected while CALIBRATION_ENABLED_FAMILIES also gates the family, but is
+# included so this dict alone documents intent if that invariant is ever
+# changed.
 CALIBRATION_MODE_BY_FAMILY = {
     "simple_avg": "global",
-    "rank_extension": "regime_grouped" if RANKEXT_FAMILY_AWARE_CALIBRATION_ENABLED else "off",
+    "rank_extension": (
+        "confidence_weighted_regime_grouped"
+        if (RANKEXT_FAMILY_AWARE_CALIBRATION_ENABLED and RANKEXT_CONFIDENCE_WEIGHTED_CALIBRATION_ENABLED)
+        else "regime_grouped" if RANKEXT_FAMILY_AWARE_CALIBRATION_ENABLED
+        else "off"
+    ),
 }
 
 
@@ -1072,6 +1131,16 @@ per_step_accuracy_restricted_rows = []
 # instrumentation and has no equivalent data, which is why Task A.2 of that
 # analysis could only report shapes, not norms.
 classifier_row_norm_diagnostic_rows = []
+# FIX 2 diagnostic (analysis_recency_fix2/report.txt): one row per (method,
+# step_id) logging the inputs and outputs of
+# calibrate_classifier_row_norms_confidence_weighted()'s boost-factor
+# computation -- the val_ce_loss used, the group it was compared against, the
+# resulting boost factor, and the pre/post target norms. Only populated for
+# methods actually calibrated with mode="confidence_weighted_regime_grouped";
+# lets the next run's report show the boost factors that were actually
+# applied, not just the resulting row norms (which classifier_row_norm_
+# diagnostic_rows above already covers).
+classifier_confidence_calibration_diagnostic_rows = []
 # PRE-THESIS FIX 2: {method_name: {step_idx: {task_step: accuracy_fraction}}} --
 # only populated for rank_extension family (the only family with a genuinely
 # evolving model to checkpoint mid-training); used to draw a true forgetting
@@ -1315,6 +1384,7 @@ print({
     "RANKEXT_ORTH_LAMBDA_WARMUP_ENABLED": RANKEXT_ORTH_LAMBDA_WARMUP_ENABLED,
     "RANKEXT_ORTH_LAMBDA_WARMUP_EPOCHS": RANKEXT_ORTH_LAMBDA_WARMUP_EPOCHS,
     "RANKEXT_FAMILY_AWARE_CALIBRATION_ENABLED": RANKEXT_FAMILY_AWARE_CALIBRATION_ENABLED,
+    "RANKEXT_CONFIDENCE_WEIGHTED_CALIBRATION_ENABLED": RANKEXT_CONFIDENCE_WEIGHTED_CALIBRATION_ENABLED,
     "RANKEXT_ALPHA_PER_RANK": RANKEXT_ALPHA_PER_RANK,
     "LR_RANKEXT": LR_RANKEXT,
     "REPLAY_PER_CLASS": REPLAY_PER_CLASS,
@@ -1589,6 +1659,7 @@ print("Classifier calibration master switch (USE_CLASSIFIER_CALIBRATION):", USE_
 print("Classifier calibration by family (CALIBRATION_ENABLED_FAMILIES):", CALIBRATION_ENABLED_FAMILIES)
 print("Classifier calibration mode by family (CALIBRATION_MODE_BY_FAMILY):", CALIBRATION_MODE_BY_FAMILY)
 print("Rank-extension family-aware calibration (RANKEXT_FAMILY_AWARE_CALIBRATION_ENABLED):", RANKEXT_FAMILY_AWARE_CALIBRATION_ENABLED)
+print("Rank-extension confidence-weighted calibration (RANKEXT_CONFIDENCE_WEIGHTED_CALIBRATION_ENABLED):", RANKEXT_CONFIDENCE_WEIGHTED_CALIBRATION_ENABLED)
 print("Head LR multiplier (default/simple_avg, HEAD_LR_MULTIPLIER):", HEAD_LR_MULTIPLIER)
 print("Head LR multiplier by family (HEAD_LR_MULTIPLIER_BY_FAMILY):", HEAD_LR_MULTIPLIER_BY_FAMILY)
 print("Rank-extension rank schedule in effect:", active_rankext_rank_schedule(),
@@ -2818,6 +2889,152 @@ def calibrate_classifier_row_norms(model, eps=1e-8, mode="global", uses_kd=False
         log_classifier_row_norm_diagnostics(model, method_name, phase="post_calibration", eps=eps)
 
     return model
+
+
+def calibrate_classifier_row_norms_confidence_weighted(
+    model, epoch_loss_rows, method_name, eps=1e-8, uses_kd=False,
+    gamma=0.5, boost_min=0.85, boost_max=1.3,
+):
+    """
+    FIX 2 (analysis_recency_fix2/report.txt): confidence-weighted regime-
+    grouped classifier calibration for rank_extension. NEW function, not a
+    patch to calibrate_classifier_row_norms() -- mode="regime_grouped" (FIX 1)
+    remains fully runnable/comparable via that function unchanged; this is a
+    separate, genuinely different targeting rule layered on the SAME grouping.
+
+    Uses the identical step grouping as calibrate_classifier_row_norms(
+    mode="regime_grouped"): when uses_kd is True, group A = {step 1}
+    (singleton, teacher-less, always a no-op -- report.txt Task B found no
+    evidence this was hurting step 1 relative to the calibrated steps, so FIX
+    2 does not change it); group B = {steps 2..NUM_STEPS}. When uses_kd is
+    False, one group covers every step (same as FIX 1 reduces to for the
+    non-KD variants).
+
+    Within each non-singleton group, IF uses_kd is True, instead of rescaling
+    every step to the SAME flat group-mean row norm (FIX 1's plain
+    mean-matching), each step's TARGET norm is the group mean times a
+    bounded, monotonic boost factor derived from that step's own final-epoch
+    validation CE loss relative to its group's mean validation CE loss (the
+    signal report.txt Task B found DOES track the gap's bowl shape for the KD
+    variants -- val_ce jumps sharply at step 2, the worst-affected step, and
+    recovers toward step 5):
+
+        relative_difficulty = step_val_ce / group_mean_val_ce   (>1: this step
+            fit its own 20-way validation set WORSE than its groupmates did;
+            <1: better)
+        boost = clamp(relative_difficulty ** gamma, boost_min, boost_max)
+        target_norm = group_target_norm(plain mean, as in FIX 1) * boost
+
+    gamma < 1 dampens the boost so a step with e.g. 2x the group's mean val_ce
+    does not get a full 2x norm target (which risks overshooting into
+    dominating the open-argmax competition for OTHER steps' images, not just
+    recovering its own); boost_min/boost_max additionally hard-clip the
+    per-step multiplier to a narrow, safe band around 1.0. A step with no
+    logged val_ce_loss (missing data) gets boost=1.0, i.e. falls back exactly
+    to FIX 1's plain group-mean target for that step -- never a worse-tested
+    failure mode than FIX 1 already validated as safe.
+
+    IF uses_kd is False, boost is ALWAYS 1.0 for every step -- report.txt Task
+    B found NO clean val_ce_loss/gap correlation for the non-KD variants (e.g.
+    rank_extension's step 3 has the LOWEST val_ce of all 5 steps yet the
+    WORST open-vs-restricted gap), so boosting on that signal there would be
+    acting on noise, not evidence. With boost forced to 1.0 this function is
+    numerically IDENTICAL to calibrate_classifier_row_norms(mode=
+    "regime_grouped") for every non-KD rank_extension variant -- by
+    construction, not by tuning, so FIX 2 is provably no worse than FIX 1 for
+    those two variants.
+
+    Only the weight rows are rescaled, not the bias (same convention as
+    calibrate_classifier_row_norms()). Logs pre/post row-norm diagnostics via
+    log_classifier_row_norm_diagnostics() (identical table/columns as FIX 1,
+    so the next run's Task A row-norm review works unchanged) plus a second,
+    FIX-2-specific diagnostic row per (method, step_id) into the module-global
+    classifier_confidence_calibration_diagnostic_rows accumulator recording
+    the val_ce_loss, relative_difficulty, and boost actually used.
+    """
+    log_classifier_row_norm_diagnostics(model, method_name, phase="pre_calibration", eps=eps)
+
+    method_epoch_rows = [r for r in epoch_loss_rows if r.get("method_name") == method_name]
+    final_val_ce_by_step = {}
+    best_epoch_by_step = {}
+    for r in method_epoch_rows:
+        val_ce = r.get("val_ce_loss", float("nan"))
+        if val_ce is None or (isinstance(val_ce, float) and np.isnan(val_ce)):
+            continue
+        step_id = int(r["step_id"])
+        epoch = int(r["epoch"])
+        if step_id not in best_epoch_by_step or epoch >= best_epoch_by_step[step_id]:
+            best_epoch_by_step[step_id] = epoch
+            final_val_ce_by_step[step_id] = float(val_ce)
+
+    with torch.no_grad():
+        W = model.classifier.weight
+        row_norms = W.norm(dim=1)
+
+        if uses_kd:
+            groups = [[0], list(range(1, NUM_STEPS))]
+        else:
+            groups = [list(range(NUM_STEPS))]
+
+        for group in groups:
+            group_idx = torch.tensor(
+                [c for step_idx in group for c in classes_for_step(step_idx)],
+                device=W.device,
+                dtype=torch.long,
+            )
+            group_target_norm = float(row_norms[group_idx].mean().item())
+
+            group_val_ces = [final_val_ce_by_step[s + 1] for s in group if (s + 1) in final_val_ce_by_step]
+            group_mean_val_ce = float(np.mean(group_val_ces)) if len(group_val_ces) > 0 else None
+
+            for step_idx in group:
+                idx = torch.tensor(
+                    list(classes_for_step(step_idx)),
+                    device=W.device,
+                    dtype=torch.long,
+                )
+                step_norm = float(row_norms[idx].mean().clamp_min(eps).item())
+
+                step_val_ce = final_val_ce_by_step.get(step_idx + 1)
+                # report.txt Task B: the val_ce_loss -> gap correlation was
+                # only established for the KD variants (val_ce jumps sharply
+                # at step 2 and recovers toward step 5, matching the gap's
+                # bowl shape almost exactly). For non-KD variants Task B found
+                # NO clean correlation (e.g. rank_extension's step 3 has the
+                # LOWEST val_ce of all 5 steps yet the WORST open-vs-restricted
+                # gap) -- boosting on an uncorrelated signal there risks doing
+                # active harm, not just failing to help. So uses_kd gates the
+                # boost entirely: non-KD groups always get boost=1.0, which
+                # makes this function numerically IDENTICAL to
+                # calibrate_classifier_row_norms(mode="regime_grouped") for
+                # every non-KD rank_extension variant -- provably no worse
+                # than FIX 1 there, by construction, not just by tuning.
+                if uses_kd and len(group) > 1 and step_val_ce is not None and group_mean_val_ce is not None and group_mean_val_ce > eps:
+                    relative_difficulty = step_val_ce / group_mean_val_ce
+                    boost = float(np.clip(relative_difficulty ** gamma, boost_min, boost_max))
+                else:
+                    relative_difficulty = 1.0
+                    boost = 1.0
+
+                step_target_norm = group_target_norm * boost
+                scale = step_target_norm / step_norm
+                W[idx] *= scale
+
+                classifier_confidence_calibration_diagnostic_rows.append({
+                    "method": method_name,
+                    "step_id": int(step_idx + 1),
+                    "val_ce_loss": step_val_ce,
+                    "group_mean_val_ce_loss": group_mean_val_ce,
+                    "relative_difficulty": relative_difficulty,
+                    "boost_factor": boost,
+                    "group_mean_row_norm": group_target_norm,
+                    "target_row_norm": step_target_norm,
+                })
+
+    log_classifier_row_norm_diagnostics(model, method_name, phase="post_calibration", eps=eps)
+
+    return model
+
 
 def cleanup():
     gc.collect()
@@ -5026,12 +5243,24 @@ def run_rank_extension_variant(
     )
 
     if ACTIVE_METHOD_MAP[method_name]["apply_calibration"]:
-        final_rank_model = calibrate_classifier_row_norms(
-            final_rank_model,
-            mode=ACTIVE_METHOD_MAP[method_name].get("calibration_mode", "global"),
-            uses_kd=bool(ACTIVE_METHOD_MAP[method_name]["uses_kd"]),
-            method_name=method_name,
-        )
+        calibration_mode = ACTIVE_METHOD_MAP[method_name].get("calibration_mode", "global")
+        if calibration_mode == "confidence_weighted_regime_grouped":
+            # FIX 2 (analysis_recency_fix2/report.txt): rank_extension only --
+            # this is the only call site that can ever hit this mode, since
+            # CALIBRATION_MODE_BY_FAMILY["simple_avg"] is always "global".
+            final_rank_model = calibrate_classifier_row_norms_confidence_weighted(
+                final_rank_model,
+                epoch_loss_rows=epoch_loss_rows,
+                method_name=method_name,
+                uses_kd=bool(ACTIVE_METHOD_MAP[method_name]["uses_kd"]),
+            )
+        else:
+            final_rank_model = calibrate_classifier_row_norms(
+                final_rank_model,
+                mode=calibration_mode,
+                uses_kd=bool(ACTIVE_METHOD_MAP[method_name]["uses_kd"]),
+                method_name=method_name,
+            )
     else:
         # FIX 1 diagnostic: still record pre-calibration row-norm stats for
         # non-calibrated methods so classifier_row_norm_diagnostic_rows has
@@ -6134,7 +6363,7 @@ def cfg_df():
     c["seed"]=int(SEED)
     return c.reset_index(drop=True)
 CFG=cfg_df()
-js(Path(CONFIGS_DIR)/"run_config.json", {"run_name":RUN_NAME,"run_tag":RUN_TAG,"base_output_dir":BASE_OUTPUT_DIR,"model_checkpoint":MODEL_CHECKPOINT,"seed":SEED,"num_steps":NUM_STEPS,"classes_per_step":CLASSES_PER_STEP,"lora_rank":LORA_R,"lora_alpha":LORA_ALPHA,"lora_alpha_note":"lora_rank/lora_alpha above describe simple_avg only; rank_extension is family-conditional, see rankext_rank_schedule_active / rankext_alpha_per_rank / rankext_lora_alpha_active","lora_dropout":LORA_DROPOUT,"target_modules_default":TARGET_MODULES,"target_modules_by_family":{k:list(v) for k,v in TARGET_MODULES_BY_FAMILY.items()},"lambda_orth":LAMBDA_ORTH,"kd_temperatures":KD_TEMPERATURES,"kd_weight":KD_WEIGHT,"optimizer":"AdamW","scheduler":SCHED,"batch_size":BATCH_LORA,"use_classifier_calibration_master_switch":bool(USE_CLASSIFIER_CALIBRATION),"classifier_calibration_by_family":dict(CALIBRATION_ENABLED_FAMILIES),"classifier_calibration_mode_by_family":dict(CALIBRATION_MODE_BY_FAMILY),"rankext_family_aware_calibration_enabled":bool(RANKEXT_FAMILY_AWARE_CALIBRATION_ENABLED),"head_lr_multiplier_default":float(HEAD_LR_MULTIPLIER),"head_lr_multiplier_by_family":{k:float(v) for k,v in HEAD_LR_MULTIPLIER_BY_FAMILY.items()},"rankext_rank_schedule_active":active_rankext_rank_schedule(),"rankext_rank_schedule_wide_enabled":bool(USE_RANKEXT_RANK_SCHEDULE_WIDE),"rankext_alpha_per_rank":float(RANKEXT_ALPHA_PER_RANK),"rankext_lora_alpha_active":float(active_rankext_lora_alpha()),"rankext_more_params_than_simple_avg":bool(USE_RANKEXT_RANK_SCHEDULE_WIDE),"rankext_orth_lambda_warmup_enabled":bool(RANKEXT_ORTH_LAMBDA_WARMUP_ENABLED),"rankext_orth_lambda_warmup_epochs":float(RANKEXT_ORTH_LAMBDA_WARMUP_EPOCHS),"combined_loss_scale_enabled":bool(COMBINED_LOSS_SCALE_ENABLED),"combined_lambda_orth_scale":float(COMBINED_LAMBDA_ORTH_SCALE),"combined_kd_weight_scale":float(COMBINED_KD_WEIGHT_SCALE),"combined_orth_warmup_enabled":bool(COMBINED_ORTH_WARMUP_ENABLED),"combined_orth_warmup_epochs":float(COMBINED_ORTH_WARMUP_EPOCHS)})
+js(Path(CONFIGS_DIR)/"run_config.json", {"run_name":RUN_NAME,"run_tag":RUN_TAG,"base_output_dir":BASE_OUTPUT_DIR,"model_checkpoint":MODEL_CHECKPOINT,"seed":SEED,"num_steps":NUM_STEPS,"classes_per_step":CLASSES_PER_STEP,"lora_rank":LORA_R,"lora_alpha":LORA_ALPHA,"lora_alpha_note":"lora_rank/lora_alpha above describe simple_avg only; rank_extension is family-conditional, see rankext_rank_schedule_active / rankext_alpha_per_rank / rankext_lora_alpha_active","lora_dropout":LORA_DROPOUT,"target_modules_default":TARGET_MODULES,"target_modules_by_family":{k:list(v) for k,v in TARGET_MODULES_BY_FAMILY.items()},"lambda_orth":LAMBDA_ORTH,"kd_temperatures":KD_TEMPERATURES,"kd_weight":KD_WEIGHT,"optimizer":"AdamW","scheduler":SCHED,"batch_size":BATCH_LORA,"use_classifier_calibration_master_switch":bool(USE_CLASSIFIER_CALIBRATION),"classifier_calibration_by_family":dict(CALIBRATION_ENABLED_FAMILIES),"classifier_calibration_mode_by_family":dict(CALIBRATION_MODE_BY_FAMILY),"rankext_family_aware_calibration_enabled":bool(RANKEXT_FAMILY_AWARE_CALIBRATION_ENABLED),"rankext_confidence_weighted_calibration_enabled":bool(RANKEXT_CONFIDENCE_WEIGHTED_CALIBRATION_ENABLED),"head_lr_multiplier_default":float(HEAD_LR_MULTIPLIER),"head_lr_multiplier_by_family":{k:float(v) for k,v in HEAD_LR_MULTIPLIER_BY_FAMILY.items()},"rankext_rank_schedule_active":active_rankext_rank_schedule(),"rankext_rank_schedule_wide_enabled":bool(USE_RANKEXT_RANK_SCHEDULE_WIDE),"rankext_alpha_per_rank":float(RANKEXT_ALPHA_PER_RANK),"rankext_lora_alpha_active":float(active_rankext_lora_alpha()),"rankext_more_params_than_simple_avg":bool(USE_RANKEXT_RANK_SCHEDULE_WIDE),"rankext_orth_lambda_warmup_enabled":bool(RANKEXT_ORTH_LAMBDA_WARMUP_ENABLED),"rankext_orth_lambda_warmup_epochs":float(RANKEXT_ORTH_LAMBDA_WARMUP_EPOCHS),"combined_loss_scale_enabled":bool(COMBINED_LOSS_SCALE_ENABLED),"combined_lambda_orth_scale":float(COMBINED_LAMBDA_ORTH_SCALE),"combined_kd_weight_scale":float(COMBINED_KD_WEIGHT_SCALE),"combined_orth_warmup_enabled":bool(COMBINED_ORTH_WARMUP_ENABLED),"combined_orth_warmup_epochs":float(COMBINED_ORTH_WARMUP_EPOCHS)})
 js(Path(CONFIGS_DIR)/"supervisor_selected_methods.json", SUPERVISOR_SELECTED_METHOD_SPECS)
 js(Path(CONFIGS_DIR)/"hyperparameters_by_method.json", CFG.to_dict("records"))
 
@@ -6212,6 +6441,22 @@ else:
 classifier_row_norm_diag_path = Path(TABLES_DIR) / "classifier_row_norm_diagnostics_by_method_step.csv"
 classifier_row_norm_diag_df.to_csv(classifier_row_norm_diag_path, index=False)
 print("Saved classifier row-norm diagnostics:", classifier_row_norm_diag_path)
+
+# FIX 2 diagnostic (analysis_recency_fix2/report.txt): boost-factor inputs/
+# outputs from calibrate_classifier_row_norms_confidence_weighted(). Only
+# populated for methods actually calibrated with mode=
+# "confidence_weighted_regime_grouped" (rank_extension family only, and only
+# when RANKEXT_CONFIDENCE_WEIGHTED_CALIBRATION_ENABLED is True) -- empty
+# DataFrame otherwise, same convention as the row-norm diagnostic table above.
+classifier_confidence_calib_diag_df = pd.DataFrame(classifier_confidence_calibration_diagnostic_rows)
+if len(classifier_confidence_calib_diag_df) > 0:
+    classifier_confidence_calib_diag_df = classifier_confidence_calib_diag_df[classifier_confidence_calib_diag_df["method"].isin(REQ)].copy()
+    classifier_confidence_calib_diag_df = classifier_confidence_calib_diag_df.sort_values(["method", "step_id"]).reset_index(drop=True)
+else:
+    classifier_confidence_calib_diag_df = pd.DataFrame(columns=["method", "step_id", "val_ce_loss", "group_mean_val_ce_loss", "relative_difficulty", "boost_factor", "group_mean_row_norm", "target_row_norm"])
+classifier_confidence_calib_diag_path = Path(TABLES_DIR) / "classifier_confidence_calibration_diagnostics_by_method_step.csv"
+classifier_confidence_calib_diag_df.to_csv(classifier_confidence_calib_diag_path, index=False)
+print("Saved classifier confidence-weighted calibration diagnostics:", classifier_confidence_calib_diag_path)
 
 
 def per_step_accuracy_json(method_name):

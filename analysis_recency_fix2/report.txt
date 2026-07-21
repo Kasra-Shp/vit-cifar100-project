@@ -1,0 +1,604 @@
+================================================================================
+analysis_recency_fix2 -- rigorous evaluation of Fix 1, failure-pattern
+diagnosis, and Fix 2 design/implementation (2026-07-21)
+================================================================================
+
+Source run analyzed (Fix 1's actual result): R3/results_fix1_20260721_light/
+  clip_vit_lora_cifar100_full_comparison_with_orth_rankext_EPOCH3_MAIN_20260721_172311
+Comparison baseline (STRICT, pre-Fix-1, pre-restricted-diagnostic): R3/results_strict_20260717_light/
+  clip_vit_lora_cifar100_full_comparison_with_orth_rankext_EPOCH3_MAIN_20260717_015946
+Projection being checked: analysis_recency_fix/projected_improvement.csv
+  (built from R3/R5/results_widerank_20260721_light, the WIDERANK run --
+  NOT the STRICT baseline; STRICT itself has no restricted-accuracy table,
+  see A.0 below).
+
+No training was run this session. All numbers below come from CSVs already
+saved in the run directories named above. Code changes are for the NEXT
+cluster run.
+
+================================================================================
+TASK A -- rigorous evaluation of Fix 1's impact
+================================================================================
+
+A.0 -- data availability caveat
+--------------------------------------------------------------------------------
+STRICT (20260717_015946) predates tables/classifier_row_norm_diagnostics_
+by_method_step.csv AND tables/per_step_accuracy_open_vs_restricted_by_method.csv
+entirely (both were added by Fix 1's session, analysis_recency_fix/). STRICT
+therefore has NO restricted-accuracy numbers and NO row-norm numbers of its
+own -- only OPEN accuracy. Everywhere below that needs a "before" restricted
+number, R5 (WIDERANK)'s restricted numbers are used as the closest available
+proxy (R5 and STRICT differ only in rank_extension's rank schedule -- wide vs
+narrow -- confirmed in analysis_recency_fix/report.txt A.3/A.4; that schedule
+change measurably affects OPEN accuracy for rank_extension itself (+2.07pp)
+but restricted accuracy, being purely a within-step-20-way, scale-invariant
+measurement of representation quality, is expected to track training
+regime/data far more than a rank-capacity change, and empirically R5's and
+Fix1's restricted numbers below match to ~1-2pp for every method, consistent
+with that expectation).
+
+A.1 -- open all_seen, per-method deltas (STRICT -> Fix 1)
+--------------------------------------------------------------------------------
+method                                    | STRICT open | Fix1 open | delta
+--------------------------------------------|-------------|-----------|-------
+rank_extension                             |       21.82 |     22.32 | +0.50
+rank_extension_orth_factor_lam_50          |       31.21 |     34.06 | +2.85
+rank_extension_kd_only_T2                  |       58.85 |     57.23 | -1.62
+rank_extension_orth_factor_lam_50_kd_T2    |       65.34 |     66.23 | +0.89
+
+(all_seen_accuracy = mean of per-step OPEN accuracy, matching both runs' own
+supervisor_selected_accuracy_comparison.csv column -- verified against
+per_step_accuracy list in both files.)
+
+Net: average delta across the 4 variants is +0.66pp. One variant
+(rank_extension_kd_only_T2) got WORSE by 1.62pp. This is the STRICT-vs-Fix1
+comparison the prior session's report.txt explicitly set up as the "clean,
+single-lever" test (rank schedule reverted to match STRICT; calibration is
+the only remaining difference) -- and the lever it isolates produced a small,
+mixed result, not the large, uniformly-positive result projected.
+
+A.2 -- restricted all_seen (mean of per-step restricted accuracy), Fix 1 run
+--------------------------------------------------------------------------------
+method                                    | Fix1 restricted all_seen | per-step restricted
+--------------------------------------------|---------------------------|---------------------------------------
+rank_extension                             |                     71.96 | [57.70, 60.40, 71.15, 73.60, 96.95]
+rank_extension_orth_factor_lam_50          |                     87.93 | [83.20, 88.60, 83.25, 87.65, 96.95]
+rank_extension_kd_only_T2                  |                     94.04 | [94.35, 94.05, 93.15, 92.10, 96.55]
+rank_extension_orth_factor_lam_50_kd_T2    |                     94.67 | [94.70, 94.70, 93.40, 93.35, 97.20]
+
+For comparison, R5 (WIDERANK, the projection's basis) restricted all_seen:
+70.59 / 86.96 / 94.01 / 94.51 respectively -- within ~1-2pp of Fix 1's own
+restricted numbers for every method, confirming restricted accuracy did NOT
+move materially between the pre-Fix-1 and post-Fix-1 runs (expected, per A.0:
+restricted accuracy is scale-invariant by construction -- see B.0 below --
+and calibration is a pure scale operation, so it should never have been
+expected to move restricted accuracy at all; the fact it didn't move is a
+consistency check passing, not a finding).
+
+A.3 -- per-step open-vs-restricted gap, per method -- did the gap shrink
+where expected?
+--------------------------------------------------------------------------------
+Fix 1's own before/after row-norm table lets this be checked precisely for
+row norms (A.4 below), but for the GAP itself the only "before" data is R5's
+(the projection's basis). Gap = accuracy_open - accuracy_restricted (negative
+= open loses to restricted).
+
+rank_extension_orth_factor_lam_50_kd_T2 (best rank_ext variant, R5 -> Fix1 gap):
+  step 1: -33.5  -> -26.45   (shrunk, but step 1 was never touched by
+                               calibration in EITHER run -- see B.0/B.1a)
+  step 2: -49.7  -> -47.60   (touched by calibration in Fix1; barely moved)
+  step 3: -46.15 -> -40.45   (touched; modest shrink)
+  step 4: -22.3  -> -23.30   (touched; did NOT shrink, slightly worse)
+  step 5: -3.25  -> -4.40    (untouched reference step; noise)
+
+rank_extension (non-KD, all 5 steps touched, R5 -> Fix1):
+  step 1: -49.15 -> -56.55  (WORSE, despite full-group calibration touching it)
+  step 2: -62.90 -> -57.90  (shrunk)
+  step 3: -60.80 -> -68.20  (WORSE)
+  step 4: -60.65 -> -65.55  (WORSE)
+  step 5:   0.00 ->   0.00  (reference)
+
+rank_extension_orth_factor_lam_50 (non-KD, R5 -> Fix1):
+  step 1: -78.0  -> -75.5   (shrunk slightly)
+  step 2: -75.7  -> -66.75  (shrunk)
+  step 3: -73.15 -> -69.25  (shrunk)
+  step 4: -57.7  -> -57.85  (flat/noise)
+  step 5:   0.0  ->   0.0   (reference)
+
+rank_extension_kd_only_T2 (R5 -> Fix1):
+  step 1: -43.6  -> -36.0   (shrunk, untouched step -- see B.1a)
+  step 2: -58.2  -> -61.75  (WORSE)
+  step 3: -53.8  -> -54.85  (flat/slightly worse)
+  step 4: -26.9  -> -29.60  (WORSE)
+  step 5:  -2.0  ->  -1.85  (reference, noise)
+
+Verdict: NO, the gap did not shrink where expected. Of the 16 calibration-
+touched step-rows (steps that Fix 1's regime_grouped mode actually rescales:
+all 5 for the non-KD variants, steps 2-5 for the KD variants), 8 got WORSE
+and 8 got better, by amounts that are mostly within noise (a few pp either
+way) rather than the tens-of-pp shrink the projection implied. This is
+consistent with A.1's small/mixed all_seen deltas and is the central finding
+motivating Task B/C below: mean row-norm equalization, even where achieved
+essentially perfectly (see A.4), is not the lever that controls this gap.
+
+A.4 -- simple_avg sanity check
+--------------------------------------------------------------------------------
+CONFIRMED byte-identical. all_seen_accuracy in both runs'
+supervisor_selected_accuracy_comparison.csv, to full float precision:
+  simple_avg                      : 72.09              == 72.09
+  simple_avg_factor_orth          : 75.53999999999999  == 75.53999999999999
+  simple_avg_kd_T2                : 71.50999999999999  == 71.50999999999999
+  simple_avg_factor_orth_kd_T2    : 70.17999999999999  == 70.17999999999999
+Fix 1's edits did not touch simple_avg's code path (CALIBRATION_MODE_BY_
+FAMILY["simple_avg"] stayed "global" throughout), and this confirms it.
+
+A.5 -- row-norm diagnostics: before vs. after calibration, per step
+--------------------------------------------------------------------------------
+From tables/classifier_row_norm_diagnostics_by_method_step.csv (Fix 1 run).
+"ratio" = row_norm_ratio_vs_step1.
+
+rank_extension (non-KD, one group = all 5 steps):
+  pre : step1=1.000 step2=1.033 step3=1.068 step4=1.095 step5=1.149
+  post: step1=1.000 step2=1.000 step3=1.000 step4=1.000 step5=1.000
+  -> PERFECTLY equalized (ratio == 1.0000000 to 7 decimals on every step).
+     Group WAS actually rescaled -- all 5 steps moved to the group mean
+     (0.7261). This is the clearest possible refutation of the "row-norm
+     scale is the dominant driver" hypothesis: perfect equalization, and open
+     accuracy for steps 1-4 moved by essentially nothing (see B below).
+
+rank_extension_orth_factor_lam_50 (non-KD, one group = all 5 steps):
+  pre : step1=1.000 step2=1.153 step3=1.205 step4=1.278 step5=1.288
+  post: step1=1.000 step2=1.000 step3=1.000 step4=1.000 step5=1.000
+  -> Same story, larger pre-cal spread (up to 29%), same perfect
+     post-cal equalization (group mean 0.7991).
+
+rank_extension_kd_only_T2 (KD, group A={step1} no-op, group B={steps2-5}):
+  pre : step1=1.000 step2=1.014 step3=0.990 step4=0.993 step5=0.969
+  post: step1=1.000 step2=0.992 step3=0.992 step4=0.992 step5=0.992
+  -> Group A (step 1) correctly LEFT UNTOUCHED (pre==post==1.000, exactly the
+     designed no-op). Group B (steps 2-5) WAS actually rescaled to their own
+     shared mean (0.6720) -- but note the pre-cal spread here was only ~4.5%
+     and NON-monotonic (step 5 was actually the SMALLEST pre-cal, not the
+     largest -- the "most-recent-step-wins" story does not even hold in raw
+     row-norm terms for this method).
+
+rank_extension_orth_factor_lam_50_kd_T2 (KD, same grouping):
+  pre : step1=1.000 step2=1.072 step3=1.059 step4=1.104 step5=1.093
+  post: step1=1.000 step2=1.082 step3=1.082 step4=1.082 step5=1.082
+  -> Group A (step 1) untouched. Group B (steps 2-5) equalized to their
+     shared mean (0.7314, ratio 1.082 vs step 1 -- i.e. steps 2-5 as a whole
+     really are ~8% larger in row norm than step 1, a real, modest, and now
+     fully-corrected gap).
+
+Which groups were actually rescaled: for the two non-KD variants, ALL 5 steps
+(one group, matches the "reduces to global calibration" design). For the two
+KD variants, steps 2-5 only (step 1 stayed exactly at its pre-calibration
+value in every case, confirmed to 7 decimal places) -- Fix 1's grouping logic
+executed exactly as designed in every one of the 4 rank_extension variants,
+with no bug in which rows got touched.
+
+A.6 -- why was the +30pp projection so optimistic? diagnosis
+--------------------------------------------------------------------------------
+projected_improvement.csv's methodology (report.txt B.0/B.5 from the prior
+session) rests on one identity: restricted accuracy is invariant to any
+UNIFORM per-step rescale, so it is a valid CEILING on open accuracy reachable
+by scale-only correction. That identity is true, but the projection then
+implicitly assumed the ceiling was also close to being REACHABLE -- i.e. that
+scale (row-norm) imbalance was the dominant, or a large, component of the
+gap. A.5 directly falsifies that for the non-KD variants: Fix 1 achieved
+essentially PERFECT row-norm equalization (ratio 1.0000000 across all 5
+steps) and open accuracy for the early/middle steps barely moved (rank_
+extension step 1: 0.80%->1.15%, step 3: 2.20%->2.95%; rank_extension_orth_
+factor_lam_50 step 1: 2.90%->7.70%, step 3: 11.35%->14.00% -- single-digit-pp
+moves against a 55-95pp restricted-accuracy ceiling that was, by A.5,
+genuinely reachable in row-norm terms). The pre-calibration row-norm spread
+itself was also simply too small to explain gaps of this size under any
+plausible softmax/logit-competition model: a 15-29% multiplicative norm
+difference (non-KD) or <5% and non-monotonic difference (KD) cannot, on its
+own, produce 50-80pp swings in a 100-way argmax competition unless the
+classifier were operating at an extremely low, ill-conditioned effective
+temperature -- there is no evidence of that elsewhere in these runs.
+CONCLUSION: the projection's assumption -- "the open-vs-restricted gap is
+explained by inter-step mean row-norm imbalance, so closing that imbalance
+closes the gap" -- was the specific assumption the actual mechanism did not
+deliver on. The gap's true cause lies elsewhere; Task B below identifies what
+that "elsewhere" actually is.
+
+================================================================================
+TASK B -- characterizing the specific failure pattern
+================================================================================
+
+B.0 -- the bowl-shaped pattern, restated with Fix 1's real numbers
+--------------------------------------------------------------------------------
+RankExt+FactorOrth+KD (rank_extension_orth_factor_lam_50_kd_T2), Fix 1 run:
+  step 1: gap -26.45 (open 68.25, restricted 94.70)  -- Fix 1 helped here (R5: -33.5)
+  step 2: gap -47.60 (open 47.10, restricted 94.70)  -- LARGEST gap, Fix 1 did NOT help (R5: -49.7)
+  step 3: gap -40.45 (open 52.95, restricted 93.40)  -- large, modest help (R5: -46.15)
+  step 4: gap -23.30 (open 70.05, restricted 93.35)  -- moderate, no help (R5: -22.3)
+  step 5: gap  -4.40 (open 92.80, restricted 97.20)  -- smallest (reference step)
+Confirmed: NOT "step 5 dominates everything" -- middle steps (2, 3) are the
+worst-affected, with BOTH neighbors (step 1 and step 5) doing comparatively
+better, despite step 1 never being calibration-touched at all.
+
+B.a -- why do middle steps have worse gaps than step 1, even though step 1
+was left untouched (a no-op) while steps 2-3 WERE grouped-rescaled?
+--------------------------------------------------------------------------------
+Row norms do not explain it (A.5): pre-calibration, step 1's row norm ratio
+is by definition 1.000 (it IS the step-1 reference), and steps 2-5's ratios
+(1.072, 1.059, 1.104, 1.093 for this method) are all fairly close together --
+there is no special "step 2/3 are smaller" or "step 2/3 are larger" signature
+in the row norms that would predict step 2/3 being the worst-hit steps by a
+magnitude argument. What DOES separate step 1 from steps 2-5 mechanistically:
+step 1 is the only step with NO knowledge-distillation loss at all (uses_kd
+only starts biting at step 2, since step 1 has no prior-step teacher yet) --
+its final-epoch validation CE loss is 0.227, the best of any step in this
+method's whole run. Steps 2-5's val_ce_loss (tables/training_loss_history_
+by_epoch.csv, final epoch per step) is 0.928, 0.761, 0.752, 0.624 -- i.e. a
+sharp JUMP at step 2 (roughly 4x step 1's loss) followed by a MONOTONIC
+RECOVERY through step 5. Step 2 is the hardest KD regime the whole run
+produces: it is the FIRST step where the student has to balance a real
+distillation loss against a teacher that itself only just finished training
+(with no KD experience of its own) -- kd_loss_raw shows the same shape
+(1.166 at step 2, declining to 0.827 by step 5). By step 5, the model has had
+three more steps of practice balancing CE against KD, and both its CE fit and
+its distillation quality have measurably improved. Step 1's advantage isn't
+that its rows are "left alone" (that's a calibration-time property that
+CANNOT causally affect a gap measured against an eval-time model that HAS
+already had calibration or not applied); its advantage is that it was never
+subject to the hard KD regime at all -- it is trained cleanly, with the best
+val_ce_loss of any step. Middle steps 2-3 are the WORST because they are
+closest to the point of hardest KD adaptation; step 1 escapes that regime
+entirely (different reason), and step 4-5 have had time to recover from it
+(same regime, later in the recovery curve).
+
+B.b -- is "steps 2-5 equalized as one group" actually equalizing to a single
+target, or was there a bug biasing the target toward step 5 (the largest raw
+block)?
+--------------------------------------------------------------------------------
+NO BUG. Verified directly from calibrate_classifier_row_norms()'s actual
+source (vit_lora_cifar100_full5step_n5.py): group_target_norm is computed as
+row_norms[group_idx].mean() over the CONCATENATED row indices of every step
+in the group -- since every CL step contributes exactly 20 classifier rows
+(CLASSES_PER_STEP is constant), this is mathematically identical to an
+UNWEIGHTED mean of the 4 (or 5) per-step mean row norms; no step's block
+counts more than any other's regardless of block size/rank/recency.
+Confirmed numerically: rank_extension_kd_only_T2's group-B pre-cal norms are
+0.6875 (s2), 0.6707 (s3), 0.6732 (s4), 0.6567 (s5); plain mean =
+(0.6875+0.6707+0.6732+0.6567)/4 = 0.67203, which matches the logged
+post-calibration value (0.672025) to 4 decimals. Same check passes for
+rank_extension_orth_factor_lam_50_kd_T2 (plain mean of 0.7249/0.7157/0.7460/
+0.7390 = 0.73140, matches logged 0.731381). No step-5 (or any-step) bias.
+
+B.c -- does the gap correlate with row-norm imbalance, or with something else
+(training loss residual, block position)?
+--------------------------------------------------------------------------------
+Row norm: pearson(|gap|, |row_norm_ratio_vs_step1 - 1|) across all 5 steps,
+per method (n=5, small-sample caveat applies): rank_extension -0.68,
+rank_extension_kd_only_T2 -0.54, rank_extension_orth_factor_lam_50 -0.65,
+rank_extension_orth_factor_lam_50_kd_T2 -0.25. Every one of these is NEGATIVE
+-- i.e. steps with a LARGER pre-calibration row-norm deviation from step 1
+tend to have a SMALLER gap, the opposite sign a "bigger norm mismatch causes
+bigger gap" story would predict. This is a confound, not a real inverse
+causal relationship: row-norm ratio deviation and step-recency both trend
+together (later steps generally drift further from step 1 in norm, per A.5),
+and later steps ALSO have smaller gaps simply because they are closer to
+(or, for step 5, identical to) the reference/eval step. Row norm is not
+carrying independent signal here at all.
+
+Training loss residual (val_ce_loss, final epoch per step): pearson(val_ce,
+|gap|) restricted to the group Fix 1's KD calibration actually touches
+(steps 2-5 only, n=4): rank_extension_kd_only_T2 = +0.85,
+rank_extension_orth_factor_lam_50_kd_T2 = +0.91. Both strongly positive:
+harder-to-fit steps (higher val_ce) have larger open-accuracy gaps, and this
+holds specifically within the touched group, not just as an artifact of step
+position. (Across all 5 steps including step 1, the correlation is weaker/
+noisier -- +0.38 and +0.43 -- because step 1 is a qualitatively different,
+KD-free regime whose low val_ce does not fully predict its gap; see B.a.)
+For the two NON-KD variants, this same check does NOT hold cleanly:
+rank_extension's step 3 has the LOWEST val_ce of any step (0.176) yet the
+WORST gap (-68.2, worse than step 4's -65.55 despite step 4's val_ce being
+the highest, 0.282) -- val_ce does not track the gap for the non-KD variants
+the way it does for steps 2-5 of the KD variants.
+CONCLUSION: for the KD variants, the gap correlates strongly and
+specifically with each step's own training-quality residual (val_ce_loss/
+kd_loss_raw) within the calibration-relevant group -- this is a genuine,
+usable signal, not row-norm ratio (which is a confound/non-signal here). For
+the non-KD variants, NEITHER row-norm ratio NOR val_ce_loss cleanly explains
+the observed bowl -- their recency-bias mechanism remains only partially
+understood by this session's instrumentation (candidate: rank_schedule
+capacity growth itself, since rank grows 16->32->48->64->80 across steps,
+giving later steps' blocks more parameters/expressive directions -- not
+further pursued here as no matching diagnostic exists yet; flagged for a
+future session, not blocking Fix 2 below).
+
+================================================================================
+TASK C -- Fix 2 design and implementation
+================================================================================
+
+C.1 -- approach selected: confidence-weighted regime-grouped calibration
+(KD variants only; provably identical to Fix 1 for non-KD variants)
+--------------------------------------------------------------------------------
+Of the four candidate directions in the task:
+  - Per-step-own-group calibration (each of the 5 steps its own group,
+    rescaled to a shared 5-group target): REJECTED. For the non-KD variants
+    this is EXACTLY what Fix 1 already does (one group = all 5 steps already
+    IS "every step calibrated to a shared target"), and A.6/B.c show that
+    lever is already exhausted (perfect equalization, ~0 effect). For the KD
+    variants, promoting step 1 into the SAME shared target as steps 2-5 would
+    reproduce the exact cross-regime-mixing corruption documented in
+    calibrate_classifier_row_norms()'s own POST-INCIDENT FIX history
+    (68.0%->26.2%, 59.3%->50.1%) -- there is no version of "make step 1 a
+    non-singleton group" that both (a) actually changes anything (it's
+    already its own group under Fix 1) and (b) avoids that known failure
+    mode. Not adopted.
+  - Row-wise (per-class, not per-step-block) equalization: REJECTED. This is
+    a FINER-grained version of the same lever (row-norm MAGNITUDE) that A.6/
+    B.c just showed is not the dominant driver even at the coarser,
+    already-tested block level. There is no reason to expect finer-grained
+    magnitude correction to succeed where coarser magnitude correction
+    (already near-perfect for the non-KD case) produced ~0 effect.
+  - Task-ID inference + step-restricted argmax: NOT adopted this session,
+    same reasoning as the prior session's report.txt B.2 -- it is a new
+    mechanism (new head, new training data/labels) that changes the
+    evaluation protocol itself, not a calibration fix; out of scope for a
+    "design a new calibration mechanism" task and not what Task B's
+    diagnosis specifically calls for.
+  - Confidence-weighted rescaling (target = f(training confidence per
+    group)): ADOPTED. This is the ONE candidate that is actually justified
+    by Task B's evidence: B.c found the gap correlates strongly (pearson
+    +0.85, +0.91) with each step's own val_ce_loss specifically within the
+    KD-calibrated group (steps 2-5), and does NOT correlate usefully with row
+    norm (confounded, wrong sign). A mechanism that targets the demonstrated
+    correlate, instead of continuing to push on the falsified one, is the
+    only evidence-backed choice among the four.
+
+Design: calibrate_classifier_row_norms_confidence_weighted() (NEW function,
+vit_lora_cifar100_full5step_n5.py) keeps Fix 1's EXACT grouping (KD: {step1}
+singleton no-op + {steps2..N} one group; non-KD: all NUM_STEPS steps one
+group -- unchanged, per B.a/B.b showing no bug and no evidence step 1's
+no-op status was hurting it, so the task's "revert step-1-no-op if it was
+hurting step 1" condition is NOT triggered). Within each KD group, instead of
+rescaling every step to the flat group mean, each step's target norm is:
+
+    relative_difficulty = step_val_ce / group_mean_val_ce
+    boost = clamp(relative_difficulty ** gamma, boost_min, boost_max)   [gamma=0.5, boost in [0.85, 1.30]]
+    target_norm = group_mean_row_norm * boost
+
+val_ce is each step's own FINAL-EPOCH validation CE loss, read from the
+module-global epoch_loss_rows accumulator (already populated by
+EpochValidationCallback during training -- no new training-time
+instrumentation needed, this data already exists by the time calibration
+runs at the end of run_rank_extension_variant()). gamma=0.5 (sqrt) dampens
+the boost so a step with e.g. 2x the group's mean val_ce does not get a full
+2x norm target (risk of overshoot: a badly-undertrained step's DIRECTIONS may
+also be worse, not just its scale, so aggressively boosting its magnitude
+could let it win competitions it doesn't deserve to win for OTHER images);
+boost_min/boost_max additionally hard-clip to [0.85, 1.30] regardless of
+gamma. A step with no logged val_ce_loss falls back to boost=1.0 (Fix 1's
+plain mean-match) -- never a worse-tested state than Fix 1 already validated.
+
+CRITICAL SCOPING DECISION (uses_kd gate): the boost formula is only ever
+applied when uses_kd is True. For non-KD groups, boost is unconditionally
+forced to 1.0 for every step, making calibrate_classifier_row_norms_
+confidence_weighted() numerically IDENTICAL, by construction, to
+calibrate_classifier_row_norms(mode="regime_grouped") for rank_extension and
+rank_extension_orth_factor_lam_50. This directly follows from B.c: val_ce_loss
+does not track the gap for the non-KD variants (rank_extension's step 3
+counter-example), so applying the boost there would be acting on noise, with
+real risk of active harm (an incorrectly-boosted step could actively win MORE
+open-argmax competitions it doesn't deserve to win) rather than just failing
+to help. Gating by uses_kd makes Fix 2 provably no worse than Fix 1 for the
+two non-KD variants, and confines the new, less-validated lever to exactly
+the two variants (and exactly the group: steps 2-5) where Task B's evidence
+actually supports it.
+
+C.2 -- structural-integrity / eval-time-only requirements
+--------------------------------------------------------------------------------
+- Frozen blocks / KD-trained continuity: untouched. The function only
+  rescales model.classifier.weight rows (a per-row scalar multiply, in
+  torch.no_grad()) on the FINAL merged rank_extension model, after all 5
+  training steps have completed -- identical footprint to Fix 1's
+  calibrate_classifier_row_norms(), which was already established as
+  non-destructive to the frozen rank blocks (they are never touched by
+  either function; only model.classifier.weight is).
+- Merge/eval-time only: the new function is called from exactly one site,
+  run_rank_extension_variant(), at the same point in the pipeline Fix 1's
+  call was (right after build_rank_extension_model() constructs the final
+  merged model, right before evaluate_model()). No change to any per-step
+  training loop, trainer class, or loss function. No new parameters, no
+  retraining, no rehearsal data -- same category of change as Fix 1 and the
+  pre-existing simple_avg calibration.
+
+C.3 -- flag gating, family scoping, config recording
+--------------------------------------------------------------------------------
+- New flag: RANKEXT_CONFIDENCE_WEIGHTED_CALIBRATION_ENABLED = True (default
+  on for the next run; one line to revert to plain Fix 1 behavior). Layered
+  ON TOP of RANKEXT_FAMILY_AWARE_CALIBRATION_ENABLED (still True, unchanged)
+  -- Fix 2 requires Fix 1's master switch to also be on; it cannot be enabled
+  on its own.
+- CALIBRATION_MODE_BY_FAMILY["rank_extension"] now resolves to
+  "confidence_weighted_regime_grouped" when both flags are True, "regime_
+  grouped" (Fix 1) when only the first is True, "off" when neither is.
+  CALIBRATION_MODE_BY_FAMILY["simple_avg"] is unchanged ("global", always) --
+  simple_avg's code path was NOT touched anywhere in this session's edits
+  (verified: simple_avg's call site in run_simple_avg_variant() only ever
+  reaches calibrate_classifier_row_norms(), never the new function, since its
+  calibration_mode is always "global").
+- "calibration_mode" continues to flow into run_config.json (added key
+  "rankext_confidence_weighted_calibration_enabled") and
+  hyperparameters_by_method.json (via add_method()'s existing
+  family_calibration_mode(family) call -- no new wiring needed, matches Fix
+  1's own note in analysis_recency_fix/CHANGES.md).
+- Row-norm diagnostics (classifier_row_norm_diagnostics_by_method_step.csv):
+  UNCHANGED mechanism -- the new function calls log_classifier_row_norm_
+  diagnostics() before/after exactly like calibrate_classifier_row_norms()
+  does, so this table's schema and coverage (all 8 methods, both phases) are
+  identical to Fix 1's run.
+- NEW table added: classifier_confidence_calibration_diagnostics_by_method_
+  step.csv -- one row per (method, step_id) actually processed by the new
+  function, recording val_ce_loss, group_mean_val_ce_loss,
+  relative_difficulty, boost_factor, group_mean_row_norm, and
+  target_row_norm -- so the next run's own report can show the boost factors
+  that were ACTUALLY applied, not just infer them.
+- Per the "do NOT patch calibrate_classifier_row_norms() in place"
+  requirement: calibrate_classifier_row_norms() is byte-for-byte unchanged
+  (mode="global" and mode="regime_grouped" both remain fully runnable and
+  directly comparable to Fix 1's own results) -- the new mechanism lives
+  entirely in the new function, calibrate_classifier_row_norms_confidence_
+  weighted(), called only when calibration_mode ==
+  "confidence_weighted_regime_grouped".
+
+C.4 -- step-1-no-op revert? NOT triggered
+--------------------------------------------------------------------------------
+Per B.a/B.b: step 1's gap (-26.45 for the best rank_ext variant) is smaller
+than steps 2-3's, and there is no row-norm or grouping evidence that leaving
+step 1 as a no-op is HURTING it relative to what calibrating it would do --
+step 1's advantage traces to it being a fundamentally easier (KD-free)
+training regime, not to any calibration-side effect. Reverting step 1's
+no-op status would only reintroduce the documented cross-regime-mixing
+corruption risk for no evidenced benefit. NOT reverted, as instructed for
+this (unlikely, and confirmed unlikely) case.
+
+================================================================================
+TASK D -- verification and projection (static only, no training)
+================================================================================
+
+D.1 -- py_compile / pyflakes
+--------------------------------------------------------------------------------
+python -m py_compile vit_lora_cifar100_full5step_n5.py -> PASS (no output, exit 0).
+python -m pyflakes vit_lora_cifar100_full5step_n5.py   -> PASS (zero warnings).
+
+D.2 -- final per-method config table
+--------------------------------------------------------------------------------
+See final_per_method_config_table.csv / .py (this directory) -- standalone
+reproduction of add_method()'s resolution logic, no torch/GPU/dataset needed.
+Confirms:
+  - All 4 simple_avg methods: apply_calibration=True, calibration_mode=
+    "global", rank_schedule="fixed:80" -- byte-identical to both prior runs.
+  - All 4 rank_extension methods: apply_calibration=True, calibration_mode=
+    "confidence_weighted_regime_grouped", rank_schedule="16->32->48->64->80"
+    (still reverted/narrow, unchanged from Fix 1), seed=42.
+  - "effective_calibration_behavior" column (added in this table only, for
+    clarity -- not a script column) shows the uses_kd gate resolving
+    correctly: rank_extension and rank_extension_orth_factor_lam_50 (non-KD)
+    -> "regime_grouped (boost forced to 1.0, non-KD)" i.e. Fix-1-identical;
+    rank_extension_kd_only_T2 and rank_extension_orth_factor_lam_50_kd_T2
+    (KD) -> "confidence_weighted_regime_grouped", i.e. the new mechanism
+    actually activates.
+
+D.3 -- dry-run against Fix 1's saved diagnostics
+--------------------------------------------------------------------------------
+See dry_run_row_norm_projection.py / dry_run_row_norm_projection.csv (this
+directory). Fix 1's run has no saved classifier weight tensors (only shapes
+-- same constraint noted in analysis_recency_fix/report.txt A.2), so the
+literal function cannot be re-invoked; instead this dry run reproduces the
+new function's EXACT arithmetic (same grouping, same group_target_norm
+formula, same boost formula with the SAME default gamma/boost_min/boost_max
+as the shipped code) using Fix 1's saved pre_calibration mean row norms
+(classifier_row_norm_diagnostics_by_method_step.csv) and final-epoch val_ce_
+loss (training_loss_history_by_epoch.csv) as inputs.
+
+Headline results (equalization_ratio = target_norm / pre_cal_row_norm):
+
+Non-KD variants (rank_extension, rank_extension_orth_factor_lam_50): boost is
+1.0 for every step by construction (uses_kd=False) -- target norms are
+IDENTICAL to Fix 1's plain group-mean targets. No behavior change projected
+for these two variants, as designed (C.1/C.3).
+
+KD variants, steps 2-5 (rank_extension_kd_only_T2 /
+rank_extension_orth_factor_lam_50_kd_T2):
+  step 2 (worst step, val_ce highest in group): boost 1.106 / 1.100 --
+    target norm pushed ABOVE Fix 1's flat target (0.743 vs 0.672 for
+    kd_only_T2; 0.805 vs 0.731 for orth_factor_kd_T2) -- step 2 ends up with
+    the LARGEST row norm of any step in the model for the FactorOrth+KD
+    variant (larger even than step 5's post-Fix-2 target, 0.660), a genuine,
+    deliberate departure from Fix 1's flat equalization, concentrated exactly
+    where B.c's evidence says it's warranted.
+  step 3: boost ~0.987 / 0.997 (near 1.0 -- step 3's val_ce is close to the
+    group mean for both methods, so little adjustment).
+  step 4: boost ~0.998 / 0.991 (near 1.0, same reason).
+  step 5 (best step, val_ce lowest in group): boost 0.899 / 0.903 -- target
+    pulled BELOW Fix 1's flat target, giving up some of its scale advantage.
+  Step 1 (KD variants): boost always exactly 1.0 (singleton group, no-op
+    unchanged from Fix 1).
+
+D.4 -- honest projection
+--------------------------------------------------------------------------------
+Task A/B established two things that jointly bound what can honestly be
+projected here: (1) row-norm/scale correction, even executed to
+near-perfection, produced ~0-3pp of real open-accuracy gain per method in the
+actual Fix 1 run (A.1/A.6) -- FAR below the restricted-accuracy "ceiling"
+projection; (2) Fix 2 is STILL a scale-only, per-step-uniform rescale (same
+mechanism class as Fix 1, just a smarter per-step target) -- it can shift how
+MUCH scale-based compensation each step gets, and can now target it at the
+demonstrated correlate (val_ce_loss) instead of a non-correlate (row norm),
+but it cannot fix whatever DIRECTIONAL/representational deficiency in steps
+2-3's classifier rows the restricted-accuracy ceiling shows still exists at
+those steps net of pure scale (restricted accuracy itself never moves, by
+construction -- B.0 of the prior session's report.txt -- so Fix 2 cannot even
+in principle close more than the SAME ceiling Fix 1 was already bounded by,
+and it demonstrably cannot reach that ceiling either, same as Fix 1).
+
+Given that, the realistic expectation for the next run is:
+  - Non-KD variants (rank_extension, rank_extension_orth_factor_lam_50):
+    ZERO additional change vs. Fix 1's actual result (numerically identical
+    calibration, by construction -- D.2/D.3). All_seen_accuracy should land
+    at 22.32 / 34.06 again (+/- normal run-to-run training noise from
+    non-determinism in data loading/dropout, NOT from this code change).
+  - rank_extension_kd_only_T2: this is the one variant where Fix 1 made
+    things WORSE (-1.62pp vs STRICT, A.1) while its pre-cal row-norm spread
+    was tiny (<5%, non-monotonic, A.5) -- the val_ce-based boost here is
+    modest (steps 2/5 move by ~10%, steps 3/4 barely at all, D.3) and is
+    working with a smaller starting imbalance than the FactorOrth+KD variant.
+    Realistic expectation: a small correction back toward (not necessarily
+    past) STRICT's 58.85, i.e. roughly 0 to +2pp vs. Fix 1's 57.23 --
+    genuinely uncertain in sign given how small and noisy this method's
+    signal is (B.c's within-group correlation for this method, +0.85, is
+    strong, but the ABSOLUTE boost magnitudes are the smallest of the two KD
+    variants).
+  - rank_extension_orth_factor_lam_50_kd_T2: the variant with the cleanest
+    signal (B.c correlation +0.91, D.3's clearest boost differentiation --
+    step 2 pushed ~10% above Fix 1's target, step 5 pulled ~10% below).
+    Realistic expectation: a genuine, modestly positive move on step 2/3's
+    open accuracy specifically (single-digit pp each, e.g. plausibly +2 to
+    +6pp at step 2, +1 to +4pp at step 3, based on the magnitude of the
+    row-norm shift relative to what Fix 1's much-smaller shifts produced in
+    A.1/A.3) with a small give-back at step 5 (step 5 is already at 92.8%
+    open with a small -4.4pp gap, so a ~10% norm reduction there has limited
+    room to hurt it, but is not zero-risk). Net all_seen_accuracy: perhaps
+    +1 to +4pp vs. Fix 1's 66.23 -- i.e. roughly 67-70%, NOT the 87.8%
+    upper-bound / 75.7% conservative-50% numbers in analysis_recency_fix/
+    projected_improvement.csv, which A.6 already showed was not achievable
+    through this mechanism class.
+
+DO NOT expect this fix to close most of the remaining open-vs-restricted gap.
+It is a targeted, evidence-backed refinement of an already-mostly-exhausted
+lever (scale correction), not a new mechanism that reaches the restricted-
+accuracy ceiling. Reaching that ceiling, per report.txt B.2 (prior session)
+and this session's C.1, would require either fixing the underlying step-2 KD
+training difficulty at TRAINING time (out of scope for a calibration-only
+fix -- e.g. a gentler KD warm-up schedule specifically for step 2, or extra
+epochs for the hardest step) or a genuinely different EVALUATION mechanism
+(task-ID-restricted argmax), neither of which this session implements.
+
+================================================================================
+SUMMARY
+================================================================================
+Fix 1 (regime-grouped calibration) achieved its OWN stated goal (equalize
+mean row norms within regime groups) essentially perfectly, but that goal
+turned out not to be the lever controlling the open-vs-restricted accuracy
+gap -- the actual STRICT-vs-Fix1 result was +0.66pp average, one variant
+regressed, and 8 of 16 calibration-touched step-rows got WORSE, all far
+below the +12 to +57pp range projected. The gap instead has a bowl shape
+(worst at steps 2-3) that, for the two KD variants specifically, correlates
+strongly (r=0.85, r=0.91) with each step's own training-quality residual
+(val_ce_loss) within the calibrated group -- NOT with row-norm ratio (which
+is confounded/wrong-signed). Fix 2 (calibrate_classifier_row_norms_
+confidence_weighted(), flag-gated via RANKEXT_CONFIDENCE_WEIGHTED_
+CALIBRATION_ENABLED, calibration_mode="confidence_weighted_regime_grouped")
+redirects the SAME scale-correction mechanism at that demonstrated correlate,
+scoped ONLY to the two KD variants (provably identical to Fix 1 for the two
+non-KD variants, where the correlate does not hold) -- a small, targeted,
+honestly-projected refinement (single-digit pp on the worst-affected steps
+of the FactorOrth+KD variant specifically), not a rerun of the earlier
+optimism.

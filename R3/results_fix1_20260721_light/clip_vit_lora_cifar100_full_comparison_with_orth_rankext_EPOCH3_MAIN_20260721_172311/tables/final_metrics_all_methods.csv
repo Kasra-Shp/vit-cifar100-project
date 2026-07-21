@@ -1,0 +1,9 @@
+method,display_method_name,first_step_accuracy,later_steps_accuracy,all_seen_accuracy,average_accuracy,final_accuracy,per_step_accuracy,forgetting_metric,backward_transfer,forward_transfer,seed
+simple_avg,SimpleAvg,82.0,69.6125,72.09,74.56750000000001,72.09,"[82.0, 68.0, 68.65, 61.9, 79.9]",,-0.24462500000000004,,42
+simple_avg_kd_T2,SimpleAvg + KD T2,88.9,67.16250000000001,71.50999999999999,75.8575,71.50999999999999,"[88.9, 68.5, 67.4, 60.35, 72.4]",,-0.20062499999999997,,42
+simple_avg_factor_orth,SimpleAvg + FactorOrth,71.2,76.625,75.53999999999999,74.455,75.53999999999999,"[71.2, 78.85, 72.35, 70.2, 85.1]",,-0.218625,,42
+simple_avg_factor_orth_kd_T2,SimpleAvg + FactorOrth + KD T2,77.75,68.2875,70.17999999999999,72.07249999999999,70.17999999999999,"[77.75, 70.7, 66.2, 57.3, 78.95]",,-0.264625,,42
+rank_extension,RankExt,1.15,27.6125,22.32,17.0275,22.32,"[1.15, 2.5, 2.95, 8.05, 96.95]",0.915625,-0.9095,-0.05,42
+rank_extension_kd_only_T2,RankExt + KD T2,58.35,56.95,57.230000000000004,57.51000000000001,57.230000000000004,"[58.35, 32.3, 38.3, 62.5, 94.7]",0.339125,-0.36075,-0.05,42
+rank_extension_orth_factor_lam_50,RankExt + FactorOrth,7.7,40.65,34.06,27.47,34.06,"[7.7, 21.85, 14.0, 29.8, 96.95]",0.801625,-0.76625,-0.05,42
+rank_extension_orth_factor_lam_50_kd_T2,RankExt + FactorOrth + KD T2,68.25,65.725,66.23,66.735,66.23,"[68.25, 47.1, 52.95, 70.05, 92.8]",0.24450000000000002,-0.23200000000000004,-0.05,42

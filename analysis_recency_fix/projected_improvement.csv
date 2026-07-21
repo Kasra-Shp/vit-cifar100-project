@@ -1,0 +1,29 @@
+method,display_method_name,step_id,fix1_group,current_accuracy_open,current_accuracy_restricted,current_recency_bias_gap,projected_accuracy_open_upper_bound,projected_accuracy_open_conservative_50pct,projected_gap_closed_upper_bound,projected_gap_closed_conservative_50pct
+rank_extension,RankExt,1,equalized_regime_group,0.9,50.05,-49.15,50.05,25.47,49.15,24.57
+rank_extension,RankExt,2,equalized_regime_group,1.25,64.15,-62.9,64.15,32.7,62.9,31.45
+rank_extension,RankExt,3,equalized_regime_group,1.6,62.4,-60.8,62.4,32.0,60.8,30.4
+rank_extension,RankExt,4,equalized_regime_group,18.9,79.55,-60.65,79.55,49.22,60.65,30.32
+rank_extension,RankExt,5,equalized_regime_group,96.8,96.8,0.0,96.8,96.8,0.0,0.0
+rank_extension_kd_only_T2,RankExt + KD T2,1,untouched_singleton_group_noop,49.85,93.45,-43.6,49.85,49.85,0.0,0.0
+rank_extension_kd_only_T2,RankExt + KD T2,2,equalized_regime_group,36.25,94.45,-58.2,94.45,65.35,58.2,29.1
+rank_extension_kd_only_T2,RankExt + KD T2,3,equalized_regime_group,38.6,92.4,-53.8,92.4,65.5,53.8,26.9
+rank_extension_kd_only_T2,RankExt + KD T2,4,equalized_regime_group,66.3,93.2,-26.9,93.2,79.75,26.9,13.45
+rank_extension_kd_only_T2,RankExt + KD T2,5,equalized_regime_group,94.55,96.55,-2.0,96.55,95.55,2.0,1.0
+rank_extension_orth_factor_lam_50,RankExt + FactorOrth,1,equalized_regime_group,2.2,80.2,-78.0,80.2,41.2,78.0,39.0
+rank_extension_orth_factor_lam_50,RankExt + FactorOrth,2,equalized_regime_group,12.1,87.8,-75.7,87.8,49.95,75.7,37.85
+rank_extension_orth_factor_lam_50,RankExt + FactorOrth,3,equalized_regime_group,9.9,83.05,-73.15,83.05,46.47,73.15,36.57
+rank_extension_orth_factor_lam_50,RankExt + FactorOrth,4,equalized_regime_group,29.55,87.25,-57.7,87.25,58.4,57.7,28.85
+rank_extension_orth_factor_lam_50,RankExt + FactorOrth,5,equalized_regime_group,96.5,96.5,0.0,96.5,96.5,0.0,0.0
+rank_extension_orth_factor_lam_50_kd_T2,RankExt + FactorOrth + KD T2,1,untouched_singleton_group_noop,60.3,93.8,-33.5,60.3,60.3,0.0,0.0
+rank_extension_orth_factor_lam_50_kd_T2,RankExt + FactorOrth + KD T2,2,equalized_regime_group,45.3,95.0,-49.7,95.0,70.15,49.7,24.85
+rank_extension_orth_factor_lam_50_kd_T2,RankExt + FactorOrth + KD T2,3,equalized_regime_group,47.25,93.4,-46.15,93.4,70.33,46.15,23.08
+rank_extension_orth_factor_lam_50_kd_T2,RankExt + FactorOrth + KD T2,4,equalized_regime_group,70.95,93.25,-22.3,93.25,82.1,22.3,11.15
+rank_extension_orth_factor_lam_50_kd_T2,RankExt + FactorOrth + KD T2,5,equalized_regime_group,93.85,97.1,-3.25,97.1,95.47,3.25,1.62
+
+
+# --- all_seen_accuracy summary (mean of per-step accuracy_open, matching R5 all_seen_accuracy definition) ---
+method,display_method_name,current_all_seen_accuracy,projected_all_seen_accuracy_upper_bound,projected_all_seen_accuracy_conservative_50pct,projected_delta_upper_bound,projected_delta_conservative_50pct
+rank_extension,RankExt,23.89,70.59,47.24,46.7,23.35
+rank_extension_kd_only_T2,RankExt + KD T2,57.11,85.29,71.2,28.18,14.09
+rank_extension_orth_factor_lam_50,RankExt + FactorOrth,30.05,86.96,58.5,56.91,28.45
+rank_extension_orth_factor_lam_50_kd_T2,RankExt + FactorOrth + KD T2,63.53,87.81,75.67,24.28,12.14

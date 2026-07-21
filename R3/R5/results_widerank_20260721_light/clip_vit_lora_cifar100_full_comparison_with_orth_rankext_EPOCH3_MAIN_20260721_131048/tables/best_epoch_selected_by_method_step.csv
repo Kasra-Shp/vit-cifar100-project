@@ -1,0 +1,41 @@
+method_name,display_name,step_id,epochs_configured,best_epoch_selection_enabled,selected_epoch,selected_val_ce,final_epoch_val_ce,selected_epoch_lt_final
+rank_extension,RankExt,1,9,True,2,0.1967336006090045,0.20322159697115422,True
+rank_extension,RankExt,2,9,True,5,0.191647620908916,0.19947761896252633,True
+rank_extension,RankExt,3,9,True,5,0.1808042869567871,0.24348801517486574,True
+rank_extension,RankExt,4,9,True,6,0.287493420843035,0.29252668929006903,True
+rank_extension,RankExt,5,9,True,4,0.1601610512752086,0.16885728716850282,True
+rank_extension_kd_only_T2,RankExt + KD T2,1,9,True,2,0.1967336006090045,0.20322159697115422,True
+rank_extension_kd_only_T2,RankExt + KD T2,2,9,True,5,0.8375600588321686,0.8680368657112122,True
+rank_extension_kd_only_T2,RankExt + KD T2,3,9,True,3,0.6732314462661744,0.7080769023895264,True
+rank_extension_kd_only_T2,RankExt + KD T2,4,9,True,7,0.6957822270393371,0.703501953125,True
+rank_extension_kd_only_T2,RankExt + KD T2,5,9,True,4,0.566348388671875,0.5846499028205872,True
+rank_extension_orth_factor_lam_50,RankExt + FactorOrth,1,9,True,2,0.1967336006090045,0.20322159697115422,True
+rank_extension_orth_factor_lam_50,RankExt + FactorOrth,2,9,True,6,0.175597964765504,0.189976642370224,True
+rank_extension_orth_factor_lam_50,RankExt + FactorOrth,3,9,True,8,0.15228382802009582,0.15581392550468445,True
+rank_extension_orth_factor_lam_50,RankExt + FactorOrth,4,9,True,7,0.23065230608172715,0.243174148558639,True
+rank_extension_orth_factor_lam_50,RankExt + FactorOrth,5,9,True,8,0.10532858538255095,0.1053428077660501,True
+rank_extension_orth_factor_lam_50_kd_T2,RankExt + FactorOrth + KD T2,1,9,True,2,0.1967336006090045,0.20322159697115422,True
+rank_extension_orth_factor_lam_50_kd_T2,RankExt + FactorOrth + KD T2,2,9,True,7,0.864387939453125,0.8732419428825379,True
+rank_extension_orth_factor_lam_50_kd_T2,RankExt + FactorOrth + KD T2,3,9,True,8,0.7127958984375,0.7279056377410889,True
+rank_extension_orth_factor_lam_50_kd_T2,RankExt + FactorOrth + KD T2,4,9,True,7,0.7102937002182007,0.7231467280387879,True
+rank_extension_orth_factor_lam_50_kd_T2,RankExt + FactorOrth + KD T2,5,9,True,6,0.5768582768440247,0.587318359375,True
+simple_avg,SimpleAvg,1,9,True,3,0.17538775634765624,0.21656804919242859,True
+simple_avg,SimpleAvg,2,9,True,2,0.19251509521901608,0.2309845867157128,True
+simple_avg,SimpleAvg,3,9,True,2,0.18293528294563294,0.2985184347629547,True
+simple_avg,SimpleAvg,4,9,True,2,0.24990581941604614,0.3376584277153306,True
+simple_avg,SimpleAvg,5,9,True,5,0.11891253399848938,0.1360978720189305,True
+simple_avg_factor_orth,SimpleAvg + FactorOrth,1,9,True,2,0.1926202137619257,0.22706059812754392,True
+simple_avg_factor_orth,SimpleAvg + FactorOrth,2,9,True,5,0.1595105142891407,0.16628979873657226,True
+simple_avg_factor_orth,SimpleAvg + FactorOrth,3,9,True,7,0.13368953013420104,0.13781702041625976,True
+simple_avg_factor_orth,SimpleAvg + FactorOrth,4,9,True,9,0.1703141098023625,0.1703141098023625,False
+simple_avg_factor_orth,SimpleAvg + FactorOrth,5,9,True,6,0.09503140473319217,0.11022729206061922,True
+simple_avg_factor_orth_kd_T2,SimpleAvg + FactorOrth + KD T2,1,9,True,2,0.1926202137619257,0.22706059812754392,True
+simple_avg_factor_orth_kd_T2,SimpleAvg + FactorOrth + KD T2,2,9,True,4,0.4438867189884186,0.4613157957792282,True
+simple_avg_factor_orth_kd_T2,SimpleAvg + FactorOrth + KD T2,3,9,True,4,0.3971148700714111,0.4201197528839111,True
+simple_avg_factor_orth_kd_T2,SimpleAvg + FactorOrth + KD T2,4,9,True,8,0.4377274168729782,0.4408460692167282,True
+simple_avg_factor_orth_kd_T2,SimpleAvg + FactorOrth + KD T2,5,9,True,5,0.3530506591796875,0.3646871340274811,True
+simple_avg_kd_T2,SimpleAvg + KD T2,1,9,True,2,0.1926202137619257,0.22706059812754392,True
+simple_avg_kd_T2,SimpleAvg + KD T2,2,9,True,5,0.6356645512580872,0.6758093264102936,True
+simple_avg_kd_T2,SimpleAvg + KD T2,3,9,True,3,0.553513427734375,0.5854111347198486,True
+simple_avg_kd_T2,SimpleAvg + KD T2,4,9,True,5,0.5893212893009185,0.6144182124137878,True
+simple_avg_kd_T2,SimpleAvg + KD T2,5,9,True,5,0.4955864253044128,0.5099902338981629,True

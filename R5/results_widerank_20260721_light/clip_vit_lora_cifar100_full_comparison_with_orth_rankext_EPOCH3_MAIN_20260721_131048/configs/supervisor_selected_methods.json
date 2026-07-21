@@ -1,0 +1,74 @@
+[
+  {
+    "display_name": "SimpleAvg",
+    "factor_lambda": 0.0,
+    "family": "simple_avg",
+    "internal_method_name": "simple_avg",
+    "kd_temperature": 0.0,
+    "kd_weight": 0.0,
+    "supervisor_requested_name": "simple_avg"
+  },
+  {
+    "display_name": "RankExt",
+    "factor_lambda": 0.0,
+    "family": "rank_extension",
+    "internal_method_name": "rank_extension",
+    "kd_temperature": 0.0,
+    "kd_weight": 0.0,
+    "supervisor_requested_name": "rank_extension"
+  },
+  {
+    "display_name": "SimpleAvg + FactorOrth",
+    "factor_lambda": 50.0,
+    "family": "simple_avg",
+    "internal_method_name": "simple_avg_factor_orth",
+    "kd_temperature": 0.0,
+    "kd_weight": 0.0,
+    "supervisor_requested_name": "simple_avg_factor_orth_lam_50"
+  },
+  {
+    "display_name": "RankExt + FactorOrth",
+    "factor_lambda": 50.0,
+    "family": "rank_extension",
+    "internal_method_name": "rank_extension_orth_factor_lam_50",
+    "kd_temperature": 0.0,
+    "kd_weight": 0.0,
+    "supervisor_requested_name": "rank_extension_orth_factor_lam_50"
+  },
+  {
+    "display_name": "SimpleAvg + KD T2",
+    "factor_lambda": 0.0,
+    "family": "simple_avg",
+    "internal_method_name": "simple_avg_kd_T2",
+    "kd_temperature": 2.0,
+    "kd_weight": 1.0,
+    "supervisor_requested_name": "simple_avg_kd_T2"
+  },
+  {
+    "display_name": "RankExt + KD T2",
+    "factor_lambda": 0.0,
+    "family": "rank_extension",
+    "internal_method_name": "rank_extension_kd_only_T2",
+    "kd_temperature": 2.0,
+    "kd_weight": 1.0,
+    "supervisor_requested_name": "rank_extension_kd_only_T2"
+  },
+  {
+    "display_name": "SimpleAvg + FactorOrth + KD T2",
+    "factor_lambda": 50.0,
+    "family": "simple_avg",
+    "internal_method_name": "simple_avg_factor_orth_kd_T2",
+    "kd_temperature": 2.0,
+    "kd_weight": 1.0,
+    "supervisor_requested_name": "simple_avg_factor_orth_lam_50_kd_T2"
+  },
+  {
+    "display_name": "RankExt + FactorOrth + KD T2",
+    "factor_lambda": 50.0,
+    "family": "rank_extension",
+    "internal_method_name": "rank_extension_orth_factor_lam_50_kd_T2",
+    "kd_temperature": 2.0,
+    "kd_weight": 1.0,
+    "supervisor_requested_name": "rank_extension_orth_factor_lam_50_kd_T2"
+  }
+]

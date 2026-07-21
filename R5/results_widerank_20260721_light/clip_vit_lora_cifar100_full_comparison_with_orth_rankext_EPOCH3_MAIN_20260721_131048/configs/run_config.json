@@ -1,0 +1,67 @@
+{
+  "base_output_dir": "results/clip_vit_lora_cifar100_full_comparison_with_orth_rankext_EPOCH3_MAIN_20260721_131048",
+  "batch_size": 16,
+  "classes_per_step": 20,
+  "classifier_calibration_by_family": {
+    "rank_extension": false,
+    "simple_avg": true
+  },
+  "combined_kd_weight_scale": 0.5,
+  "combined_lambda_orth_scale": 0.3,
+  "combined_loss_scale_enabled": true,
+  "combined_orth_warmup_enabled": true,
+  "combined_orth_warmup_epochs": 1.0,
+  "head_lr_multiplier_by_family": {
+    "rank_extension": 1.0,
+    "simple_avg": 10.0
+  },
+  "head_lr_multiplier_default": 10.0,
+  "kd_temperatures": [
+    2.0
+  ],
+  "kd_weight": 1.0,
+  "lambda_orth": 50.0,
+  "lora_alpha": 160,
+  "lora_alpha_note": "lora_rank/lora_alpha above describe simple_avg only; rank_extension is family-conditional, see rankext_rank_schedule_active / rankext_alpha_per_rank / rankext_lora_alpha_active",
+  "lora_dropout": 0.05,
+  "lora_rank": 80,
+  "model_checkpoint": "openai/clip-vit-base-patch16",
+  "num_steps": 5,
+  "optimizer": "AdamW",
+  "rankext_alpha_per_rank": 2.0,
+  "rankext_lora_alpha_active": 320.0,
+  "rankext_more_params_than_simple_avg": true,
+  "rankext_orth_lambda_warmup_enabled": true,
+  "rankext_orth_lambda_warmup_epochs": 1.0,
+  "rankext_rank_schedule_active": [
+    32,
+    64,
+    96,
+    128,
+    160
+  ],
+  "rankext_rank_schedule_wide_enabled": true,
+  "run_name": "clip_vit_lora_cifar100_full_comparison_with_orth_rankext_EPOCH3_MAIN",
+  "run_tag": "20260721_131048",
+  "scheduler": "cosine",
+  "seed": 42,
+  "target_modules_by_family": {
+    "rank_extension": [
+      "q_proj",
+      "v_proj"
+    ],
+    "simple_avg": [
+      "q_proj",
+      "k_proj",
+      "v_proj",
+      "out_proj"
+    ]
+  },
+  "target_modules_default": [
+    "q_proj",
+    "k_proj",
+    "v_proj",
+    "out_proj"
+  ],
+  "use_classifier_calibration_master_switch": true
+}

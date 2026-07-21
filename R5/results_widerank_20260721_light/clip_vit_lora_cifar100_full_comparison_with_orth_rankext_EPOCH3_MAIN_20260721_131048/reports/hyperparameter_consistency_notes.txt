@@ -1,0 +1,4 @@
+Hyperparameter consistency notes
+================================
+
+Delta-trace and factor-orth variants use the same main hyperparameters when matched by family and KD temperature: LoRA rank/alpha/dropout, target modules, epochs, LR, batch size, optimizer, scheduler, KD temperature and KD weight. If simple_avg_delta_trace outperforms simple_avg_factor_orth, the difference is therefore more likely due to orthogonality formulation and loss scale than hyperparameter mismatch.

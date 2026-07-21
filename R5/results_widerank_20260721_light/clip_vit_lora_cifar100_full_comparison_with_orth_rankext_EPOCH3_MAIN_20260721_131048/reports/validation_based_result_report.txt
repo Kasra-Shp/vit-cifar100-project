@@ -1,0 +1,10 @@
+Validation-based result report
+==============================
+
+Best method by all-seen accuracy: SimpleAvg + FactorOrth (simple_avg_factor_orth), 75.54%.
+Best method by best validation CE: SimpleAvg + FactorOrth (simple_avg_factor_orth), 0.0950.
+Best method by final validation CE: RankExt + FactorOrth (rank_extension_orth_factor_lam_50), 0.1053.
+Most stable method by validation CE: SimpleAvg (simple_avg), std=0.0657.
+Strongest overfitting signal: RankExt + KD T2 (rank_extension_kd_only_T2), signal=strong, flags=val_up_train_down;final_val_worse_than_best.
+
+Do not judge methods only by final/test accuracy. High all-seen accuracy with high final validation CE indicates weaker validation behavior; low accuracy with low/stable validation CE indicates cleaner training dynamics but weaker final task performance. Validation CE is epoch-level only, so overfitting detection is useful but coarse.

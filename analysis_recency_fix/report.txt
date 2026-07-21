@@ -1,0 +1,354 @@
+================================================================================
+analysis_recency_fix -- classifier recency-bias diagnosis and fix (2026-07-21)
+================================================================================
+
+Source run analyzed: R3/R5/results_widerank_20260721_light/
+  clip_vit_lora_cifar100_full_comparison_with_orth_rankext_EPOCH3_MAIN_20260721_131048
+  (resolved path confirmed by recursive search under R3/R5; there is a
+  second, unrelated top-level ./R5 directory in the repo -- NOT used here,
+  the task explicitly named "R5 inside R3").
+Comparison baseline: R3/results_strict_20260717_light/
+  clip_vit_lora_cifar100_full_comparison_with_orth_rankext_EPOCH3_MAIN_20260717_015946
+  (identical config to the WIDERANK run except rankext_rank_schedule_wide_enabled).
+
+No training was run this session. All numbers below come from CSVs already
+saved in those two run directories. Code changes are for the NEXT cluster run.
+
+================================================================================
+TASK A -- full review of R5
+================================================================================
+
+A.1 -- Cross-check the open-vs-restricted gap across tables
+--------------------------------------------------------------------------------
+- tables/per_step_accuracy_open_vs_restricted_by_method.csv is the only table
+  in R5 that reports BOTH numbers per (method, step). Confirmed present and
+  populated for all 8 methods x 5 steps (40 rows).
+- tables/per_step_accuracy_by_method.csv reports OPEN only (its single
+  "accuracy" column is numerically identical to the "accuracy_open" column of
+  the open-vs-restricted table -- verified by diff, e.g. rank_extension step 4
+  = 18.9 in both). This is intentional (it is the OPEN-set table the
+  restricted table exists "alongside", per that table's own docstring in the
+  script), not a gap -- but it means anyone reading
+  per_step_accuracy_by_method.csv alone, without also pulling the
+  open_vs_restricted table, only ever sees the recency-biased number.
+- tables/supervisor_selected_accuracy_comparison.csv and
+  tables/final_metrics_all_methods.csv both report only OPEN numbers
+  (all_seen_accuracy, per_step_accuracy list, etc.) -- these are IDENTICAL to
+  each other row-for-row in R5 (both are the same 8-method supervisor-selected
+  set with no additional methods in "all_methods" here), and both are open
+  argmax throughout. Verified: rank_extension all_seen_accuracy = 23.89 in
+  both files, and 23.89 = mean([0.9, 1.25, 1.6, 18.9, 96.8]) = mean of the
+  OPEN per-step numbers exactly (confirms how all_seen_accuracy is computed:
+  unweighted mean of per-step OPEN accuracy, not restricted).
+- plots/per_task_accuracy_heatmap.png and plots/supervisor_method_step_
+  accuracy_heatmap.png have NO backing CSV in tables/ -- only PNGs. Given the
+  script's evaluate_per_step_accuracy() computes both open and restricted from
+  the same forward pass, these heatmaps are presumably built from the OPEN
+  per_step_accuracy_rows accumulator (same source as
+  per_step_accuracy_by_method.csv), so they inherit the same recency bias
+  with no restricted-argmax counterpart to compare against visually.
+- Net finding: the gap is consistent everywhere it's reported (no
+  contradictions between accuracy_open in the diagnostic table and the "open"
+  numbers elsewhere), but 3 of the 4 non-diagnostic supervisor-facing outputs
+  (per_step_accuracy_by_method.csv, supervisor_selected_accuracy_comparison.csv,
+  final_metrics_all_methods.csv) and both heatmap PNGs report ONLY the
+  recency-biased open number, with no restricted companion in the same file --
+  a reader has to know to cross-reference per_step_accuracy_open_vs_
+  restricted_by_method.csv to see the gap at all.
+
+A.2 -- Quantify classifier row-norm imbalance directly
+--------------------------------------------------------------------------------
+NOT POSSIBLE from R5's saved data. Checked every table and log file in the run
+directory (tables/*_trainable_parameters.csv, tables/*_rank_structure.csv,
+tables/merge_mechanism_by_method_step.csv, logs/training_loss_history_by_batch.csv)
+and searched the whole repo for any .pt/.pth/.npy checkpoint: none exist.
+tables/*_trainable_parameters.csv logs classifier.weight's SHAPE ([100, 768])
+and element COUNT (76800), never its VALUES, for every method -- e.g.
+"rank_extension,5,classifier.weight,classifier,[100, 768],76800". No script in
+this run's pipeline (as it stood before this session's edits) ever computed or
+logged a row norm. merge_mechanism_by_method_step.csv only covers the 8
+LoRA target-module deltas (q/k/v/out_proj per layer), never the classifier.
+
+Indirect evidence is consistent with a real, monotonic scale imbalance:
+restricted (step-local) accuracy sits in the 80-97% band at EVERY step for
+every rank_extension variant (evidence the per-step representations are all
+comparably good), while OPEN accuracy only approaches that same 80-97% band
+at step 5 (the most recently trained step) and is far below it at steps 1-4,
+with the gap shrinking monotonically as a step gets more recent (e.g.
+rank_extension_orth_factor_lam_50_kd_T2: gap -33.5, -49.7, -46.2, -22.3, -3.2
+at steps 1-5). That "most-recent-step-wins" pattern is exactly the WA
+(Zhao et al. 2020) row-norm-imbalance signature the codebase's own
+calibrate_classifier_row_norms() docstring already describes for simple_avg --
+but it cannot be quantified NUMERICALLY (e.g. "step 5's rows are Nx larger
+than step 1's") from anything saved in R5.
+
+This session adds the missing instrumentation for the next run: FIX 1's
+implementation (Task B below) logs
+tables/classifier_row_norm_diagnostics_by_method_step.csv --
+(method, step_id, phase in {pre_calibration, post_calibration}, mean_row_norm,
+row_norm_ratio_vs_step1) -- for all 8 methods, unconditionally, so the next
+run's report can answer A.2 with real numbers instead of an inference.
+
+A.3 -- Rank-schedule finding: STRICT (narrow [16..80]) vs WIDERANK (wide [32..160])
+--------------------------------------------------------------------------------
+Both runs share rankext_orth_lambda_warmup_enabled=true and every other
+config field except the rank schedule (verified against both run_config.json
+files), so this is a clean, single-lever comparison.
+
+method                                    | STRICT | WIDERANK | delta
+-------------------------------------------|--------|----------|-------
+simple_avg                                 |  72.09 |    72.09 |  0.00
+simple_avg_factor_orth                     |  75.54 |    75.54 |  0.00
+simple_avg_kd_T2                           |  71.51 |    71.51 |  0.00
+simple_avg_factor_orth_kd_T2               |  70.18 |    70.18 |  0.00
+rank_extension                             |  21.82 |    23.89 | +2.07
+rank_extension_orth_factor_lam_50          |  31.21 |    30.05 | -1.16
+rank_extension_kd_only_T2                  |  58.85 |    57.11 | -1.74
+rank_extension_orth_factor_lam_50_kd_T2    |  65.34 |    63.53 | -1.81
+
+(all_seen_accuracy, %; STRICT = R3/results_strict_20260717_light, WIDERANK = R5)
+
+3 of 4 rank_extension variants got WORSE with more capacity; the net average
+change across the 4 variants is -0.66pp. Doubling per-step trainable rank
+(and, by the final step, total rank 160 vs 80) did not help -- confirming the
+task's framing that capacity was not the bottleneck. (A separate,
+non-isolated multi-run comparison -- results_revert_20260716_light's 67.66%
+for rank_extension_orth_factor_lam_50_kd_T2, informally "67.7", vs this run's
+63.53% -- shows a larger drop, but that comparison also differs in which
+lambda-warmup/revert state was active; the STRICT-vs-WIDERANK pair above is
+the clean, single-lever comparison and is what this analysis relies on.)
+This directly motivates Task C's revert below.
+
+A.4 -- Sanity-check: was simple_avg affected by the WIDERANK config change?
+--------------------------------------------------------------------------------
+No -- confirmed EXACTLY unaffected. All 4 simple_avg variants show delta =
+0.00 (not just "close to zero" -- byte-identical all_seen_accuracy values in
+both runs' supervisor_selected_accuracy_comparison.csv, e.g. simple_avg_
+factor_orth = 75.53999999999999 in both files to full float precision). This
+is expected: rankext_rank_schedule_wide_enabled only ever touches
+active_rankext_rank_schedule(), which only rank_extension-family methods
+consult (rank="fixed:80" for simple_avg regardless of the flag) -- but it is
+good confirmation the WIDERANK run's config change was correctly scoped and
+didn't leak into the other family via a shared code path.
+
+================================================================================
+TASK B -- three fixes for classifier recency bias
+================================================================================
+
+B.0 -- the mechanism, restated precisely
+--------------------------------------------------------------------------------
+restricted_argmax_accuracy() masks the argmax candidate set down to a step's
+OWN 20 classes before comparing to the label -- so it is, by construction,
+INVARIANT to any UNIFORM per-step rescaling of that step's own classifier
+rows (multiplying all 20 rows of one step by a positive scalar never changes
+which of those 20 rows has the largest masked logit for a given input). The
+80-97% restricted accuracy at every step, for every rank_extension variant,
+is therefore direct proof the representations are already good at every
+step -- what differs between OPEN and RESTRICTED must be inter-step SCALE
+competition, not inter-step REPRESENTATION quality. This is the load-bearing
+fact behind all three fixes below and behind the Task B dry-run (B.5).
+
+B.1 -- Fix 1: non-destructive, family-aware (regime-grouped) calibration
+--------------------------------------------------------------------------------
+Mechanism: rescale each step's classifier row-norms to match the mean norm of
+its own TRAINING-REGIME group (not one shared global target mixing
+teacher-less step 1 with KD-trained steps 2-N). For non-KD variants there is
+only one regime, so this is the SAME operation as the pre-existing "global"
+calibration mode (already proven safe for rank_extension's non-KD variants --
+see calibrate_classifier_row_norms()'s pre-existing POST-INCIDENT FIX note:
+global calibration "corrupted rank_extension's two KD variants... while
+leaving its two non-KD variants fine"). For KD variants, step 1 becomes a
+singleton group (a no-op -- its untouched, teacher-less rows are never
+rescaled using statistics from the differently-trained KD steps, which is the
+literal cause of the prior corruption), and steps 2-N are equalized to their
+OWN shared mean.
+Expected gain: LARGE and specifically targeted. Since restricted accuracy is
+scale-invariant (B.0), it is a valid upper bound on open accuracy after
+perfect scale equalization. Applying it only to the groups this fix actually
+rescales (all 5 steps for the 2 non-KD variants; steps 2-5 for the 2 KD
+variants, step 1 left alone) projects all_seen_accuracy upper bounds of
+70.6% / 87.0% / 85.3% / 87.8% for rank_extension / rank_extension_orth_
+factor_lam_50 / rank_extension_kd_only_T2 / rank_extension_orth_factor_lam_
+50_kd_T2 respectively (see projected_improvement.csv, B.5). Even a
+conservative 50%-of-gap estimate still projects +12 to +28pp gains across the
+4 variants -- the largest realistic gain of the three fixes, because it
+attacks the SAME mechanism (row-norm scale) the R5 diagnostic table directly
+measured, using a mode already empirically validated as safe for 3 of the 4
+affected variants (2 non-KD variants tested clean before; KD variants get a
+mechanism specifically designed around the ONE known corruption case).
+Risks: (a) mode="global" being accidentally applied to rank_extension instead
+of "regime_grouped" would reproduce the KD-variant corruption -- mitigated by
+making calibration_mode an explicit, logged, per-family field rather than a
+single shared bool, and by keeping simple_avg's own mode/behavior byte-for-
+byte unchanged. (b) rank_extension's apply_calibration flips from False to
+True for the first time -- this DOES change its "no calibration" status (the
+task's framing implies this is expected: the task itself asks to add a
+calibration-style fix). (c) purely a post-hoc, eval-time rescale -- no
+retraining, no new parameters, no protocol violation (same category of change
+as the pre-existing simple_avg calibration, which the run's own docstrings
+already treat as a legitimate, standard WA-style correction).
+
+B.2 -- Fix 2: task-ID inference + step-restricted argmax
+--------------------------------------------------------------------------------
+Mechanism: train a lightweight step-ID classifier (or reuse features with a
+shallow linear probe) and restrict the FINAL argmax to the predicted step's
+20 classes, DER-style.
+Expected gain: potentially the LARGEST of the three in the limit -- if the
+step-ID probe were perfect, this would recover exactly the 80-97% restricted-
+accuracy numbers already observed (no upper-bound uncertainty, unlike Fix 1's
+ceiling estimate). But that probe is not perfect, and per (A.1) the eval
+harness has no other signal it currently keeps around at eval time to build
+"is this image from step 3?" training data other than doing a real reserved-
+data training run for a NEW classifier head, which is a materially different
+protocol from a metrics-only calibration pass.
+Risks: this is a NEW mechanism, not a bugfix to an existing one -- it adds a
+second model/head, a second training loop, and a step-ID label space that has
+to be constructed and validated. It also changes the EVALUATION PROTOCOL
+itself (per-step-restricted competition is currently only the DIAGNOSTIC
+"restricted" number, explicitly documented in restricted_argmax_accuracy()'s
+own docstring as "NOT replacing" the standard open 100-way CIL protocol) --
+adopting Fix 2 for the real reported metric would mean rank_extension's
+headline number is no longer directly comparable to simple_avg's under the
+field-standard open-argmax CIL definition, unless simple_avg gets the same
+treatment (out of scope here, and simple_avg does not have this problem to
+anywhere near this degree per A.1). This is real DER-style prior art, but it
+is the heaviest lift of the three and changes what is being measured, not
+just how it's computed.
+
+B.3 -- Fix 3: temperature scaling / logit-norm equalization at inference
+--------------------------------------------------------------------------------
+Mechanism: rescale each row's logits by (something proportional to) its own
+norm at inference time, per-example, with no training.
+Expected gain: SMALL relative to Fix 1. This is really the same lever as Fix
+1 (row-norm equalization) but applied per-example/per-forward-pass at
+inference instead of once to the persisted classifier weights -- it does not
+add a new mechanism, but it also does not add the one piece of engineering
+Fix 1 already has for free: TRAINING-REGIME grouping. A naive single global
+temperature-per-row-norm rule, applied uniformly, is close to re-deriving the
+OLD "global" calibration mode that is already proven to corrupt the KD
+variants (same mixing-across-regimes failure mode as B.1's risk (a)) --
+unless it is ALSO made regime-aware, at which point it is functionally Fix 1
+implemented at a different point in the pipeline (per-example at eval vs.
+once on the merged weights), with no accuracy advantage and less favorable
+engineering properties (recomputed every forward pass rather than once after
+merge; both eval and any downstream deployment code have to remember to apply
+it, whereas Fix 1's correction is baked into the shipped weights).
+Risks: if implemented naively (global, non-regime-aware), reintroduces the
+exact KD-variant corruption documented in calibrate_classifier_row_norms()'s
+history. If implemented regime-aware, it is not actually simpler than Fix 1 --
+it is Fix 1 with worse locality (applied redundantly at every eval call
+instead of once).
+
+B.4 -- Ranking and decision
+--------------------------------------------------------------------------------
+Ranked by (expected effectiveness x ease of implementation x protocol
+cleanliness):
+  1. Fix 1 (regime-grouped calibration) -- large expected gain (backed by the
+     restricted-accuracy ceiling numbers below), reuses an existing, already-
+     tested mechanism (calibrate_classifier_row_norms) with one new grouping
+     rule, is a pure eval-time non-destructive correction (same category as
+     the calibration already shipped for simple_avg), and is a one-flag
+     revert (RANKEXT_FAMILY_AWARE_CALIBRATION_ENABLED) if it doesn't pan out
+     on the next run.
+  2. Fix 3 (logit-norm equalization) -- comparable mechanism to Fix 1 but with
+     no engineering advantage over it once made regime-aware (which it must
+     be, to avoid re-deriving the known-bad global-mixing failure), and worse
+     locality (per-forward-pass vs. once on merged weights). Only wins over
+     Fix 1 if you specifically want a training-free-AND-merge-free
+     correction (e.g. for a serving pipeline that can't re-touch weights) --
+     not a consideration here.
+  3. Fix 2 (task-ID probe + restricted argmax) -- plausibly the highest
+     asymptotic ceiling, but it is a new mechanism (new head, new training
+     data/labels, new failure modes for the probe itself) and it changes what
+     is being measured (restricted-by-construction is not the same claim as
+     open-100-way CIL accuracy), which this analysis is not willing to trade
+     for a same-run comparison against simple_avg's untouched open-argmax
+     numbers.
+
+CHOSEN: Fix 1 (family-aware, regime-grouped classifier calibration for
+rank_extension). Implemented this session, flag-gated via
+RANKEXT_FAMILY_AWARE_CALIBRATION_ENABLED (default True for the next run).
+
+B.5 -- Dry run against R5's saved data
+--------------------------------------------------------------------------------
+R5 has NO saved logits or classifier weight VALUES (see A.2) -- only shapes --
+so calibrate_classifier_row_norms(mode="regime_grouped") cannot literally be
+re-invoked on R5's actual tensors. Instead this dry run uses the B.0 identity
+(restricted accuracy is scale-invariant, hence a valid upper bound on open
+accuracy after any scale-only correction) applied ONLY to the step-groups
+FIX 1 actually rescales for each method (all 5 steps for the 2 non-KD
+variants; steps 2-5 only for the 2 KD variants, since step 1 is a deliberate
+no-op there) -- see projected_improvement.csv for the full per-step table.
+Direction check: YES, strictly positive for every touched step in every
+method (by construction, since accuracy_open < accuracy_restricted at every
+one of those steps in R5 -- verified, no exceptions among the 18 touched
+step-rows out of 20 total rank_extension-family rows). Untouched steps (KD
+variants' step 1) are projected at their CURRENT value, i.e. zero claimed
+improvement there, consistent with that group being a designed no-op.
+
+Projected all_seen_accuracy (mean of per-step OPEN accuracy, matching how
+R5's own all_seen_accuracy column is computed -- see A.1):
+
+method                                   | current | upper bound | delta (UB) | conservative (50% of gap) | delta (cons.)
+-------------------------------------------|---------|-------------|------------|----------------------------|----------------
+rank_extension                             |   23.89 |       70.59 |     +46.70 |                      47.24 |         +23.35
+rank_extension_orth_factor_lam_50          |   30.05 |       86.96 |     +56.91 |                      58.50 |         +28.45
+rank_extension_kd_only_T2                  |   57.11 |       85.29 |     +28.18 |                      71.20 |         +14.09
+rank_extension_orth_factor_lam_50_kd_T2    |   63.53 |       87.81 |     +24.28 |                      75.67 |         +12.14
+
+The "upper bound" column is a genuine ceiling (matching restricted accuracy
+exactly on every touched step), not a guaranteed outcome -- regime-grouped
+mean-norm matching removes the SYSTEMATIC step-to-step scale drift but not
+the residual per-CLASS norm variance within a step, so real gains on the next
+run should land somewhere between "conservative" and "upper bound", not
+necessarily at the ceiling. Even the conservative estimate (+12 to +28pp
+all_seen_accuracy) would be enough to move every rank_extension variant's
+ranking materially closer to its simple_avg-family counterpart.
+
+================================================================================
+TASK C -- rank-schedule revert
+================================================================================
+USE_RANKEXT_RANK_SCHEDULE_WIDE flipped True -> False (script line ~712).
+RANKEXT_RANK_SCHEDULE_WIDE itself ([32,64,96,128,160]) is left defined but
+unused, matching this codebase's existing convention of keeping a flag's
+"off" value inspectable rather than deleting it (see e.g.
+RANKEXT_ORTH_LAMBDA_WARMUP_ENABLED's own history in the same file). This
+restores the default schedule ([16,32,48,64,80], alpha=160) for rank_extension
+-- see A.3 for the evidence this was net-negative -- while leaving everything
+else that IS working from the WIDERANK config untouched: RANKEXT_ORTH_LAMBDA_
+WARMUP_ENABLED=True, the combined-loss-scale settings, target modules, head
+LR multipliers, etc. all remain exactly as they were in R5. Together with
+Task B (the ONLY new lever), the next run vs. STRICT is now a clean,
+single-lever attribution test for Fix 1's calibration change, per this
+codebase's own "one lever per run, attribute honestly" standard (see
+RANKEXT_ORTH_LAMBDA_WARMUP_ENABLED's and USE_RANKEXT_RANK_SCHEDULE_WIDE's own
+in-file comments for that standard being applied previously).
+
+See final_per_method_config_table.csv / final_per_method_config_table.py in
+this directory for the resulting per-method config, generated without
+running the full (GPU/dataset-dependent) script -- it reproduces
+add_method()'s resolution logic standalone, using the same constant values as
+the edited .py file, to produce a table for Task's VERIFICATION requirement
+without training.
+
+================================================================================
+VERIFICATION
+================================================================================
+- py_compile vit_lora_cifar100_full5step_n5.py: PASS (no output, exit 0).
+- python -m pyflakes vit_lora_cifar100_full5step_n5.py: PASS (zero warnings).
+- final_per_method_config_table.csv (this directory) confirms: all 4
+  rank_extension methods now show rank_schedule="16->32->48->64->80" (reverted,
+  narrow -- Task C) and apply_calibration=True, calibration_mode=
+  regime_grouped (Task B, the chosen fix); all 4 simple_avg methods are
+  byte-identical to before (apply_calibration=True, calibration_mode=global,
+  rank_schedule="fixed:80") -- confirming Task B did not touch simple_avg's
+  path.
+- Dry-run projection: see B.5 and projected_improvement.csv. Direction is
+  correct (strictly positive for every step Fix 1 touches); magnitude is
+  reported as a range (conservative to upper-bound) rather than a single
+  fabricated number, since R5 has no saved logits/weight values to run the
+  literal fix against (A.2) -- this is a projection from the restricted-
+  accuracy scale-invariance identity (B.0), not a replay of the actual
+  correction on real tensors. The next run's new
+  classifier_row_norm_diagnostics_by_method_step.csv table will allow a
+  direct, non-projected before/after comparison.

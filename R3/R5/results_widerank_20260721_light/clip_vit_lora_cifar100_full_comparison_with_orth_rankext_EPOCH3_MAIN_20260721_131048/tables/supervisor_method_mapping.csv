@@ -1,0 +1,9 @@
+internal_method_name,supervisor_requested_name,display_name,family,factor_lambda,kd_temperature,kd_weight
+simple_avg,simple_avg,SimpleAvg,simple_avg,0.0,0.0,0.0
+rank_extension,rank_extension,RankExt,rank_extension,0.0,0.0,0.0
+simple_avg_factor_orth,simple_avg_factor_orth_lam_50,SimpleAvg + FactorOrth,simple_avg,50.0,0.0,0.0
+rank_extension_orth_factor_lam_50,rank_extension_orth_factor_lam_50,RankExt + FactorOrth,rank_extension,50.0,0.0,0.0
+simple_avg_kd_T2,simple_avg_kd_T2,SimpleAvg + KD T2,simple_avg,0.0,2.0,1.0
+rank_extension_kd_only_T2,rank_extension_kd_only_T2,RankExt + KD T2,rank_extension,0.0,2.0,1.0
+simple_avg_factor_orth_kd_T2,simple_avg_factor_orth_lam_50_kd_T2,SimpleAvg + FactorOrth + KD T2,simple_avg,50.0,2.0,1.0
+rank_extension_orth_factor_lam_50_kd_T2,rank_extension_orth_factor_lam_50_kd_T2,RankExt + FactorOrth + KD T2,rank_extension,50.0,2.0,1.0

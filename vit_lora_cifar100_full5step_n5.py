@@ -301,17 +301,63 @@ def family_target_modules(family):
 # matching on method-name substrings.
 USE_CLASSIFIER_CALIBRATION = True
 
+# ACCURACY-PUSH CHANGE 2b (FIX 1, analysis_recency_fix/report.txt): family-aware,
+# REGIME-GROUPED calibration for rank_extension. The POST-INCIDENT FIX above
+# disabled ALL calibration for rank_extension because the single GLOBAL target
+# norm (mean over all 100 rows) mixed step 1's untouched, teacher-less rows
+# with steps 2-N's KD-trained rows and corrupted the KD variants (68.0%->26.2%,
+# 59.3%->50.1%). analysis_recency_fix/report.txt traces the low OPEN-argmax
+# numbers for ALL FOUR rank_extension variants (not just the KD ones) to a
+# separate, still-unaddressed mechanism -- recency bias in the open 100-way
+# argmax: tables/per_step_accuracy_open_vs_restricted_by_method.csv (WIDERANK
+# run) shows RESTRICTED (step-local 20-way) accuracy in the 80-97% range at
+# EVERY step for every rank_extension variant, while OPEN accuracy for
+# early/middle steps collapses toward 0-50% (e.g. rank_extension_orth_factor_
+# lam_50_kd_T2: restricted 93-97% at every step, open 45-70% at steps 1-4). The
+# frozen blocks are preserving old-class knowledge correctly -- their
+# classifier rows are simply losing the 100-way argmax competition on SCALE,
+# not on discriminative quality. RANKEXT_FAMILY_AWARE_CALIBRATION_ENABLED
+# re-enables calibration for rank_extension using a GROUPED target instead of
+# the single global one: for KD variants, step 1 (teacher-less) is calibrated
+# to its OWN group mean (a singleton group -> no-op, so its untouched rows are
+# never rescaled using KD-regime statistics -- avoiding the exact corruption
+# mechanism above); steps 2..N (all KD-trained against a distillation signal
+# step 1 never sees) are calibrated as ONE group to THEIR OWN shared mean,
+# directly equalizing norm growth across steps 2..N without mixing in step 1.
+# For non-KD variants there is only one training regime across all NUM_STEPS
+# steps, so this reduces to the same global calibration the POST-INCIDENT FIX
+# said was "fine" for those two variants (only the KD variants were corrupted
+# before). See calibrate_classifier_row_norms(mode=...) for the implementation
+# and CALIBRATION_MODE_BY_FAMILY for the per-family selector. Flag-gated so it
+# can be reverted in one line; recorded per-method via the "calibration_mode"
+# column in run_config.json / hyperparameters_by_method.json.
+RANKEXT_FAMILY_AWARE_CALIBRATION_ENABLED = True
+
 # Master switch above still gates calibration overall (False disables it for
 # every method, same as before). When True, CALIBRATION_ENABLED_FAMILIES
 # decides which families actually get it. simple_avg: keep True (empirically
-# helps -- see report). rank_extension: False (its persistent, row-masked
-# classifier is not the independently-reinitialized-heads scenario WA
-# calibration targets, and calibrating it corrupted the KD variants). Add new
-# families here explicitly; unlisted families default to no calibration (see
-# family_applies_calibration() below).
+# helps -- see report). rank_extension: now True, gated behind
+# RANKEXT_FAMILY_AWARE_CALIBRATION_ENABLED above -- its persistent, row-masked
+# classifier is still not the independently-reinitialized-heads scenario plain
+# WA/global calibration targets (that mode remains OFF for it), but the
+# regime-grouped mode below is specifically designed around its training
+# structure. Add new families here explicitly; unlisted families default to no
+# calibration (see family_applies_calibration() below).
 CALIBRATION_ENABLED_FAMILIES = {
     "simple_avg": True,
-    "rank_extension": False,
+    "rank_extension": bool(RANKEXT_FAMILY_AWARE_CALIBRATION_ENABLED),
+}
+
+# Per-family calibration ALGORITHM (only consulted when
+# family_applies_calibration(family) is True). "global": original single
+# target-norm-over-all-rows behavior (Zhao et al. 2020 WA, unchanged for
+# simple_avg). "regime_grouped": FIX 1 above, rank_extension only. "off" is
+# never actually selected while CALIBRATION_ENABLED_FAMILIES also gates the
+# family, but is included so this dict alone documents intent if that
+# invariant is ever changed.
+CALIBRATION_MODE_BY_FAMILY = {
+    "simple_avg": "global",
+    "rank_extension": "regime_grouped" if RANKEXT_FAMILY_AWARE_CALIBRATION_ENABLED else "off",
 }
 
 
@@ -320,6 +366,14 @@ def family_applies_calibration(family):
     CALIBRATION_ENABLED_FAMILIES. Unlisted families default to False (safer
     than silently calibrating a family nobody has reasoned about)."""
     return bool(USE_CLASSIFIER_CALIBRATION) and bool(CALIBRATION_ENABLED_FAMILIES.get(str(family), False))
+
+
+def family_calibration_mode(family):
+    """Per-family calibration algorithm selector -- see
+    CALIBRATION_MODE_BY_FAMILY above. Only meaningful when
+    family_applies_calibration(family) is True; unlisted families default to
+    "global" (matches the pre-existing, single-mode behavior)."""
+    return str(CALIBRATION_MODE_BY_FAMILY.get(str(family), "global"))
 
 # ACCURACY-PUSH CHANGE 3 (flag): classifier-head LR = LR_LORA/LR_RANKEXT times
 # this multiplier, via HeadLRTrainerMixin.create_optimizer() below. Set to 1.0 to
@@ -635,8 +689,27 @@ RANKEXT_ALPHA_PER_RANK = 2.0
 # rank_extension's factor-orth loss is already 20-300x smaller than
 # simple_avg's at the default rank, and rescaling lambda here would confound
 # the capacity test with an orthogonality-strength change.
+#
+# CAPACITY TEST RESULT (2026-07-21, analysis_recency_fix/report.txt Task A.3):
+# REVERTED OFF. The WIDERANK run (R3/R5/results_widerank_20260721_light) vs
+# the STRICT run (R3/results_strict_20260717_light, identical config except
+# this one flag) isolates the capacity change cleanly -- both runs have
+# RANKEXT_ORTH_LAMBDA_WARMUP_ENABLED=True, so the delta below is attributable
+# to rank-schedule width alone. all_seen_accuracy deltas (STRICT -> WIDERANK):
+# rank_extension +2.07 (21.82->23.89), rank_extension_orth_factor_lam_50
+# -1.16 (31.21->30.05), rank_extension_kd_only_T2 -1.74 (58.85->57.11),
+# rank_extension_orth_factor_lam_50_kd_T2 -1.81 (65.34->63.53) -- net -0.66
+# average across the 4 rank_extension variants, 3 of 4 methods WORSE. Doubling
+# trainable rank capacity did not help; per report.txt Task A.1/A.2, the
+# bottleneck this run's low OPEN-argmax numbers actually measure is classifier
+# recency bias (see RANKEXT_FAMILY_AWARE_CALIBRATION_ENABLED above), not
+# representational capacity -- confirming the report's prediction before this
+# revert. Reverted to the default (narrow, [16,32,48,64,80]) schedule so the
+# NEXT run isolates FIX 1 (the calibration change) as the only lever versus
+# the STRICT baseline, per the "one lever per run, attribute honestly"
+# standard this codebase has held itself to throughout.
 RANKEXT_RANK_SCHEDULE_WIDE = [32, 64, 96, 128, 160]
-USE_RANKEXT_RANK_SCHEDULE_WIDE = True
+USE_RANKEXT_RANK_SCHEDULE_WIDE = False
 assert len(RANKEXT_RANK_SCHEDULE_WIDE) == NUM_STEPS
 assert all(RANKEXT_RANK_SCHEDULE_WIDE[i] > RANKEXT_RANK_SCHEDULE_WIDE[i - 1] for i in range(1, NUM_STEPS))
 
@@ -832,6 +905,7 @@ def build_active_method_configs():
             "target_modules": ", ".join(family_target_modules(family)),
             "head_lr_multiplier": family_head_lr_multiplier(family),
             "apply_calibration": family_applies_calibration(family),
+            "calibration_mode": family_calibration_mode(family) if family_applies_calibration(family) else "off",
         })
 
     add_method("simple_avg", "simple_avg", "simple_avg")
@@ -985,6 +1059,19 @@ per_step_accuracy_rows = []
 # apply_calibration=False methods). One row per (method, step_id), long
 # format, mirrors per_step_accuracy_rows's schema exactly.
 per_step_accuracy_restricted_rows = []
+# FIX 1 diagnostic (analysis_recency_fix/report.txt): one row per (method,
+# step_id, phase) logging the FINAL merged/final classifier's per-step-block
+# row-norm statistics -- mean row norm for that step's 20-class block, and its
+# ratio to step 1's mean row norm (a direct, numerical answer to "are later
+# steps' rows several times larger than earlier steps'?"). Logged
+# unconditionally (both phase="pre_calibration", always, and
+# phase="post_calibration", only when apply_calibration is True for that
+# method) from inside calibrate_classifier_row_norms() / its call sites below,
+# so this table has evidence for EVERY method regardless of whether
+# calibration is applied to it -- R5 (WIDERANK run) predates this
+# instrumentation and has no equivalent data, which is why Task A.2 of that
+# analysis could only report shapes, not norms.
+classifier_row_norm_diagnostic_rows = []
 # PRE-THESIS FIX 2: {method_name: {step_idx: {task_step: accuracy_fraction}}} --
 # only populated for rank_extension family (the only family with a genuinely
 # evolving model to checkpoint mid-training); used to draw a true forgetting
@@ -1227,6 +1314,7 @@ print({
     "active_rankext_rank_schedule()": active_rankext_rank_schedule(),
     "RANKEXT_ORTH_LAMBDA_WARMUP_ENABLED": RANKEXT_ORTH_LAMBDA_WARMUP_ENABLED,
     "RANKEXT_ORTH_LAMBDA_WARMUP_EPOCHS": RANKEXT_ORTH_LAMBDA_WARMUP_EPOCHS,
+    "RANKEXT_FAMILY_AWARE_CALIBRATION_ENABLED": RANKEXT_FAMILY_AWARE_CALIBRATION_ENABLED,
     "RANKEXT_ALPHA_PER_RANK": RANKEXT_ALPHA_PER_RANK,
     "LR_RANKEXT": LR_RANKEXT,
     "REPLAY_PER_CLASS": REPLAY_PER_CLASS,
@@ -1499,6 +1587,8 @@ print("LoRA target modules (default/simple_avg):", TARGET_MODULES)
 print("LoRA target modules by family (TARGET_MODULES_BY_FAMILY):", TARGET_MODULES_BY_FAMILY)
 print("Classifier calibration master switch (USE_CLASSIFIER_CALIBRATION):", USE_CLASSIFIER_CALIBRATION)
 print("Classifier calibration by family (CALIBRATION_ENABLED_FAMILIES):", CALIBRATION_ENABLED_FAMILIES)
+print("Classifier calibration mode by family (CALIBRATION_MODE_BY_FAMILY):", CALIBRATION_MODE_BY_FAMILY)
+print("Rank-extension family-aware calibration (RANKEXT_FAMILY_AWARE_CALIBRATION_ENABLED):", RANKEXT_FAMILY_AWARE_CALIBRATION_ENABLED)
 print("Head LR multiplier (default/simple_avg, HEAD_LR_MULTIPLIER):", HEAD_LR_MULTIPLIER)
 print("Head LR multiplier by family (HEAD_LR_MULTIPLIER_BY_FAMILY):", HEAD_LR_MULTIPLIER_BY_FAMILY)
 print("Rank-extension rank schedule in effect:", active_rankext_rank_schedule(),
@@ -2614,16 +2704,64 @@ def apply_deltas_to_base(merged_deltas, step_states):
 
     return model
 
-def calibrate_classifier_row_norms(model, eps=1e-8):
+def log_classifier_row_norm_diagnostics(model, method_name, phase, eps=1e-8):
+    """
+    FIX 1 diagnostic (analysis_recency_fix/report.txt): appends one row per CL
+    step to the module-global classifier_row_norm_diagnostic_rows
+    accumulator, recording that step's classifier weight-row-block mean norm
+    and its ratio to step 1's mean norm -- direct numerical evidence for "are
+    later steps' rows several times larger than earlier steps'?" (R5/WIDERANK
+    predates this instrumentation and only has parameter shapes on disk, not
+    norms; see report.txt Task A.2). Read-only: never mutates the model. Call
+    with phase="pre_calibration" before any calibration is applied
+    (unconditionally, for every method) and phase="post_calibration" after
+    calibrate_classifier_row_norms() runs (only for apply_calibration=True
+    methods).
+    """
+    with torch.no_grad():
+        row_norms = model.classifier.weight.norm(dim=1).detach().cpu()
+    step_means = [
+        float(row_norms[list(classes_for_step(step_idx))].mean().item())
+        for step_idx in range(NUM_STEPS)
+    ]
+    step1_mean = max(step_means[0], eps)
+    for step_idx, m in enumerate(step_means):
+        classifier_row_norm_diagnostic_rows.append({
+            "method": method_name,
+            "step_id": int(step_idx + 1),
+            "phase": phase,
+            "mean_row_norm": m,
+            "row_norm_ratio_vs_step1": m / step1_mean,
+        })
+
+
+def calibrate_classifier_row_norms(model, eps=1e-8, mode="global", uses_kd=False, method_name=None):
     """
     ACCURACY-PUSH CHANGE 2: rehearsal-free, post-merge-only classifier
     calibration (WA-style weight alignment, Zhao et al. 2020, "Maintaining
     Discrimination and Fairness in Class Incremental Learning").
 
-    Rescales each CL step's 20-class weight-row block so its mean row norm
-    matches the global (all 100 rows) mean row norm, then evaluates. This is a
-    pure post-hoc correction on the already-merged/stitched classifier -- no
-    retraining, no rehearsal data, applied identically to every method.
+    mode="global" (default, unchanged behavior): rescales each CL step's
+    20-class weight-row block so its mean row norm matches ONE target norm
+    computed as the mean over ALL 100 rows. Pure post-hoc correction on the
+    already-merged/stitched classifier -- no retraining, no rehearsal data.
+
+    mode="regime_grouped" (FIX 1, analysis_recency_fix/report.txt,
+    rank_extension only -- see RANKEXT_FAMILY_AWARE_CALIBRATION_ENABLED above
+    for the full rationale): instead of ONE global target mixing every step,
+    partitions the NUM_STEPS step-blocks into homogeneous training-regime
+    GROUPS and computes an independent target norm per group. When uses_kd is
+    True: group A = {step 1} (always teacher-less -- there is no prior-step
+    checkpoint yet at step 1), group B = {steps 2..NUM_STEPS} (all trained
+    against a KD teacher). Group A is a singleton, so its "target" equals its
+    own current mean -- a deliberate no-op that leaves step 1's rows
+    completely untouched by later steps' KD-regime statistics (this is
+    exactly the cross-regime mixing that corrupted the KD variants under the
+    old global mode; see the POST-INCIDENT FIX note this function used to
+    carry). Group B is calibrated to ITS OWN shared mean, directly equalizing
+    norm growth across steps 2..NUM_STEPS. When uses_kd is False, there is
+    only one training regime across every step, so this mode reduces to the
+    same result as mode="global".
 
     Rationale specific to this codebase: for the simple_avg family,
     apply_deltas_to_base() stitches together 5 classifier row-blocks that each
@@ -2632,30 +2770,52 @@ def calibrate_classifier_row_norms(model, eps=1e-8):
     different conditions (KD vs not, orth vs not) and, in every case, trained
     with a 100-way softmax where 80 of the 100 classes are permanently absent
     that step (pure negatives, never positive) -- a well-known recipe for
-    severe cross-group row-norm imbalance. For rank_extension the classifier is
-    shared/incremental rather than independently re-initialized, but the same
-    row-norm-driven scale bias can still arise across step-groups trained at
-    different points in the schedule, so the identical correction is applied
-    there too (uniform protocol across all 8 methods).
+    severe cross-group row-norm imbalance; mode="global" is used for this
+    family. For rank_extension the classifier is shared/incremental rather
+    than independently re-initialized, and mode="regime_grouped" is used
+    instead (see above).
 
     Only the weight rows are rescaled, not the bias, matching the original WA
     formulation (bias reflects class prior/frequency, not representation
     scale, so rescaling it is not part of the correction).
+
+    Logs pre- and post-calibration row-norm diagnostics via
+    log_classifier_row_norm_diagnostics() when method_name is given -- a
+    read-only side effect on the module-global
+    classifier_row_norm_diagnostic_rows accumulator, not on the model.
     """
+    if method_name is not None:
+        log_classifier_row_norm_diagnostics(model, method_name, phase="pre_calibration", eps=eps)
+
     with torch.no_grad():
         W = model.classifier.weight
         row_norms = W.norm(dim=1)
-        target_norm = float(row_norms.mean().item())
 
-        for step_idx in range(NUM_STEPS):
-            idx = torch.tensor(
-                list(classes_for_step(step_idx)),
+        if mode == "regime_grouped" and uses_kd:
+            groups = [[0], list(range(1, NUM_STEPS))]
+        else:
+            groups = [list(range(NUM_STEPS))]
+
+        for group in groups:
+            group_idx = torch.tensor(
+                [c for step_idx in group for c in classes_for_step(step_idx)],
                 device=W.device,
                 dtype=torch.long,
             )
-            group_norm = float(row_norms[idx].mean().clamp_min(eps).item())
-            scale = target_norm / group_norm
-            W[idx] *= scale
+            group_target_norm = float(row_norms[group_idx].mean().item())
+
+            for step_idx in group:
+                idx = torch.tensor(
+                    list(classes_for_step(step_idx)),
+                    device=W.device,
+                    dtype=torch.long,
+                )
+                step_norm = float(row_norms[idx].mean().clamp_min(eps).item())
+                scale = group_target_norm / step_norm
+                W[idx] *= scale
+
+    if method_name is not None:
+        log_classifier_row_norm_diagnostics(model, method_name, phase="post_calibration", eps=eps)
 
     return model
 
@@ -3367,7 +3527,17 @@ def run_simple_avg_variant(method_name):
     )
 
     if method_cfg["apply_calibration"]:
-        merged_model = calibrate_classifier_row_norms(merged_model)
+        merged_model = calibrate_classifier_row_norms(
+            merged_model,
+            mode=method_cfg.get("calibration_mode", "global"),
+            uses_kd=bool(method_cfg["uses_kd"]),
+            method_name=method_name,
+        )
+    else:
+        # FIX 1 diagnostic: still record pre-calibration row-norm stats for
+        # non-calibrated methods so classifier_row_norm_diagnostic_rows has
+        # full coverage across all 8 methods, not just the calibrated ones.
+        log_classifier_row_norm_diagnostics(merged_model, method_name, phase="pre_calibration")
 
     eval_rows = evaluate_model(merged_model, method_name)
 
@@ -4856,7 +5026,17 @@ def run_rank_extension_variant(
     )
 
     if ACTIVE_METHOD_MAP[method_name]["apply_calibration"]:
-        final_rank_model = calibrate_classifier_row_norms(final_rank_model)
+        final_rank_model = calibrate_classifier_row_norms(
+            final_rank_model,
+            mode=ACTIVE_METHOD_MAP[method_name].get("calibration_mode", "global"),
+            uses_kd=bool(ACTIVE_METHOD_MAP[method_name]["uses_kd"]),
+            method_name=method_name,
+        )
+    else:
+        # FIX 1 diagnostic: still record pre-calibration row-norm stats for
+        # non-calibrated methods so classifier_row_norm_diagnostic_rows has
+        # full coverage across all 8 methods, not just the calibrated ones.
+        log_classifier_row_norm_diagnostics(final_rank_model, method_name, phase="pre_calibration")
 
     eval_rows = evaluate_model(final_rank_model, method_name)
 
@@ -5954,7 +6134,7 @@ def cfg_df():
     c["seed"]=int(SEED)
     return c.reset_index(drop=True)
 CFG=cfg_df()
-js(Path(CONFIGS_DIR)/"run_config.json", {"run_name":RUN_NAME,"run_tag":RUN_TAG,"base_output_dir":BASE_OUTPUT_DIR,"model_checkpoint":MODEL_CHECKPOINT,"seed":SEED,"num_steps":NUM_STEPS,"classes_per_step":CLASSES_PER_STEP,"lora_rank":LORA_R,"lora_alpha":LORA_ALPHA,"lora_alpha_note":"lora_rank/lora_alpha above describe simple_avg only; rank_extension is family-conditional, see rankext_rank_schedule_active / rankext_alpha_per_rank / rankext_lora_alpha_active","lora_dropout":LORA_DROPOUT,"target_modules_default":TARGET_MODULES,"target_modules_by_family":{k:list(v) for k,v in TARGET_MODULES_BY_FAMILY.items()},"lambda_orth":LAMBDA_ORTH,"kd_temperatures":KD_TEMPERATURES,"kd_weight":KD_WEIGHT,"optimizer":"AdamW","scheduler":SCHED,"batch_size":BATCH_LORA,"use_classifier_calibration_master_switch":bool(USE_CLASSIFIER_CALIBRATION),"classifier_calibration_by_family":dict(CALIBRATION_ENABLED_FAMILIES),"head_lr_multiplier_default":float(HEAD_LR_MULTIPLIER),"head_lr_multiplier_by_family":{k:float(v) for k,v in HEAD_LR_MULTIPLIER_BY_FAMILY.items()},"rankext_rank_schedule_active":active_rankext_rank_schedule(),"rankext_rank_schedule_wide_enabled":bool(USE_RANKEXT_RANK_SCHEDULE_WIDE),"rankext_alpha_per_rank":float(RANKEXT_ALPHA_PER_RANK),"rankext_lora_alpha_active":float(active_rankext_lora_alpha()),"rankext_more_params_than_simple_avg":bool(USE_RANKEXT_RANK_SCHEDULE_WIDE),"rankext_orth_lambda_warmup_enabled":bool(RANKEXT_ORTH_LAMBDA_WARMUP_ENABLED),"rankext_orth_lambda_warmup_epochs":float(RANKEXT_ORTH_LAMBDA_WARMUP_EPOCHS),"combined_loss_scale_enabled":bool(COMBINED_LOSS_SCALE_ENABLED),"combined_lambda_orth_scale":float(COMBINED_LAMBDA_ORTH_SCALE),"combined_kd_weight_scale":float(COMBINED_KD_WEIGHT_SCALE),"combined_orth_warmup_enabled":bool(COMBINED_ORTH_WARMUP_ENABLED),"combined_orth_warmup_epochs":float(COMBINED_ORTH_WARMUP_EPOCHS)})
+js(Path(CONFIGS_DIR)/"run_config.json", {"run_name":RUN_NAME,"run_tag":RUN_TAG,"base_output_dir":BASE_OUTPUT_DIR,"model_checkpoint":MODEL_CHECKPOINT,"seed":SEED,"num_steps":NUM_STEPS,"classes_per_step":CLASSES_PER_STEP,"lora_rank":LORA_R,"lora_alpha":LORA_ALPHA,"lora_alpha_note":"lora_rank/lora_alpha above describe simple_avg only; rank_extension is family-conditional, see rankext_rank_schedule_active / rankext_alpha_per_rank / rankext_lora_alpha_active","lora_dropout":LORA_DROPOUT,"target_modules_default":TARGET_MODULES,"target_modules_by_family":{k:list(v) for k,v in TARGET_MODULES_BY_FAMILY.items()},"lambda_orth":LAMBDA_ORTH,"kd_temperatures":KD_TEMPERATURES,"kd_weight":KD_WEIGHT,"optimizer":"AdamW","scheduler":SCHED,"batch_size":BATCH_LORA,"use_classifier_calibration_master_switch":bool(USE_CLASSIFIER_CALIBRATION),"classifier_calibration_by_family":dict(CALIBRATION_ENABLED_FAMILIES),"classifier_calibration_mode_by_family":dict(CALIBRATION_MODE_BY_FAMILY),"rankext_family_aware_calibration_enabled":bool(RANKEXT_FAMILY_AWARE_CALIBRATION_ENABLED),"head_lr_multiplier_default":float(HEAD_LR_MULTIPLIER),"head_lr_multiplier_by_family":{k:float(v) for k,v in HEAD_LR_MULTIPLIER_BY_FAMILY.items()},"rankext_rank_schedule_active":active_rankext_rank_schedule(),"rankext_rank_schedule_wide_enabled":bool(USE_RANKEXT_RANK_SCHEDULE_WIDE),"rankext_alpha_per_rank":float(RANKEXT_ALPHA_PER_RANK),"rankext_lora_alpha_active":float(active_rankext_lora_alpha()),"rankext_more_params_than_simple_avg":bool(USE_RANKEXT_RANK_SCHEDULE_WIDE),"rankext_orth_lambda_warmup_enabled":bool(RANKEXT_ORTH_LAMBDA_WARMUP_ENABLED),"rankext_orth_lambda_warmup_epochs":float(RANKEXT_ORTH_LAMBDA_WARMUP_EPOCHS),"combined_loss_scale_enabled":bool(COMBINED_LOSS_SCALE_ENABLED),"combined_lambda_orth_scale":float(COMBINED_LAMBDA_ORTH_SCALE),"combined_kd_weight_scale":float(COMBINED_KD_WEIGHT_SCALE),"combined_orth_warmup_enabled":bool(COMBINED_ORTH_WARMUP_ENABLED),"combined_orth_warmup_epochs":float(COMBINED_ORTH_WARMUP_EPOCHS)})
 js(Path(CONFIGS_DIR)/"supervisor_selected_methods.json", SUPERVISOR_SELECTED_METHOD_SPECS)
 js(Path(CONFIGS_DIR)/"hyperparameters_by_method.json", CFG.to_dict("records"))
 
@@ -6016,6 +6196,22 @@ else:
 per_step_acc_restricted_path = Path(TABLES_DIR) / "per_step_accuracy_open_vs_restricted_by_method.csv"
 per_step_acc_restricted_df.to_csv(per_step_acc_restricted_path, index=False)
 print("Saved per-step accuracy (open vs. closed-set):", per_step_acc_restricted_path)
+
+# FIX 1 diagnostic (analysis_recency_fix/report.txt): classifier row-norm
+# stats per (method, step_id, phase). phase="pre_calibration" rows exist for
+# EVERY method (logged unconditionally at both run_simple_avg_variant() and
+# run_rank_extension_variant() call sites); phase="post_calibration" rows
+# exist only for methods with apply_calibration=True. This is the
+# instrumentation R5 (WIDERANK run) predates -- see report.txt Task A.2.
+classifier_row_norm_diag_df = pd.DataFrame(classifier_row_norm_diagnostic_rows)
+if len(classifier_row_norm_diag_df) > 0:
+    classifier_row_norm_diag_df = classifier_row_norm_diag_df[classifier_row_norm_diag_df["method"].isin(REQ)].copy()
+    classifier_row_norm_diag_df = classifier_row_norm_diag_df.sort_values(["method", "phase", "step_id"]).reset_index(drop=True)
+else:
+    classifier_row_norm_diag_df = pd.DataFrame(columns=["method", "step_id", "phase", "mean_row_norm", "row_norm_ratio_vs_step1"])
+classifier_row_norm_diag_path = Path(TABLES_DIR) / "classifier_row_norm_diagnostics_by_method_step.csv"
+classifier_row_norm_diag_df.to_csv(classifier_row_norm_diag_path, index=False)
+print("Saved classifier row-norm diagnostics:", classifier_row_norm_diag_path)
 
 
 def per_step_accuracy_json(method_name):

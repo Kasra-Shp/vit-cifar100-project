@@ -844,6 +844,87 @@ def active_rankext_lora_alpha():
 RANKEXT_ORTH_LAMBDA_WARMUP_ENABLED = True
 RANKEXT_ORTH_LAMBDA_WARMUP_EPOCHS = 1.0
 
+# ACCURACY-PUSH CANDIDATE (analysis_rankext_plain/candidate_evaluation.txt,
+# 2026-07-23): new-rank-block OUTPUT warmup for rank_extension. Ramps the
+# newly-added LoRA block's CONTRIBUTION TO THE FORWARD PASS (not its weights,
+# not the frozen old block, not the classifier head) from 0 up to full
+# strength linearly over the first RANKEXT_NEW_BLOCK_WARMUP_EPOCHS epochs of
+# EACH CL step's local training, reusing the exact same ramp shape/formula as
+# RANKEXT_ORTH_LAMBDA_WARMUP_ENABLED just above (orth_lambda_warmup_multiplier(),
+# called as-is with a new, independent flag/epochs pair).
+#
+# Rationale (analysis_rankext_plain/diagnosis.txt): plain rank_extension's
+# restricted step-1 accuracy falls from a well-converged post-step-1 state
+# (val_ce_loss=0.2266, identical to RankExt+KD's step-1 model bit-for-bit,
+# since KD only starts biting at step 2) down to 57.7% by final eval, while
+# RankExt+KD -- same step-1 model, ONLY steps 2-5 differ -- holds 94.35% on
+# the exact same eval. Frozen old LoRA blocks (0.0 max abs diff, every layer,
+# every step, all 4 variants -- classifier_row_norm_diagnostics_by_method_
+# step.csv / *_frozen_rank_blocks.csv) and frozen classifier rows (doubly-
+# redundant gradient-mask + hard-restore mechanism, independently verified
+# from source) are both confirmed NOT drifting, ruling out weight corruption
+# as the cause. The remaining explanation: the new block's earliest, least-
+# informed gradient updates (B_new is zero-initialized every step, so the
+# very first few batches set its initial direction from scratch) perturb the
+# SHARED q/v-proj forward computation in a way that is disruptive to how the
+# frozen old block's fixed contribution combines with the (also frozen) old
+# classifier rows at eval time -- with nothing anchoring the new block toward
+# cooperating with what is already there, unlike the KD/FactorOrth variants,
+# which each supply exactly that anchor via a different mechanism. This
+# warmup does not add any new anchoring signal itself -- it only slows the
+# RATE at which the new block's raw, uninformed early updates can perturb the
+# shared forward pass, on the theory (well precedented by RANKEXT_ORTH_
+# LAMBDA_WARMUP_ENABLED's own evidence just above: local_epoch==1 train_ce_
+# loss 1.5-3.4x higher than plain rank_extension's, decaying 2-4 orders of
+# magnitude within 1-2 epochs) that the first ~1 epoch of any newly-added
+# rank_extension mechanism's training is a uniquely volatile, poorly-
+# conditioned transient. Applied identically to ALL FOUR rank_extension
+# variants (plain, +FactorOrth, +KD, +FactorOrth+KD) -- see
+# family_uses_new_block_warmup() and its one call site in
+# run_rank_extension_variant() -- never to simple_avg (GrowingRankLoRALinear
+# is the only class that ever reads this multiplier; simple_avg's PEFT LoRA
+# layers never do, so simple_avg is unaffected by construction, not just by a
+# gate). Flag defaults ON for the next run; existing (no-warmup, full
+# strength from batch 1) behavior is fully preserved when OFF.
+RANKEXT_NEW_BLOCK_WARMUP_ENABLED = True
+# Same value as RANKEXT_ORTH_LAMBDA_WARMUP_EPOCHS on purpose: this is the one
+# other place in the codebase that already tunes "how long should a within-
+# step warmup for a freshly-added rank_extension mechanism last," and that
+# duration is independently justified/validated there (see the comment on
+# RANKEXT_ORTH_LAMBDA_WARMUP_EPOCHS above). Reusing it avoids stacking an
+# untested new duration on top of an already-untested new mechanism.
+RANKEXT_NEW_BLOCK_WARMUP_EPOCHS = 1.0
+
+# Module-level state the new-block warmup multiplier lives in. A plain dict
+# (not a bare global float) so it can be imported/read/written from any scope
+# without a `global` statement at every call site. ALWAYS 1.0 outside the
+# narrow window of a rank_extension step's own trainer.train() call -- see
+# train_with_trainer()'s unconditional reset immediately after trainer.train()
+# returns, which is the single choke point every eval call in this script
+# passes through afterward.
+_rankext_new_block_warmup_state = {"multiplier": 1.0}
+
+
+def set_rankext_new_block_warmup_multiplier(value):
+    _rankext_new_block_warmup_state["multiplier"] = float(value)
+
+
+def get_rankext_new_block_warmup_multiplier():
+    return float(_rankext_new_block_warmup_state["multiplier"])
+
+
+def family_uses_new_block_warmup(family):
+    """rank_extension only -- see RANKEXT_NEW_BLOCK_WARMUP_ENABLED comment
+    above for why simple_avg is excluded (GrowingRankLoRALinear, the only
+    module class that reads this multiplier, is rank_extension-exclusive)."""
+    return bool(RANKEXT_NEW_BLOCK_WARMUP_ENABLED) and str(family) == "rank_extension"
+
+
+# One row per (method, step, local_epoch) actually applied during training --
+# see RankExtNewBlockWarmupCallback below and its CSV write near the other
+# diagnostic tables (best_epoch_selection_rows / growing_overfitting_rows).
+rankext_new_block_warmup_diagnostic_rows = []
+
 
 def orth_lambda_warmup_multiplier(epoch_val, warmup_epochs, enabled):
     """Linear 0->1 ramp over the first `warmup_epochs` epochs of local
@@ -965,6 +1046,13 @@ def build_active_method_configs():
             "head_lr_multiplier": family_head_lr_multiplier(family),
             "apply_calibration": family_applies_calibration(family),
             "calibration_mode": family_calibration_mode(family) if family_applies_calibration(family) else "off",
+            # analysis_rankext_plain/ (2026-07-23): rank_extension-only,
+            # applied identically to all 4 active rank_extension variants --
+            # see family_uses_new_block_warmup() above.
+            "rankext_new_block_warmup_enabled": family_uses_new_block_warmup(family),
+            "rankext_new_block_warmup_epochs": (
+                float(RANKEXT_NEW_BLOCK_WARMUP_EPOCHS) if family_uses_new_block_warmup(family) else 0.0
+            ),
         })
 
     add_method("simple_avg", "simple_avg", "simple_avg")
@@ -1841,6 +1929,33 @@ from transformers import TrainerCallback
 # selected epoch is logged to tables/best_epoch_selected_by_method_step.csv.
 USE_BEST_EPOCH_SELECTION = True
 
+# analysis_simple_avg_overfit/report.txt: simple_avg's train/val CE curves show
+# GROWING (not bounded) within-step overfitting at steps 3-4 -- val CE falls to
+# a minimum then rises again while train CE keeps falling. Investigation found
+# best-epoch selection (above) already reloads that per-step minimum-val-CE
+# checkpoint (selected_epoch=2 for both step 3 and step 4 of plain simple_avg,
+# well before the rise), so this pattern is NOT currently reaching final
+# accuracy -- reducing LORA_R or raising LORA_DROPOUT would therefore be
+# solving an already-solved problem while risking the top method
+# (simple_avg_factor_orth, whose own steps 3-4 select LATE epochs 7/9 because
+# it is still genuinely improving there, not overfitting -- cutting its
+# capacity/regularization is exactly the regression pattern the 2026-07-15
+# LORA_DROPOUT 0.1->0.05 revert already documented). Decision: do not touch
+# rank or dropout; instead add a standing, purely-diagnostic audit trail (one
+# row per method/step, derived entirely from data best-epoch selection already
+# collects) so every future run can see at a glance whether growing
+# overfitting occurred and whether best-epoch selection actually protected
+# that step's final accuracy, instead of requiring a manual investigation like
+# this one. Purely additive: computed AFTER training from already-logged
+# rows, touches no model weights, no training loop, no other saved column.
+GROWING_OVERFITTING_DIAGNOSTICS_ENABLED = True
+# Absolute val-CE rise from the selected (best) epoch to the configured final
+# epoch above which a (method, step) is flagged as "growing overfitting"
+# rather than noise. 0.05 chosen from analysis_simple_avg_overfit/report.txt's
+# own numbers: simple_avg step 3/4 rise 0.12-0.15 (clearly real), while flat
+# methods/steps (e.g. simple_avg_factor_orth step 3/4) rise <=0.004.
+GROWING_OVERFITTING_VAL_CE_RISE_THRESHOLD = 0.05
+
 
 def get_training_args(
     output_dir,
@@ -2024,6 +2139,8 @@ def train_with_trainer(
     display_name=None,
     epoch_loss_records=None,
     best_epoch_selection_records=None,
+    rankext_new_block_warmup_epochs=None,
+    rankext_new_block_warmup_diagnostic_records=None,
     **trainer_kwargs,
 ):
     args = get_training_args(
@@ -2067,7 +2184,38 @@ def train_with_trainer(
         trainer.add_callback(epoch_callback)
         epoch_callback.bind_trainer(trainer)
 
+    # RANKEXT_NEW_BLOCK_WARMUP_ENABLED (analysis_rankext_plain/): only ever
+    # non-None for rank_extension call sites (run_rank_extension_variant()) --
+    # simple_avg's call to this same function never passes it, so
+    # `set_rankext_new_block_warmup_multiplier` is never even invoked for
+    # simple_avg, let alone the callback attached. Reset to the neutral 1.0
+    # unconditionally BEFORE train() too (not just after), so a stale value
+    # left over from a previous rank_extension step can never leak into a
+    # step that has the flag off / into any non-rank_extension training call.
+    set_rankext_new_block_warmup_multiplier(1.0)
+    if rankext_new_block_warmup_epochs is not None:
+        warmup_callback = RankExtNewBlockWarmupCallback(
+            method_name=trainer_kwargs.get("method_name", getattr(model, "_method_name", "unknown")),
+            step_idx=int(trainer_kwargs.get("step_idx", -1)),
+            warmup_epochs=float(rankext_new_block_warmup_epochs),
+            diagnostic_rows=(
+                rankext_new_block_warmup_diagnostic_records
+                if rankext_new_block_warmup_diagnostic_records is not None
+                else rankext_new_block_warmup_diagnostic_rows
+            ),
+        )
+        trainer.add_callback(warmup_callback)
+
     trainer.train()
+
+    # Unconditional reset back to the neutral 1.0 -- every eval call in this
+    # script (forward_transfer probes, seen-step accuracy, final evaluate_
+    # model/evaluate_per_step_accuracy) happens strictly after some
+    # train_with_trainer() call returns, so this is the single choke point
+    # that guarantees eval never sees a warmed-down new-block contribution.
+    # Redundant with RankExtNewBlockWarmupCallback.on_train_end() above by
+    # design (same belt-and-suspenders pattern as classifier-row restore).
+    set_rankext_new_block_warmup_multiplier(1.0)
 
     # PRE-THESIS FIX 1: explicitly reload the best-val-CE epoch's trainable-param
     # snapshot into `model` (same object trainer.train() just updated in place),
@@ -4213,7 +4361,15 @@ class GrowingRankLoRALinear(nn.Module):
         if self.new_rank > 0:
             hidden_new = torch.matmul(x_dropped, self.A_new.T)
             lora_new = torch.matmul(hidden_new, self.B_new.T)
-            out = out + self.scaling * lora_new
+            # RANKEXT_NEW_BLOCK_WARMUP_ENABLED (analysis_rankext_plain/): scales
+            # only the NEW block's contribution, never the base/frozen-old
+            # term above. Always exactly 1.0 (a true no-op, not just close to
+            # it) outside a rank_extension training step -- see
+            # get_rankext_new_block_warmup_multiplier()'s module-level state
+            # and train_with_trainer()'s unconditional reset after
+            # trainer.train() returns.
+            new_block_multiplier = get_rankext_new_block_warmup_multiplier()
+            out = out + self.scaling * lora_new * new_block_multiplier
 
         return out
 
@@ -4420,6 +4576,55 @@ class ClassifierRowRestoreCallback(TrainerCallback):
     def on_train_end(self, args, state, control, model=None, **kwargs):
         if model is not None:
             restore_protected_classifier_rows(model, self.snapshot)
+        return control
+
+
+class RankExtNewBlockWarmupCallback(TrainerCallback):
+    """RANKEXT_NEW_BLOCK_WARMUP_ENABLED (analysis_rankext_plain/): drives the
+    module-level new-block-output multiplier GrowingRankLoRALinear.forward()
+    reads. on_step_begin updates the multiplier every step (fine-grained,
+    smooth within-epoch ramp -- fires before that step's forward/backward, so
+    the multiplier used in a given batch's forward pass is always the value
+    computed from this step's own state.epoch, never a stale one). One
+    diagnostic row is appended per (method, step, local_epoch) instead of per
+    batch, to keep the saved table small while still recording whether the
+    ramp actually happened. on_train_end resets to 1.0 as a second,
+    redundant safety net on top of train_with_trainer()'s own unconditional
+    reset (same belt-and-suspenders pattern as ClassifierRowRestoreCallback
+    above)."""
+
+    def __init__(self, method_name, step_idx, warmup_epochs, diagnostic_rows):
+        self.method_name = str(method_name)
+        self.step_idx = int(step_idx)
+        self.warmup_epochs = float(warmup_epochs)
+        self.diagnostic_rows = diagnostic_rows
+        self._logged_epochs = set()
+
+    def _current_multiplier(self, state):
+        epoch_val = float(state.epoch) if state.epoch is not None else float("nan")
+        return orth_lambda_warmup_multiplier(epoch_val, self.warmup_epochs, True), epoch_val
+
+    def on_step_begin(self, args, state, control, **kwargs):
+        multiplier, _ = self._current_multiplier(state)
+        set_rankext_new_block_warmup_multiplier(multiplier)
+        return control
+
+    def on_epoch_begin(self, args, state, control, **kwargs):
+        multiplier, epoch_val = self._current_multiplier(state)
+        epoch_int = int(max(0, round(epoch_val))) if not np.isnan(epoch_val) else 0
+        if epoch_int not in self._logged_epochs:
+            self._logged_epochs.add(epoch_int)
+            self.diagnostic_rows.append({
+                "method_name": self.method_name,
+                "step_id": self.step_idx + 1,
+                "local_epoch": epoch_int,
+                "new_block_warmup_multiplier": multiplier,
+                "warmup_epochs_configured": self.warmup_epochs,
+            })
+        return control
+
+    def on_train_end(self, args, state, control, **kwargs):
+        set_rankext_new_block_warmup_multiplier(1.0)
         return control
 
 
@@ -5074,6 +5279,16 @@ def run_rank_extension_variant(
     active_lambda_orth = float(lambda_orth)
     active_kd_weight = float(kd_weight)
     active_kd_temperature = float(kd_temperature)
+    # RANKEXT_NEW_BLOCK_WARMUP_ENABLED (analysis_rankext_plain/): this function
+    # is only ever called for rank_extension-family methods, so
+    # family_uses_new_block_warmup("rank_extension") resolves the SAME way for
+    # every one of the 4 active variants -- applied identically to plain,
+    # +FactorOrth, +KD, and +FactorOrth+KD, per the "same protocol per family"
+    # requirement. None (not 0.0) when the flag is off, so train_with_trainer()
+    # skips attaching the callback entirely rather than attaching a no-op one.
+    active_new_block_warmup_epochs = (
+        float(RANKEXT_NEW_BLOCK_WARMUP_EPOCHS) if family_uses_new_block_warmup("rank_extension") else None
+    )
 
     for step_idx in range(NUM_STEPS):
         current_classes = classes_for_step(step_idx)
@@ -5186,6 +5401,8 @@ def run_rank_extension_variant(
             display_name=METHOD_DISPLAY_NAME_MAP.get(method_name, method_name),
             epoch_loss_records=epoch_loss_rows,
             best_epoch_selection_records=best_epoch_selection_rows,
+            rankext_new_block_warmup_epochs=active_new_block_warmup_epochs,
+            rankext_new_block_warmup_diagnostic_records=rankext_new_block_warmup_diagnostic_rows,
             **trainer_kwargs,
         )
 
@@ -5716,6 +5933,105 @@ if len(best_epoch_selection_df) > 0:
         f"[best-epoch selection] {n_selected_lt_final}/{len(best_epoch_selection_df)} "
         f"(method, step) pairs selected an epoch earlier than the configured final epoch."
     )
+
+# analysis_simple_avg_overfit/report.txt: standing audit trail for "did this
+# (method, step) show growing within-step overfitting, and did best-epoch
+# selection actually protect its final accuracy from it" -- see
+# GROWING_OVERFITTING_DIAGNOSTICS_ENABLED comment near USE_BEST_EPOCH_SELECTION
+# for why this was added instead of touching LORA_R/LORA_DROPOUT. Derived
+# entirely from best_epoch_selection_df + training_loss_history_df, both
+# already fully populated above; no new training-time instrumentation, no
+# effect on any other saved table when the flag is off.
+if GROWING_OVERFITTING_DIAGNOSTICS_ENABLED and len(best_epoch_selection_df) > 0:
+    growing_overfitting_rows = []
+    for row in best_epoch_selection_df.to_dict("records"):
+        method_name = row["method_name"]
+        step_id = int(row["step_id"])
+        epochs_configured = int(row["epochs_configured"])
+        selected_epoch = int(row["selected_epoch"])
+        selected_val_ce = row["selected_val_ce"]
+        final_epoch_val_ce = row["final_epoch_val_ce"]
+
+        step_history = training_loss_history_df[
+            (training_loss_history_df["method_name"] == method_name)
+            & (training_loss_history_df["step_id"] == step_id)
+        ]
+        final_epoch_rows = step_history[step_history["epoch"] == epochs_configured]
+        final_train_ce = (
+            float(final_epoch_rows["train_ce_loss"].iloc[0])
+            if len(final_epoch_rows) > 0
+            else np.nan
+        )
+
+        val_ce_rise_from_best_to_final = (
+            float(final_epoch_val_ce) - float(selected_val_ce)
+            if not (np.isnan(final_epoch_val_ce) or np.isnan(selected_val_ce))
+            else np.nan
+        )
+        growing_overfitting_flag = bool(
+            not np.isnan(val_ce_rise_from_best_to_final)
+            and val_ce_rise_from_best_to_final > GROWING_OVERFITTING_VAL_CE_RISE_THRESHOLD
+        )
+        accuracy_protected_by_best_epoch = bool(
+            row["best_epoch_selection_enabled"] and selected_epoch < epochs_configured
+        )
+
+        growing_overfitting_rows.append({
+            "method_name": method_name,
+            "display_name": row["display_name"],
+            "step_id": step_id,
+            "epochs_configured": epochs_configured,
+            "selected_epoch": selected_epoch,
+            "selected_val_ce": selected_val_ce,
+            "final_epoch_val_ce": final_epoch_val_ce,
+            "final_epoch_train_ce": final_train_ce,
+            "train_val_gap_at_final_epoch": (
+                float(final_epoch_val_ce) - final_train_ce
+                if not (np.isnan(final_epoch_val_ce) or np.isnan(final_train_ce))
+                else np.nan
+            ),
+            "val_ce_rise_from_best_to_final": val_ce_rise_from_best_to_final,
+            "growing_overfitting_flag": growing_overfitting_flag,
+            "accuracy_protected_by_best_epoch": accuracy_protected_by_best_epoch,
+        })
+
+    growing_overfitting_df = pd.DataFrame(growing_overfitting_rows).sort_values(
+        ["method_name", "step_id"]
+    ).reset_index(drop=True)
+    growing_overfitting_path = os.path.join(TABLES_DIR, "growing_overfitting_diagnostics_by_method_step.csv")
+    growing_overfitting_df.to_csv(growing_overfitting_path, index=False)
+    print("Saved growing-overfitting diagnostics:", growing_overfitting_path)
+    n_flagged = int(growing_overfitting_df["growing_overfitting_flag"].sum())
+    n_flagged_and_protected = int(
+        (growing_overfitting_df["growing_overfitting_flag"] & growing_overfitting_df["accuracy_protected_by_best_epoch"]).sum()
+    )
+    print(
+        f"[growing-overfitting diagnostics] {n_flagged}/{len(growing_overfitting_df)} (method, step) pairs "
+        f"flagged as growing-overfitting (val CE rise > {GROWING_OVERFITTING_VAL_CE_RISE_THRESHOLD} from best to final epoch); "
+        f"{n_flagged_and_protected}/{n_flagged} of those were protected by best-epoch selection (final reported "
+        f"accuracy uses the pre-overfitting checkpoint, not the final epoch)."
+    )
+
+# analysis_rankext_plain/ (2026-07-23): per (method, step, local_epoch) record
+# of the actual RANKEXT_NEW_BLOCK_WARMUP_ENABLED multiplier applied during
+# training -- see RankExtNewBlockWarmupCallback. Empty (header-only) when the
+# flag is off, since the callback that populates rankext_new_block_warmup_
+# diagnostic_rows is never attached in that case.
+rankext_new_block_warmup_df = pd.DataFrame(rankext_new_block_warmup_diagnostic_rows)
+if len(rankext_new_block_warmup_df) > 0:
+    rankext_new_block_warmup_df = rankext_new_block_warmup_df[
+        rankext_new_block_warmup_df["method_name"].isin(active_method_order)
+    ].copy()
+    rankext_new_block_warmup_df = rankext_new_block_warmup_df.sort_values(
+        ["method_name", "step_id", "local_epoch"]
+    ).reset_index(drop=True)
+else:
+    rankext_new_block_warmup_df = pd.DataFrame(columns=[
+        "method_name", "step_id", "local_epoch", "new_block_warmup_multiplier", "warmup_epochs_configured",
+    ])
+rankext_new_block_warmup_path = os.path.join(TABLES_DIR, "rankext_new_block_warmup_diagnostics_by_method_step_epoch.csv")
+rankext_new_block_warmup_df.to_csv(rankext_new_block_warmup_path, index=False)
+print("Saved rank_extension new-block warmup diagnostics:", rankext_new_block_warmup_path)
 
 loss_summary_rows = []
 for method_name in active_method_order:
@@ -6363,7 +6679,7 @@ def cfg_df():
     c["seed"]=int(SEED)
     return c.reset_index(drop=True)
 CFG=cfg_df()
-js(Path(CONFIGS_DIR)/"run_config.json", {"run_name":RUN_NAME,"run_tag":RUN_TAG,"base_output_dir":BASE_OUTPUT_DIR,"model_checkpoint":MODEL_CHECKPOINT,"seed":SEED,"num_steps":NUM_STEPS,"classes_per_step":CLASSES_PER_STEP,"lora_rank":LORA_R,"lora_alpha":LORA_ALPHA,"lora_alpha_note":"lora_rank/lora_alpha above describe simple_avg only; rank_extension is family-conditional, see rankext_rank_schedule_active / rankext_alpha_per_rank / rankext_lora_alpha_active","lora_dropout":LORA_DROPOUT,"target_modules_default":TARGET_MODULES,"target_modules_by_family":{k:list(v) for k,v in TARGET_MODULES_BY_FAMILY.items()},"lambda_orth":LAMBDA_ORTH,"kd_temperatures":KD_TEMPERATURES,"kd_weight":KD_WEIGHT,"optimizer":"AdamW","scheduler":SCHED,"batch_size":BATCH_LORA,"use_classifier_calibration_master_switch":bool(USE_CLASSIFIER_CALIBRATION),"classifier_calibration_by_family":dict(CALIBRATION_ENABLED_FAMILIES),"classifier_calibration_mode_by_family":dict(CALIBRATION_MODE_BY_FAMILY),"rankext_family_aware_calibration_enabled":bool(RANKEXT_FAMILY_AWARE_CALIBRATION_ENABLED),"rankext_confidence_weighted_calibration_enabled":bool(RANKEXT_CONFIDENCE_WEIGHTED_CALIBRATION_ENABLED),"head_lr_multiplier_default":float(HEAD_LR_MULTIPLIER),"head_lr_multiplier_by_family":{k:float(v) for k,v in HEAD_LR_MULTIPLIER_BY_FAMILY.items()},"rankext_rank_schedule_active":active_rankext_rank_schedule(),"rankext_rank_schedule_wide_enabled":bool(USE_RANKEXT_RANK_SCHEDULE_WIDE),"rankext_alpha_per_rank":float(RANKEXT_ALPHA_PER_RANK),"rankext_lora_alpha_active":float(active_rankext_lora_alpha()),"rankext_more_params_than_simple_avg":bool(USE_RANKEXT_RANK_SCHEDULE_WIDE),"rankext_orth_lambda_warmup_enabled":bool(RANKEXT_ORTH_LAMBDA_WARMUP_ENABLED),"rankext_orth_lambda_warmup_epochs":float(RANKEXT_ORTH_LAMBDA_WARMUP_EPOCHS),"combined_loss_scale_enabled":bool(COMBINED_LOSS_SCALE_ENABLED),"combined_lambda_orth_scale":float(COMBINED_LAMBDA_ORTH_SCALE),"combined_kd_weight_scale":float(COMBINED_KD_WEIGHT_SCALE),"combined_orth_warmup_enabled":bool(COMBINED_ORTH_WARMUP_ENABLED),"combined_orth_warmup_epochs":float(COMBINED_ORTH_WARMUP_EPOCHS)})
+js(Path(CONFIGS_DIR)/"run_config.json", {"run_name":RUN_NAME,"run_tag":RUN_TAG,"base_output_dir":BASE_OUTPUT_DIR,"model_checkpoint":MODEL_CHECKPOINT,"seed":SEED,"num_steps":NUM_STEPS,"classes_per_step":CLASSES_PER_STEP,"lora_rank":LORA_R,"lora_alpha":LORA_ALPHA,"lora_alpha_note":"lora_rank/lora_alpha above describe simple_avg only; rank_extension is family-conditional, see rankext_rank_schedule_active / rankext_alpha_per_rank / rankext_lora_alpha_active","lora_dropout":LORA_DROPOUT,"target_modules_default":TARGET_MODULES,"target_modules_by_family":{k:list(v) for k,v in TARGET_MODULES_BY_FAMILY.items()},"lambda_orth":LAMBDA_ORTH,"kd_temperatures":KD_TEMPERATURES,"kd_weight":KD_WEIGHT,"optimizer":"AdamW","scheduler":SCHED,"batch_size":BATCH_LORA,"use_classifier_calibration_master_switch":bool(USE_CLASSIFIER_CALIBRATION),"classifier_calibration_by_family":dict(CALIBRATION_ENABLED_FAMILIES),"classifier_calibration_mode_by_family":dict(CALIBRATION_MODE_BY_FAMILY),"rankext_family_aware_calibration_enabled":bool(RANKEXT_FAMILY_AWARE_CALIBRATION_ENABLED),"rankext_confidence_weighted_calibration_enabled":bool(RANKEXT_CONFIDENCE_WEIGHTED_CALIBRATION_ENABLED),"head_lr_multiplier_default":float(HEAD_LR_MULTIPLIER),"head_lr_multiplier_by_family":{k:float(v) for k,v in HEAD_LR_MULTIPLIER_BY_FAMILY.items()},"rankext_rank_schedule_active":active_rankext_rank_schedule(),"rankext_rank_schedule_wide_enabled":bool(USE_RANKEXT_RANK_SCHEDULE_WIDE),"rankext_alpha_per_rank":float(RANKEXT_ALPHA_PER_RANK),"rankext_lora_alpha_active":float(active_rankext_lora_alpha()),"rankext_more_params_than_simple_avg":bool(USE_RANKEXT_RANK_SCHEDULE_WIDE),"rankext_orth_lambda_warmup_enabled":bool(RANKEXT_ORTH_LAMBDA_WARMUP_ENABLED),"rankext_orth_lambda_warmup_epochs":float(RANKEXT_ORTH_LAMBDA_WARMUP_EPOCHS),"combined_loss_scale_enabled":bool(COMBINED_LOSS_SCALE_ENABLED),"combined_lambda_orth_scale":float(COMBINED_LAMBDA_ORTH_SCALE),"combined_kd_weight_scale":float(COMBINED_KD_WEIGHT_SCALE),"combined_orth_warmup_enabled":bool(COMBINED_ORTH_WARMUP_ENABLED),"combined_orth_warmup_epochs":float(COMBINED_ORTH_WARMUP_EPOCHS),"growing_overfitting_diagnostics_enabled":bool(GROWING_OVERFITTING_DIAGNOSTICS_ENABLED),"growing_overfitting_val_ce_rise_threshold":float(GROWING_OVERFITTING_VAL_CE_RISE_THRESHOLD),"rankext_new_block_warmup_enabled":bool(RANKEXT_NEW_BLOCK_WARMUP_ENABLED),"rankext_new_block_warmup_epochs":float(RANKEXT_NEW_BLOCK_WARMUP_EPOCHS)})
 js(Path(CONFIGS_DIR)/"supervisor_selected_methods.json", SUPERVISOR_SELECTED_METHOD_SPECS)
 js(Path(CONFIGS_DIR)/"hyperparameters_by_method.json", CFG.to_dict("records"))
 

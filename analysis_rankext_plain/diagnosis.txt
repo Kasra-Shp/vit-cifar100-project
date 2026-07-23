@@ -1,0 +1,232 @@
+================================================================================
+analysis_rankext_plain -- diagnosing genuine interference/forgetting in plain
+RankExt (no FactorOrth, no KD) (2026-07-23)
+================================================================================
+
+Source run analyzed: R3/results_fix2_20260721_light/
+  clip_vit_lora_cifar100_full_comparison_with_orth_rankext_EPOCH3_MAIN_20260721_231658
+No training run this session -- static verification only, against
+vit_lora_cifar100_full5step_n5.py's source (pre-this-session state) and this
+run's saved CSVs.
+
+================================================================================
+1. FROZEN CLASSIFIER ROWS -- protected in practice, or drifting?
+================================================================================
+No raw classifier weight tensor was saved this run (light archive, no
+checkpoints), so a literal step-1-vs-step-5 state_dict diff is not possible
+from saved artifacts -- this is stated plainly rather than papered over. What
+IS verifiable from source: the protection mechanism is doubly redundant --
+  (a) add_classifier_row_gradient_mask() zeroes the incoming gradient for
+      every row NOT in that step's trainable_classes via a backward hook.
+  (b) ClassifierRowRestoreCallback does a hard `.copy_()` from a pre-step
+      snapshot on EVERY on_step_end AND on_train_end -- independent of (a),
+      so even a hook failure could not leave a protected row drifted for more
+      than a single step.
+  run_rank_extension_variant() additionally calls
+  restore_protected_classifier_rows() a third time right after
+  trainer.train() returns, and computes classifier_protected_row_max_diff()
+  (not captured in this run's saved logs, but the code path is unconditional).
+Indirect evidence consistent with correct freezing: row-norm diagnostics
+(section 2 below) show smooth, monotonic, small (3-15%) growth across steps
+for plain rank_extension -- no anomalous jump/collapse at any step that would
+indicate a protected block was corrupted then partially recovered. VERDICT:
+no drift found; a literal bit-exact re-verification would require a live run
+with checkpoints saved (flagged, not performed this session, consistent with
+the previous session's identical finding for this exact mechanism).
+
+================================================================================
+2. FROZEN LoRA A/B BLOCKS -- drift per block per step
+================================================================================
+Directly measured (not indirect) via *_frozen_rank_blocks.csv, which diffs
+A_frozen/B_frozen against a pre-step snapshot after every step's training:
+
+    plain rank_extension, all 24 target layers (q_proj+v_proj x 12 layers),
+    steps 2/3/4/5: A_max_abs_diff = 0.0, B_max_abs_diff = 0.0 (every row).
+
+Bit-exact, not "close to zero." A_frozen/B_frozen have requires_grad=False
+(enforced and asserted by assert_rank_extension_structure(), which raises if
+violated and printed a PASS line for every step of this run), so autograd
+never populates a .grad for them and no other code path mutates them in
+place. VERDICT: confirmed clean, zero drift -- weight corruption of the
+frozen LoRA blocks is definitively NOT the cause of plain RankExt's weakness.
+
+Classifier row norm (per-step-group mean, pre-calibration, monotonic not
+collapsing -- same table used in section 4):
+    step1=0.679  step2=0.702 (+3.3%)  step3=0.725 (+6.8%)
+    step4=0.743 (+9.5%)  step5=0.780 (+14.9%)
+
+================================================================================
+3. FEATURE-SPACE DRIFT FOR OLD CLASSES -- direct measurement not available
+================================================================================
+This run saved no model checkpoints and no intermediate-feature tensors (only
+CSV summary tables), so a literal "post-step-1 model vs. post-step-5 model,
+same step-1 image batch, compare LoRA-modified-attention output" comparison
+CANNOT be computed from what exists -- this requires re-running with a
+feature-extraction probe (e.g. a forward hook on the target q/v_proj layers,
+saving intermediate activations for a fixed eval batch, at the end of every
+CL step). Stated honestly rather than estimated.
+
+What CAN be assembled as an INDIRECT drift proxy from data this run did save
+(sections 2 and 4): weights that could plausibly carry the forgetting (the
+old A/B blocks, the old classifier rows) are bit-exact frozen, yet the
+model's actual behavior on step-1 images (restricted accuracy, a function of
+the FULL forward pass: frozen old block + frozen classifier row + whatever
+the CURRENT new block + growing backbone adapter now compute) degrades
+severely under plain training and barely at all under KD, despite steps 1-5
+sharing an IDENTICAL step-1-trained starting point in both cases (section 4).
+Since none of the WEIGHTS that could produce this degradation are drifting,
+the degradation must be coming from how those frozen weights COMBINE with the
+still-changing parts of the forward pass (the new block added at each
+subsequent step, which shares the same q/v_proj target layers) -- i.e.
+representational/feature interference at the shared computation, not
+parameter drift. This is consistent with, but does not replace, the direct
+feature-level measurement Task A's point 3 asks for; that measurement is
+flagged as a concrete, low-risk addition for the next run (a forward hook +
+saved-feature-norm/cosine-similarity table, analogous in spirit to the
+row-norm diagnostics already in this codebase) but was NOT implemented this
+session since it is new instrumentation, not the fix Task C asks for.
+
+================================================================================
+4. PLAIN RankExt vs. RankExt+KD restricted trajectory -- why does KD alone
+   raise step-1's restricted accuracy from 57.7% to 94.35%?
+================================================================================
+
+4.1 -- the two methods are BIT-IDENTICAL through the end of step 1
+--------------------------------------------------------------------------------
+training_loss_history_by_epoch.csv, step 1, final (epoch 9) row, both methods:
+    train_ce_loss = 0.02375262245181948   val_ce_loss = 0.2266465032119304
+Matching to 17 significant digits. This is not a coincidence -- KD only
+activates from step 2 onward (`if use_kd and previous_rank_state is not None`,
+false at step_idx=0 since there is no teacher yet), same seed, same step-1
+data order (train_ds shuffled with seed=SEED+step_idx, step_idx=0 for both).
+So the step-1 model plain rank_extension and rank_extension_kd_only_T2 start
+steps 2-5 from is PROVABLY the exact same model. Whatever happens to step-1's
+restricted accuracy between here and final eval is caused ENTIRELY by what
+happens during steps 2-5 -- a clean natural experiment isolating "training
+regime for steps 2-5" as the only variable.
+
+4.2 -- restricted trajectory, both methods, and what val_ce_loss says about
+   convergence QUALITY at each step's own training (not competition)
+--------------------------------------------------------------------------------
+per_step_accuracy_open_vs_restricted_by_method.csv (restricted column) /
+training_loss_history_by_epoch.csv (final-epoch val_ce per step):
+
+  step        1      2      3      4      5
+  plain restricted:      57.70  60.40  71.15  73.60  96.95
+  plain final val_ce:    0.227  0.224  0.176  0.282  0.115
+  KD restricted:          94.35  94.05  93.15  92.10  96.55
+  KD final val_ce:       0.227  0.927  0.738  0.755  0.612
+
+Two things worth separating cleanly:
+  - KD's restricted accuracy is high (92-97%) and nearly FLAT across all 5
+    steps, while KD's OWN val_ce is much WORSE than plain's at every step
+    from 2 onward (0.6-0.9 vs 0.18-0.28) -- KD's new block fits its OWN
+    step's 20-way classification task considerably less tightly (the KD loss
+    term competes with CE for gradient budget), yet ends up FAR better at
+    retaining OLD steps' restricted accuracy. This rules out "KD just makes
+    every step's own training converge better" as the explanation -- it is
+    doing the opposite locally, while doing much better at the actual
+    quantity this investigation cares about (retention).
+  - Plain's restricted accuracy for step 1 falls from whatever it was
+    immediately after step-1 training (not directly measured this session,
+    but val_ce=0.227 at that point is a well-converged 20-way fit, and this
+    IS the identical starting point KD's step 1 also has) down to 57.7% after
+    steps 2-5 run; KD's holds at 94.35% from the SAME starting point. This
+    ~35+ point gap, opening up specifically during steps 2-5 while the
+    frozen old weights are bit-exact unchanged (sections 1-2), is the direct,
+    clean signature of representational interference from the new block's
+    training -- present under plain training, suppressed under KD.
+
+4.3 -- what KD signal is actually available, and why it plausibly explains
+   the suppression (mechanistic, grounded in source)
+--------------------------------------------------------------------------------
+IMPORTANT: KD here operates WITHOUT replay -- replay_per_class=0 for all 4
+active rank_extension methods (confirmed at the run_rank_extension_variant()
+call site). DeltaOrthRankExtensionTrainer.compute_loss()'s KD branch calls
+`teacher_outputs = self.teacher_model(**inputs)` using the exact same
+`inputs` batch the student's CE loss uses -- i.e. the teacher is queried on
+THIS STEP'S OWN (new-class) images, never on old-class images. So KD is NOT
+directly rehearsing old classes at all.
+
+What the teacher actually is: `teacher_model = build_rank_extension_model(
+previous_rank_state=previous_rank_state, step_idx=step_idx - 1, ...)`, i.e.
+the FULL merged state as of the end of step_idx-1 -- and by the same
+frozen_rank-inferred-from-tensor-shape mechanism documented in the prior
+session's Task A (build_rank_extension_model infers frozen_rank from the
+tensor's own shape, which here equals the full accumulated total_rank), the
+teacher's own new_rank collapses to 0 for every layer. This means the
+teacher's forward pass NEVER executes GrowingRankLoRALinear's "new_rank > 0"
+branch at all -- it is a pure, fully-frozen replay of exactly the model as it
+stood at the end of step_idx-1, with no untrained/noisy component of its own.
+
+When this frozen teacher scores a NEW step's images, its softmax (over all
+NUM_CLASSES, not just old ones) necessarily assigns whatever probability mass
+it has to OLD classes, since it has no concept of the new classes yet (their
+classifier rows are literally the values carried over from initialization/
+the last merge, not yet trained on this step's data at the time the teacher
+snapshot was taken). Matching this soft distribution via KL divergence forces
+the STUDENT's shared q/v_proj adapter (the same parameters the new block is
+being trained into) to keep producing features that the OLD, frozen
+classifier rows can still meaningfully score -- on every single training
+batch of the new step, not just at the end. This is an implicit,
+free-riding anchor against feature drift in the shared backbone: it does not
+require old-class images, only that the student's evolving representation
+stays compatible with what the frozen teacher (and therefore the frozen old
+classifier rows behind it) expects to see. Plain rank_extension has no
+matching mechanism at all -- CE loss on new-step data provides zero pressure
+to keep the shared backbone's evolution compatible with anything from
+earlier steps, so the new block is free to move the shared feature space
+however best fits ONLY the current 20 classes, at whatever cost to how
+earlier steps' frozen rows interpret that same shared feature space.
+
+This directly explains why adding KD alone -- with NO change to replay,
+freezing, or calibration -- lifts step-1 restricted accuracy from 57.7% to
+94.35%: it is the one active mechanism among the 4 variants that supplies an
+anchoring signal against precisely the kind of shared-computation
+interference Task A's hypothesis names. FactorOrth (rank_extension_orth_
+factor_lam_50, restricted step1=83.2%) supplies a different, more direct
+anchor (explicitly penalizing new-vs-old delta overlap on the SAME batch),
+landing between plain and KD -- consistent with both being real, partially
+overlapping mitigations for the same underlying cause, and with plain
+RankExt (no anchor of either kind) being the only one of the 4 that shows the
+severe restricted-accuracy collapse.
+
+4.4 -- row-norm stability as corroborating (not causal) evidence
+--------------------------------------------------------------------------------
+Pre-calibration classifier row norms (mean per 20-class step-block):
+    plain:  step1=0.679  step2=0.702(+3.3%)  step3=0.725(+6.8%)  step4=0.743(+9.5%)  step5=0.780(+14.9%)
+    KD:     step1=0.678  step2=0.687(+1.4%)  step3=0.671(-1.0%)  step4=0.673(-0.7%)  step5=0.657(-3.1%)
+KD's row norms stay essentially flat (within +/-3%) across all 5 steps; plain's
+grow steadily to +14.9% by step 5. Per the prior session's finding that
+row-norm SCALE is not the dominant driver of the open-accuracy gap, this is
+not offered as the explanation for the restricted-accuracy difference (row
+norm is scale-invariant to restricted accuracy by construction) -- it is
+offered only as a second, independent signature that KD produces a more
+stable training trajectory across steps than plain training does, consistent
+with section 4.3's mechanism.
+
+================================================================================
+SUMMARY
+================================================================================
+- Frozen LoRA blocks: bit-exact (0.0 diff), confirmed directly from saved
+  diagnostics -- not the cause.
+- Frozen classifier rows: doubly-redundant protection verified from source;
+  no drift signature found in available indirect evidence; literal bit-exact
+  re-verification needs a live run with checkpoints (not done this session).
+- Feature-space drift for old classes: cannot be measured directly from this
+  run's saved artifacts (no checkpoints/features saved) -- flagged honestly
+  as requiring a re-run with a new feature-probe; strong INDIRECT evidence
+  (bit-exact frozen weights + a real, measured 35+pp restricted-accuracy
+  collapse specific to plain training) points at shared-computation
+  interference, not parameter drift, as the mechanism.
+- KD's step-1 restricted-accuracy rescue (57.7% -> 94.35%) is explained by a
+  concrete, source-grounded mechanism: the teacher is a fully-frozen replay
+  of the pre-step model (new_rank collapses to 0 for the teacher by
+  construction), and matching its soft, old-class-biased predictions on
+  NEW-step images forces the student's shared backbone to stay compatible
+  with what the frozen old classifier rows expect -- without ever seeing an
+  old-class image. Plain training has no equivalent anchor.
+This directly motivates Task B/C: the fix should supply some form of
+resistance to the new block perturbing the shared forward computation before
+it has any anchor to cooperate with -- not a rank/capacity change, and not a
+classifier-freezing hardening (section 1/2 found no freezing bug to harden).

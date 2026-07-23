@@ -1,0 +1,250 @@
+================================================================================
+analysis_simple_avg_overfit -- simple_avg's growing within-step overfitting at
+steps 3-4: investigation, decision, and implementation (2026-07-23)
+================================================================================
+
+Source run analyzed: R3/results_fix2_20260721_light/
+  clip_vit_lora_cifar100_full_comparison_with_orth_rankext_EPOCH3_MAIN_20260721_231658
+No training was run this session -- static verification only, against
+vit_lora_cifar100_full5step_n5.py's current source and this run's saved CSVs.
+
+================================================================================
+1. BEST-EPOCH SELECTION CHECK -- is the growing overfitting already handled?
+================================================================================
+
+1.1 -- what best_epoch_selected_by_method_step.csv actually says (plain simple_avg)
+--------------------------------------------------------------------------------
+method      step  selected_epoch  selected_val_ce  final_epoch_val_ce
+simple_avg    1         3            0.1754           0.2166
+simple_avg    2         2            0.1925           0.2310
+simple_avg    3         2            0.1829           0.2985
+simple_avg    4         2            0.2499           0.3377
+simple_avg    5         5            0.1189            0.1361
+
+Steps 3 and 4 both select epoch 2 -- solidly in the task's own "early (epoch
+2-4)" bucket. Per the task's stated decision rule, this means the growing
+overfitting described (val CE rising from ~0.18-0.25 up toward ~0.30-0.34
+within steps 3-4, confirmed epoch-by-epoch in training_loss_history_by_epoch.csv:
+step 3's val CE bottoms at 0.183 [epoch 2] then oscillates 0.22-0.32 through
+epoch 9 while train CE keeps falling 0.214->0.015; step 4 bottoms at 0.250
+[epoch 2] then rises to 0.29-0.36 while train falls to 0.016) is NOT reaching
+final reported accuracy: train_with_trainer() explicitly reloads the
+best-val-CE epoch's trainable-parameter snapshot into the model in place
+(source, lines 2072-2094) BEFORE that step's weights are merged/evaluated --
+this was verified by reading the mechanism itself, not inferred from the CSV
+alone. selected_epoch_lt_final=True for both rows confirms the reload actually
+fired (it would be False, with selected_epoch==epochs_configured, if the
+minimum happened to be the last epoch).
+
+1.2 -- but the SAME check on simple_avg_factor_orth (the top method, 75.5%)
+   shows the OPPOSITE pattern
+--------------------------------------------------------------------------------
+method                   step  selected_epoch  selected_val_ce  final_epoch_val_ce
+simple_avg_factor_orth     1         2            0.1926           0.2271
+simple_avg_factor_orth     2         5            0.1595           0.1663
+simple_avg_factor_orth     3         7            0.1337           0.1378
+simple_avg_factor_orth     4         9            0.1703           0.1703   (== final; no reload needed)
+simple_avg_factor_orth     5         6            0.0950           0.1102
+
+Best epoch keeps getting LATER as CL steps progress (2 -> 5 -> 7 -> 9), and at
+step 4 the true minimum IS the final epoch (selected_epoch_lt_final=False).
+This is the opposite of overfitting -- it means simple_avg_factor_orth is
+STILL genuinely improving on its own validation set all the way to the epoch
+budget's edge at steps 3-4, not overfitting past a peak. The factor-orth
+regularization term appears to be doing real, useful work here that plain
+simple_avg's CE-only objective does not get.
+
+1.3 -- standing diagnostic added this session (dry-run confirms the picture)
+--------------------------------------------------------------------------------
+GROWING_OVERFITTING_DIAGNOSTICS_ENABLED (new flag, code section 5) formalizes
+this check for every (method, step) automatically: flag = True iff
+(final_epoch_val_ce - selected_val_ce) > GROWING_OVERFITTING_VAL_CE_RISE_
+THRESHOLD (0.05). Dry-run against this run's actual best_epoch_selected_by_
+method_step.csv + training_loss_history_by_epoch.csv (all 40 method/step
+rows, all 8 methods):
+    Flagged as growing-overfitting: 2 / 40   (simple_avg step 3: rise=0.116;
+                                               simple_avg step 4: rise=0.088)
+    Of those 2, protected by best-epoch selection: 2 / 2 (100%)
+Every other method/step in the entire run -- including all 4 rank_extension
+variants and the other 3 simple_avg variants -- has a val-CE rise from best
+to final epoch of 0.040 or less (most under 0.02), well short of the
+threshold. The pattern described in the task is real, but it is narrowly
+confined to plain simple_avg specifically, and it is fully neutralized in
+both of the 2 places it occurs.
+
+CONCLUSION FOR STEP 1: the growing overfitting does NOT currently reach final
+accuracy for ANY method in this run, plain simple_avg included. Per the
+task's own rule ("if early, no change needed"), no capacity or regularization
+change is required to fix an accuracy problem, because there isn't a
+measurable one to fix.
+
+================================================================================
+2. CAPACITY / DATA RATIO
+================================================================================
+Model: openai/clip-vit-base-patch16, hidden_size=768, 12 encoder layers.
+Training samples per CL step: ~950 (given).
+
+2.1 -- simple_avg (LORA_R=80, 4 target modules: q/k/v/out_proj, FRESH r=80
+   adapter re-trained from scratch every step -- train_independent_loras()
+   calls fresh_pretrained_model() per step)
+--------------------------------------------------------------------------------
+Per-module LoRA params (A: r x 768, B: 768 x r) = 2 x 768 x r = 1536r
+  4 modules x 12 layers x 1536 x 80 = 5,898,240  (matches the "5.9M" figure)
+Classifier head: NUM_CLASSES x (hidden+1) = 100 x 769 = 76,900. Unlike
+rank_extension, simple_avg's classifier is a FRESH nn.Linear each step with no
+gradient mask -- every one of its 100 rows receives gradient every step
+(negative-class suppression from the 100-way softmax denominator touches rows
+with zero positive examples that step too), so the full head, not just the
+20 "positive" rows, is the correct trainable-params figure here.
+  Per-step trainable total = 5,898,240 + 76,900 = 5,975,140
+  Per-step params/sample   = 5,975,140 / 950 = ~6,290
+
+2.2 -- rank_extension (new_rank=16/step, 2 target modules: q/v_proj,
+   INCREMENTAL -- only the new 16-rank slice is trainable each step, old
+   slices frozen; classifier is gradient-masked to just that step's 20 rows,
+   replay_per_class=0)
+--------------------------------------------------------------------------------
+  2 modules x 12 layers x 1536 x 16 (new_rank only) = 589,824
+  Classifier (masked to 20 trainable rows) = 20 x 769 = 15,380
+  Per-step trainable total = 589,824 + 15,380 = 605,204
+  Per-step params/sample   = 605,204 / 950 = ~637
+
+2.3 -- ratio
+--------------------------------------------------------------------------------
+  simple_avg : rank_extension  =  6,290 : 637  =  ~9.9x
+
+simple_avg trains roughly 10x more parameters per step against the same
+~950-sample step-local training set. The colleague's overcapacity concern is
+quantitatively real and large -- this is not a marginal effect.
+
+================================================================================
+3. WOULD REDUCING RANK BE WARRANTED, AND WHAT WOULD IT COST?
+================================================================================
+
+3.1 -- what a cut would do to the ratio
+--------------------------------------------------------------------------------
+  r=32: 4 x 12 x 1536 x 32 = 2,359,296 + 76,900 = 2,436,196 / 950 = ~2,565  (~4.0x rank_extension)
+  r=16: 4 x 12 x 1536 x 16 = 1,179,648 + 76,900 = 1,256,548 / 950 = ~1,323  (~2.1x rank_extension)
+Both would substantially shrink the overcapacity gap. In isolation, this
+looks like a clean lever.
+
+3.2 -- but section 1 already shows the mechanism a rank cut would target
+   (accuracy loss from steps 3-4 overfitting) is not currently occurring
+--------------------------------------------------------------------------------
+Best-epoch selection already recovers the pre-overfitting checkpoint for
+BOTH affected (method, step) pairs (1.1/1.3). A rank cut applied to fix that
+would be spending risk to solve an already-solved problem.
+
+3.3 -- projected impact on simple_avg_factor_orth's 75.5% (the task's own
+   named concern)
+--------------------------------------------------------------------------------
+Section 1.2 shows simple_avg_factor_orth's steps 3-4 are NOT overfitting --
+they are still improving at epoch 7 and 9 respectively (the true optimum for
+step 4 IS the final epoch). A rank cut is a capacity cut applied uniformly to
+the whole simple_avg family (LORA_R is a single global constant, not
+per-method); cutting it while a method is demonstrably still using its
+capacity productively (val CE still falling at the epoch budget's edge) is
+the textbook way to under-fit that method specifically, not to fix an
+overfitting problem it does not have. This codebase has already run exactly
+this kind of "add a second regularizer on top of a working best-epoch-
+selection safety net" experiment once, on a different knob (LORA_DROPOUT
+0.05->0.1, 2026-07-15 commit 5c80ba8): the result was the #1-ranked method at
+the time (rank_extension_orth_factor_lam_50_kd_T2) regressing 68.15%->67.98%,
+specifically because best-epoch selection was already catching that method's
+real optimum and the extra regularizer pushed it past a DIFFERENT, worse
+optimum instead. There is no reason to expect a rank cut, applied to a family
+whose top method is mid-convergence at the point the cut would bite hardest
+(steps 3-4), to behave differently. A rough, reasoned projection: a few
+points of all_seen accuracy lost for simple_avg_factor_orth specifically
+(plausibly 2-5pp), concentrated at steps 3-4 where the late-improving pattern
+is strongest -- not a large collapse, but a real, avoidable cost, for a
+problem (1.1-1.3) that does not need fixing.
+
+3.4 -- does cutting simple_avg's rank reverse the rank_extension "parity
+   capacity" argument?
+--------------------------------------------------------------------------------
+Under the CURRENT (already-reverted) config, rank_extension uses the narrow
+schedule [16,32,48,64,80] on 2 modules -- final total capacity 2 x 12 x 1536 x
+80 = 2,949,120, already under HALF of simple_avg's 5,898,240 (the "5.9M vs
+5.9M parity" comparison in the task's framing describes the WIDE schedule
+[32,64,96,128,160] on 2 modules, 5,898,240, which was tested and explicitly
+REVERTED on 2026-07-21 -- analysis_recency_fix/report.txt A.3 -- after it made
+3 of 4 rank_extension variants WORSE, confirming capacity was not
+rank_extension's bottleneck). So under the schedule actually active today,
+reducing simple_avg's rank would make an ALREADY-existing capacity gap (favor
+simple_avg) even more lopsided in rank_extension's favor in the sense of
+"rank_extension now has a larger fraction of simple_avg's capacity," while
+rank_extension's own capacity stays fixed. Since the wide-schedule test
+already showed more capacity does not help rank_extension, this reversal has
+no upside for rank_extension either -- it would be a change with a real,
+demonstrated cost to simple_avg_factor_orth (3.3) and no evidenced benefit to
+anyone.
+
+================================================================================
+4. ALTERNATIVES EVALUATED HONESTLY
+================================================================================
+
+4.1 -- tightening best-epoch selection
+--------------------------------------------------------------------------------
+NOT APPLICABLE. EpochValidationCallback.on_epoch_end() already tracks a
+GLOBAL true minimum over all 9 epochs (`if val_ce_loss < self.best_val_ce`) --
+there is no patience window, early-stopping counter, or relative-improvement
+tolerance to tighten; it is already selecting the objectively lowest-val-CE
+checkpoint the entire run produces. There is nothing left to make stricter.
+
+4.2 -- raising LORA_DROPOUT back toward 0.1
+--------------------------------------------------------------------------------
+Already tried and already reverted (2026-07-15, commit 5c80ba8), for a
+directly relevant reason: with best-epoch selection working, a second, blunter
+regularizer was found to be redundant at best and actively harmful at worst
+(the top method regressed). That reasoning still applies unchanged here --
+best-epoch selection is confirmed still in place and still functioning
+(section 1), so the same redundancy/risk argument holds. NOT recommended.
+
+================================================================================
+5. DECISION AND IMPLEMENTATION
+================================================================================
+Recommended approach: DO NOT reduce LORA_R and DO NOT raise LORA_DROPOUT.
+Both were evaluated and both would spend real risk (documented, in
+LORA_DROPOUT's case, by this exact codebase's own history) against a problem
+that best-epoch selection already fully neutralizes for final accuracy
+(section 1). Best-epoch selection is not a workaround being trusted on faith
+here -- section 1.3's dry run against this run's actual saved data confirms
+it: only 2/40 method-step pairs in the entire run show growing overfitting by
+the 0.05 val-CE-rise threshold, and both are protected.
+
+What IS implemented (flag-gated, purely additive, zero effect on training/
+architecture/results when disabled -- and even when enabled, it only adds a
+new CSV, it changes no existing number):
+
+  GROWING_OVERFITTING_DIAGNOSTICS_ENABLED = True (default on)
+  GROWING_OVERFITTING_VAL_CE_RISE_THRESHOLD = 0.05
+    (vit_lora_cifar100_full5step_n5.py, near USE_BEST_EPOCH_SELECTION)
+
+  New table: tables/growing_overfitting_diagnostics_by_method_step.csv
+  One row per (method, step) with: selected_epoch, selected_val_ce,
+  final_epoch_val_ce, final_epoch_train_ce, train_val_gap_at_final_epoch,
+  val_ce_rise_from_best_to_final, growing_overfitting_flag,
+  accuracy_protected_by_best_epoch.
+
+  Computed entirely from data already collected by best_epoch_selection_rows
+  and training_loss_history_df (no new training-time instrumentation, no
+  change to the training loop, no change to any model weight). Wired into
+  run_config.json (growing_overfitting_diagnostics_enabled,
+  growing_overfitting_val_ce_rise_threshold) matching this codebase's existing
+  convention for flag visibility.
+
+This turns "does growing overfitting affect this run's final accuracy" from a
+manual investigation (this report) into a standing, automatic answer every
+future run will already have, without taking on the risk of an unneeded
+architecture or regularization change.
+
+================================================================================
+6. WHAT ARCHITECTURAL CHANGE WOULD BE JUSTIFIED, IF ANY
+================================================================================
+If a future run's growing_overfitting_diagnostics table ever shows
+accuracy_protected_by_best_epoch=False for a flagged row (i.e. best-epoch
+selection stops catching a real, growing overfit -- e.g. because a future
+change moves the true minimum later than the epoch budget), THAT would be the
+evidence-backed trigger to revisit rank/dropout for simple_avg specifically,
+and the recommendation above would flip. That is not the situation today.

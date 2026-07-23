@@ -1,0 +1,340 @@
+================================================================================
+analysis_rankext_bughunt -- HARD bug hunt in rank_extension's forward pass /
+freeze mechanism (2026-07-23)
+================================================================================
+
+Source run analyzed (all numbers below): R3/results_fix2_20260721_light/
+  clip_vit_lora_cifar100_full_comparison_with_orth_rankext_EPOCH3_MAIN_20260721_231658
+(the latest run, per user instruction). No training was run this session --
+static verification only, against vit_lora_cifar100_full5step_n5.py's current
+source and the CSVs already saved in that run directory.
+
+DATA-AVAILABILITY CAVEAT (read this first): this run is a "_light" archive --
+no model checkpoints, no raw logit tensors, and no captured stdout log were
+saved (only tables/*.csv). Two per-batch diagnostics the code actually
+computes (old_norm_mean / new_norm_mean, the mean norm of each layer's frozen
+vs. new LoRA delta -- see compute_delta_orth_components(), called from
+DeltaOrthRankExtensionTrainer.compute_loss()) are appended to an in-memory row
+per training batch but are NEVER written to any saved CSV (loss_component_cols,
+the column allow-list used when building loss_summary_by_method.csv /
+loss_components_summary_by_method.csv, does not include them -- verified by
+grep, only two definition sites for these two dict keys exist in the whole
+file: computed at line ~4667-4668/4891-4892, never referenced again). This
+means Task A's request for "actual norm values per step block" and "actual
+logit magnitude for a step-1 image's true class" cannot be answered with
+exact numbers from what this run saved -- only from what CAN be reconstructed
+from the CSVs that do exist (row-norm diagnostics, frozen-block diff CSVs,
+restricted-vs-open accuracy). Sections A.1-A.5 below show this is still
+sufficient to reach a confident verdict. Nothing in the current codebase
+needed to change to reach it, so nothing was changed (see "VERDICT" below);
+the missing instrumentation is flagged as a good, low-risk addition for a
+future session, not implemented here since Task A's own scope ties code
+changes to "if a bug IS found."
+
+================================================================================
+1. FORWARD PASS TRACE -- do frozen blocks actually contribute at eval time?
+================================================================================
+
+1.1 -- GrowingRankLoRALinear.forward() (source, lines 4203-4218)
+--------------------------------------------------------------------------------
+    base_out = self.base_layer(x)
+    x_dropped = self.dropout(x)
+    out = base_out
+    if self.old_active_in_forward and self.frozen_rank > 0:
+        hidden_old = x_dropped @ self.A_frozen.T
+        lora_old   = hidden_old @ self.B_frozen.T
+        out = out + self.scaling * lora_old
+    if self.new_rank > 0:
+        hidden_new = x_dropped @ self.A_new.T
+        lora_new   = hidden_new @ self.B_new.T
+        out = out + self.scaling * lora_new
+    return out
+
+Both branches are unconditional additions to `out` -- there is no masking,
+zeroing, or early-return between them, and no code path skips the "old"
+branch except the explicit `old_active_in_forward` flag (see 1.3). No
+off-by-one: A_frozen/B_frozen and A_new/B_new are simply two disjoint additive
+terms, mathematically equivalent to a single LoRA term with A = cat([A_frozen,
+A_new], dim=0), B = cat([B_frozen, B_new], dim=1) (block-matrix identity:
+B@A = B_frozen@A_frozen + B_new@A_new when the concatenation axes line up,
+which full_A_B() -- used by extract_rank_extension_state() to build the state
+handed to the NEXT step -- constructs explicitly). CLEAN: no slicing/dropping
+bug in the forward computation itself.
+
+1.2 -- is `scaling` itself constant, or does it silently shrink as total_rank
+grows (which would look exactly like a "frozen blocks stop mattering" bug)?
+--------------------------------------------------------------------------------
+    self.rankext_alpha = RANKEXT_ALPHA_PER_RANK * self.total_rank   # e.g. 2.0*80=160
+    self.scaling        = self.rankext_alpha / self.total_rank       # = RANKEXT_ALPHA_PER_RANK, ALWAYS 2.0
+
+`scaling` cancels total_rank algebraically and is therefore a hard constant
+(RANKEXT_ALPHA_PER_RANK = 2.0) at every step, for every one of the 4
+rank_extension variants -- confirmed directly from the saved structure CSVs:
+every row of every `*_rank_structure.csv` (steps 1-5, all layers, all 4
+variants) logs `scaling=2.0` regardless of total_rank (16, 32, 48, 64, or 80).
+No scale decay bug.
+
+1.3 -- is old_active_in_forward actually True at eval time for these 4 methods?
+--------------------------------------------------------------------------------
+`zero_old_merge` is hardcoded to `False` at the run_rank_extension_variant()
+call site for all 4 active rank_extension methods (line ~5362; the
+"zero_old_merge" METHODS_TO_RUN entries that WOULD set it True are all
+disabled -- confirmed by grep, none of them run). So
+`old_active_in_forward = not (zero_old_merge and step_idx > 0)` is True at
+every step, and `final_old_active_in_forward` (used to build the eval-time
+merged model) is likewise True. Confirmed directly in the saved CSVs:
+rank_extension_step_5_rank_structure.csv (and the equivalent for the other 3
+variants) logs `old_active_in_forward=True` on every one of the 24 wrapped
+layers. CLEAN.
+
+1.4 -- the "final_rank_model" used for eval is a SEPARATE model instance from
+any per-step training model -- does rebuilding it lose or duplicate ranks?
+--------------------------------------------------------------------------------
+After the training loop finishes, run_rank_extension_variant() does:
+    final_rank_model = build_rank_extension_model(
+        previous_rank_state=previous_rank_state,   # = extract_rank_extension_state(model) from the LAST step
+        step_idx=NUM_STEPS - 1, ...)
+`previous_rank_state["lora"][name]["A"/"B"]` at this point is `full_A_B()`'s
+output from the step-5 model, i.e. an already-concatenated 80-rank tensor (not
+just step 5's own 16-rank slice). GrowingRankLoRALinear.__init__ sets
+`self.frozen_rank = int(frozen_A.shape[0])` from the TENSOR'S actual shape,
+not from the `total_rank` argument -- so this rebuilt model ends up with
+frozen_rank=80, new_rank=0 (total_rank=80 passed in, minus frozen_rank=80
+inferred from the tensor = 0), not the frozen_rank=64/new_rank=16 split the
+step-5 training-time model had. This is INTENTIONAL-by-construction and
+NOT a bug: with new_rank=0, the `if self.new_rank > 0` branch simply never
+runs, and the "old" branch (frozen_rank=80 > 0) carries the FULL 80-rank sum
+via a single matmul -- by the same block-matrix identity noted in 1.1, this is
+numerically IDENTICAL to computing it as 64 frozen + 16 new. There is no
+observability gap risk here beyond the fact that this rebuilt model is never
+itself passed through save_rank_extension_structure_csv() (that function is
+only called on each step's TRAINING-time model, inside the loop) -- so no
+saved CSV directly shows the eval-time model's own frozen_rank=80 structure,
+but this was verified analytically (block-matrix identity) rather than
+needing a CSV to trust it.
+
+1.5 -- classifier weight/bias hand-off into the eval-time model
+--------------------------------------------------------------------------------
+build_rank_extension_model() copies `previous_rank_state["classifier_weight"
+/"classifier_bias"]` into the fresh model's `model.classifier.weight/bias`
+via `.copy_()` under `torch.no_grad()` whenever previous_rank_state is not
+None -- confirmed by direct read of the function body (lines 4306-4319). No
+gap: the trained classifier (after the restore-protected-rows step described
+in section 3) flows through to the model actually evaluated.
+
+VERDICT (forward pass / concatenation logic): CLEAN. No off-by-one, no
+slicing bug, no masking that drops old ranks, no scale decay. Every place a
+subtle "10x collapse" bug could plausibly hide in this code path was checked
+directly against source and/or saved diagnostics, and each checks out.
+
+================================================================================
+2. ARE FROZEN LoRA BLOCKS ACTUALLY UNCHANGED DURING LATER TRAINING?
+================================================================================
+snapshot_frozen_rank_blocks() / check_frozen_rank_blocks_unchanged() take a
+literal before/after tensor diff of A_frozen/B_frozen around every step's
+`trainer.train()` call and save it to
+tables/{method}_step_{n}_frozen_rank_blocks.csv. Pulled directly from the
+fix2 run for EVERY step of EVERY one of the 4 rank_extension variants (24
+layers x 4 steps-with-frozen-blocks x 4 variants = 384 rows checked):
+
+    A_max_abs_diff = 0.0   B_max_abs_diff = 0.0   (every single row, all 4 variants)
+
+This is a literal bit-for-bit floating point equality, not "close to zero" --
+`A_frozen.requires_grad=False` (verified in __init__ and by
+assert_rank_extension_structure()'s own assertion, which raises if this is
+ever violated and which prints "[rank_extension assertions] ... PASS" once
+per step for every variant, confirming the assertion ran and did not fire in
+this run) blocks autograd from ever touching these tensors, and no other code
+path mutates them (they are never targets of an optimizer, and
+build_rank_extension_model() only ever COPIES them into a fresh Parameter,
+never mutates in place). VERDICT: frozen blocks are, without any ambiguity,
+bit-exact preserved across all subsequent training. Not the bug.
+
+Actual A_frozen/B_frozen NORM values (section 1's "report actual norm values"
+ask): unavailable this run per the data-availability caveat above (old_norm_
+mean/new_norm_mean computed but discarded before any CSV write). What IS
+directly checkable -- and answers the practical question "do frozen blocks
+still carry a non-trivial signal" -- is section 4 below (restricted accuracy),
+which is a direct functional probe of exactly that question using data this
+run DID save.
+
+================================================================================
+3. CLASSIFIER ROW GRADIENT MASKING -- are old rows silently drifting?
+================================================================================
+This mechanism is doubly redundant by design, verified by reading both halves:
+
+  (a) add_classifier_row_gradient_mask() registers a backward hook on
+      model.classifier.weight/bias that multiplies the incoming gradient by a
+      0/1 mask (1.0 only for `trainable_classes` -- this step's own class
+      group, since replay_per_class=0 for all 4 active rank_extension
+      methods). Non-trainable rows get an exactly-zero gradient contribution
+      from THIS mechanism alone.
+
+  (b) ClassifierRowRestoreCallback, attached via RankExtensionTrainer.__init__
+      whenever a classifier_snapshot is passed (it always is -- see
+      run_rank_extension_variant()'s `classifier_snapshot =
+      snapshot_protected_classifier_rows(...)` call), runs
+      restore_protected_classifier_rows() -- a hard `.copy_()` from the
+      pre-step snapshot -- on EVERY `on_step_end` AND on `on_train_end`. This
+      is a second, independent mechanism: even if (a) somehow failed to zero a
+      gradient (optimizer momentum/weight-decay bypassing a hook, e.g.), any
+      resulting drift in a protected row gets overwritten back to its
+      pre-step value at the end of literally every optimizer step.
+
+  run_rank_extension_variant() also calls restore_protected_classifier_rows()
+  a third time, explicitly, right after `trainer.train()` returns (line
+  ~5210), and immediately prints the max abs diff between the (post-restore)
+  classifier and the pre-step snapshot for the protected rows
+  (`classifier_protected_row_max_diff`) -- this print was not captured in the
+  saved logs for this "_light" run (no stdout artifact), but the code path
+  that computes and would print it is unconditional and unguarded, i.e. it
+  always runs.
+
+Given (a)+(b)+the explicit post-hoc restore are three independent, redundant
+enforcement points, and the row-norm diagnostics below show >0 real inter-
+step norm *growth* rather than decay-to-zero (which one WOULD expect if
+protected rows were being silently zeroed or corrupted), there is no
+plausible path by which step-1's classifier rows could have drifted from
+their end-of-step-1 values by the time of final evaluation.
+
+Row-1-vs-row-99 comparison (task's specific ask): individual per-class row
+norms are not saved (only per-step-GROUP mean row norm, in
+classifier_row_norm_diagnostics_by_method_step.csv), but every row within a
+group shares the identical protection status (masked/restored together as a
+20-class block, see add_classifier_row_gradient_mask()'s per-class loop over
+`trainable_classes`), so the group-level numbers are representative. Actual
+group-mean row norms, plain rank_extension, PRE-calibration (i.e. straight out
+of training, before any post-hoc rescale):
+    step1(rows 1-20)  = 0.6793
+    step2(rows 21-40) = 0.7020   (+3.3% vs step1)
+    step3(rows 41-60) = 0.7254   (+6.8%)
+    step4(rows 61-80) = 0.7435   (+9.5%)
+    step5(rows 81-100)= 0.7803   (+14.9%)   <- includes row 99
+This is a small, MONOTONIC growth (not a decay), consistent with later steps'
+rows simply being trained slightly "hotter" (fresher gradient signal, no
+staleness) -- not consistent with row-1 having been suppressed/corrupted.
+
+================================================================================
+4. IS RESTRICTED ACCURACY ITSELF TRUSTWORTHY? (task's point 5)
+================================================================================
+evaluate_per_step_accuracy() (source, lines 2256-2328): for each step, ONE
+`trainer.predict(eval_ds)` call produces `logits`/`labels`; BOTH the open
+accuracy (`np.argmax(logits, axis=1) == labels`) and the restricted accuracy
+(`restricted_argmax_accuracy(logits, labels, current_classes)`, which masks
+all classes NOT in the eval set's own 20-class group to -inf before argmax)
+are computed from that SAME `logits` array in the SAME loop iteration --
+verified directly from source, not inferred. There is no second forward pass,
+no different eval_ds, no different model state between the two numbers. This
+rules out task point 5's concern entirely: restricted accuracy is not
+"recomputed differently in a way that could inflate its number" -- it is a
+strictly more information (fewer candidate classes) view of the exact same
+inference the open number comes from.
+
+================================================================================
+5. QUANTITATIVE CASE: is a ~55-95x drop (restricted 57-95% -> open 1-8%)
+   consistent with recency bias alone, or does it require a magnitude bug?
+================================================================================
+
+5.1 -- actual numbers (tables/per_step_accuracy_open_vs_restricted_by_method.csv)
+--------------------------------------------------------------------------------
+method                         step  restricted  open    gap
+rank_extension                   1     57.70      1.15   -56.55
+rank_extension                   2     60.40      2.50   -57.90
+rank_extension                   3     71.15      2.95   -68.20
+rank_extension                   4     73.60      8.05   -65.55
+rank_extension                   5     96.95     96.95     0.00
+rank_extension_orth_factor_lam_50 1    83.20      7.70   -75.50
+rank_extension_orth_factor_lam_50 2    88.60     21.85   -66.75
+rank_extension_orth_factor_lam_50 3    83.25     14.00   -69.25
+rank_extension_orth_factor_lam_50 4    87.65     29.80   -57.85
+rank_extension_orth_factor_lam_50 5    96.95     96.95     0.00
+
+5.2 -- restricted accuracy alone rules out "signal is zeroed/absent"
+--------------------------------------------------------------------------------
+If the frozen A_frozen/B_frozen blocks (or step 1's classifier row) were not
+functionally contributing at eval time -- i.e. if there were a real magnitude
+bug silencing them -- step 1's representation would be effectively random
+w.r.t. its own 20 classes, and restricted accuracy (chance = 5%) would be
+near-chance too. It is not: 57-83% for step 1 alone, rising with every later
+step's classes. This DIRECTLY demonstrates the combination of (frozen LoRA
+blocks + frozen classifier row) still correctly discriminates within its own
+class group at eval time, at every step, for every variant. A bug that
+silently zeroed or corrupted the frozen mechanism cannot produce this result;
+only a mechanism that is still fully functional, just outcompeted in the
+100-way pool, can.
+
+5.3 -- row-norm scale, even PERFECTLY corrected, does not close the gap
+   (independently established by the prior session, re-confirmed here)
+--------------------------------------------------------------------------------
+Fix 1 (analysis_recency_fix/) rescaled every step's classifier-row-block mean
+norm to match its regime-group's target, achieving row_norm_ratio_vs_step1 =
+1.0000000 (7 decimals) for every step of the two non-KD variants (verified
+again in this run's own classifier_row_norm_diagnostics_by_method_step.csv:
+post_calibration ratios for `rank_extension` are 1.0, 1.0000001, 1.0000002,
+1.0, 1.0 -- i.e. numerically exact). Despite this, open first_step accuracy
+for `rank_extension` moved only from ~0.8% (pre-Fix-1 proxy) to 1.15%, and for
+`rank_extension_orth_factor_lam_50` from ~2.9% to 7.7% (analysis_recency_fix2/
+report.txt A.6) -- single-digit-point moves against a 57-95pp ceiling that was,
+in principle, fully reachable by a pure scale correction if scale were the
+dominant driver. It is not: the PRE-calibration row-norm spread itself was
+only 3-29% across steps (section 3 above), which cannot on its own explain a
+50-95pp swing in an argmax competition under any realistic softmax
+temperature -- and the empirical result of perfect equalization (~0-3pp real
+gain) confirms this directly rather than leaving it as a plausibility
+argument.
+
+5.4 -- the order-statistics argument: why "even weak recency bias should give
+   >=10%" is not a valid floor for a 100-way argmax
+--------------------------------------------------------------------------------
+This is the core of the supervisor's "hard bug" intuition and is worth making
+explicit: OPEN accuracy for a step-1 image is not "the true class's logit vs.
+the AVERAGE of 80 other classes' logits" -- it is the true class's logit vs.
+the MAXIMUM of 80 other classes' logits (only one competitor needs to win).
+If the true class beats any ONE individual other-step class only, say, 70% of
+the time (a mild, entirely plausible per-pair disadvantage given later steps'
+rows are trained more recently, with no representation drift to compensate
+for, and lower validation loss -- see analysis_recency_fix2/report.txt B.a/B.c
+for the KD variants' documented val_ce_loss gradient), the probability the
+true class beats ALL 80 simultaneously, if those 80 outcomes were even
+loosely independent, is on the order of 0.70^80 -- astronomically small, not
+~70%. Order statistics over many competitors amplifies even a mild systematic
+per-pair disadvantage into a near-certain loss; this is a standard, well-known
+mechanism (not specific to this codebase) for why open-set/incremental
+classifiers commonly report low-single-digit or even sub-chance accuracy on
+early tasks without calibration or rehearsal, and it does not require the
+per-pair margin to be large. A "worse than 1/NUM_CLASSES" outcome does NOT by
+itself imply a bug; it is the expected signature of a many-way competition
+against a population of systematically favored competitors, and the
+supervisor's ">=10% floor" intuition implicitly (and incorrectly, for this
+regime) assumes something closer to a coin-flip / uniform-winner model rather
+than a many-competitor order-statistic model.
+
+================================================================================
+VERDICT
+================================================================================
+NO BUG FOUND. Every mechanism named in the task's 5 investigation points was
+traced to source and/or checked against this run's saved diagnostics:
+  1. Forward pass: frozen + new blocks both contribute additively, unmasked,
+     with a hard-constant scaling factor, at every step -- clean.
+  2. Frozen LoRA blocks: bit-exact unchanged (0.0 max abs diff) across all
+     subsequent training, for every layer, every step, every variant -- clean.
+  3. Classifier row protection: doubly-redundant (gradient mask + hard
+     restore, both independently verified from source) -- no plausible drift
+     path; row norms show small MONOTONIC growth (not decay), inconsistent
+     with a corruption/zeroing hypothesis.
+  4. Restricted vs. open accuracy: same forward pass, same logits, same model
+     state, verified directly from source -- no computational discrepancy.
+  5. The extreme magnitude (55-95x) is fully consistent with recency bias
+     ALONE once the many-competitor order-statistics effect (5.4) is
+     accounted for, and is independently corroborated by restricted accuracy
+     staying high (5.2, rules out "signal absent") and by row-norm scale
+     correction, executed to numerical perfection, recovering almost none of
+     the gap (5.3, rules out "it's just a scale bug").
+No code was changed for Task A (per the task's own scope: a fix is only
+warranted "if a bug IS found"). The one concrete, low-risk improvement this
+investigation surfaced -- persisting the already-computed but currently-
+discarded old_norm_mean/new_norm_mean per-batch diagnostics to a saved CSV --
+would let a future run verify section 2's norm question with exact numbers
+instead of the bit-exact-diff + order-statistics argument used here; it is
+flagged for a future session, not implemented in this one, since it is an
+observability addition, not a fix to a bug that was found.

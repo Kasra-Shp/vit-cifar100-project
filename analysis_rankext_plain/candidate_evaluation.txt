@@ -1,0 +1,245 @@
+================================================================================
+analysis_rankext_plain -- candidate_evaluation.txt: five candidate fixes for
+plain RankExt's interference, ranked, with one chosen (2026-07-23)
+================================================================================
+Grounding: diagnosis.txt found (a) frozen LoRA blocks bit-exact, (b) frozen
+classifier rows protected by a doubly-redundant, unbroken mechanism, (c) no
+weight drift anywhere -- so the ~35+pp restricted-accuracy collapse specific
+to plain training must come from how the still-training new block's
+perturbation of the SHARED q/v_proj computation interacts with the frozen old
+block + frozen old classifier rows, and (d) KD's step-1 rescue is explained
+by a concrete anchoring mechanism plain training lacks entirely. Every
+candidate is scored against this diagnosis, not in the abstract.
+
+================================================================================
+CANDIDATE 1 -- separate (lower) LR for the new rank block
+================================================================================
+Mechanically: give A_new/B_new their own optimizer parameter group at, e.g.,
+0.1x the base LR (classifier head and any other trainable params keep their
+existing multiplier -- rank_extension's own head_lr_multiplier is already 1.0,
+i.e. no separate group exists for it today). Uniformly slows the new block's
+convergence rate across the ENTIRE 9-epoch step, not just the start.
+
+Addresses: partially. A slower-moving new block changes less per step, which
+plausibly produces smaller, less disruptive perturbations to the shared
+forward computation -- but it does this by slowing convergence everywhere,
+not by targeting the specific "early, uninformed, B_new==0-at-start" moment
+diagnosis.txt section 4.3 identifies as the likely trigger. It is a blunter
+instrument than the actual mechanism calls for.
+
+Expected magnitude: modest and two-sided. Given the existing cosine LR
+schedule already anneals LR down over the step, a further 0.1x cut risks
+leaving the new block meaningfully UNDER-fit within the fixed 9-epoch/EPOCHS
+budget -- i.e. it could trade some of plain RankExt's OWN new-step
+(later_steps) accuracy for a partial recovery of old-step retention, not a
+clean win on both. No existing data in this codebase directly measures this
+tradeoff for rank_extension's new-block LR specifically, so the magnitude is
+a plausible-but-unverified guess in either direction.
+
+Risk to other 3 variants: LOW-to-moderate. FactorOrth/KD already have their
+own anchor; a slower new block on top would not conflict with those
+mechanisms, but by the same "uniformly slower everywhere" logic could shave
+some of FactorOrth/KD's currently-fine new-step convergence too, for a
+mitigation whose OWN benefit is unproven.
+
+Complexity: LOW -- HeadLRTrainerMixin/build_head_lr_param_groups() already
+implements exactly this per-group-multiplier pattern for the classifier head;
+extending it to a second group for A_new/B_new is a straightforward reuse.
+
+================================================================================
+CANDIDATE 2 -- warmup on the new rank block's LR/output within each step
+================================================================================
+Mechanically: ramp the new block's effective contribution from ~0 to full
+strength over the first ~1 epoch of each step's local training (mirroring
+RANKEXT_ORTH_LAMBDA_WARMUP_ENABLED's existing, already-validated-in-this-
+codebase ramp for the orth loss coefficient), instead of the current
+full-strength-from-batch-1 behavior.
+
+Addresses: DIRECTLY. B_new is zero-initialized every step (nn.init.zeros_),
+so the earliest few batches of any step set A_new/B_new's initial direction
+from a completely uninformed starting point -- exactly the "no anchor, no
+cooperation pressure" window diagnosis.txt 4.3 identifies, and exactly the
+window this codebase's OWN existing evidence (the RANKEXT_ORTH_LAMBDA_WARMUP_
+ENABLED comment block, citing analysis_rankext_firststep/table4: train_ce_loss
+1.5-3.4x higher at local_epoch==1, decaying 2-4 orders of magnitude within
+1-2 epochs) already shows is a uniquely volatile transient for a freshly-
+added rank_extension block specifically. Unlike candidate 1, this targets
+ONLY the volatile early window and returns to full strength well before the
+step's training ends, so it does not cap final convergence quality.
+
+Expected magnitude: this is the one candidate with a DIRECT precedent in this
+exact codebase for the SAME class of mechanism (a within-step warmup for a
+newly-added rank_extension signal) already producing measured, real train_ce
+volatility reduction. It cannot be projected to a specific accuracy number
+(that would repeat the earlier +30pp-style optimism this task explicitly
+warns against) -- but of all 5 candidates, it is the one whose mechanism of
+action has the most direct evidentiary support already sitting in this
+codebase, at effectively zero cost to final-epoch training quality.
+
+Risk to other 3 variants: LOWEST of the 5. It touches only the new block's
+early-training contribution magnitude, not any loss term, not KD, not orth,
+not calibration, not the classifier. FactorOrth/KD's own anchoring
+mechanisms are undisturbed; if anything, a calmer early transient gives THEIR
+anchors (which also act on the new block's output) a less noisy target to
+work against. Reuses a formula (orth_lambda_warmup_multiplier) already
+proven safe/beneficial in this codebase for a structurally identical
+purpose.
+
+Complexity: LOW -- one module-level multiplier read inside
+GrowingRankLoRALinear.forward()'s existing new-block branch, one
+TrainerCallback (mirrors ClassifierRowRestoreCallback's existing structure),
+one new parameter threaded through train_with_trainer() (defaults to None,
+i.e. off, for every call site that doesn't pass it -- trivially guarantees
+simple_avg is untouched).
+
+================================================================================
+CANDIDATE 3 -- damping regularizer between new-block output and
+concatenated-old-block output ("a weaker relative of FactorOrth")
+================================================================================
+Mechanically, as literally described ("penalizing large changes in the
+combined output on old-class samples"), this requires OLD-CLASS images
+during training. Plain rank_extension trains with replay_per_class=0 -- no
+old-class images are present in any active configuration this session is
+scoped to touch. The only way to implement this candidate as literally
+specified would be to turn on replay (an architecture change well beyond
+Task C's scope and explicitly excluded from "no speculative extras").
+Reinterpreted onto CURRENT-step data instead (penalizing the new block's own
+output magnitude / its interaction with the old block's output, evaluated on
+the SAME batch the CE loss uses), this collapses into exactly the machinery
+ALREADY implemented and already ACTIVE for a subset of these methods:
+compute_delta_orth_components()'s trace/norm/factor_orth terms, wired through
+lambda_orth in DeltaOrthRankExtensionTrainer.compute_loss(). This is not a
+new candidate -- it is "give plain RankExt (and rank_extension_kd_only_T2,
+neither of which currently has lambda_orth>0) some nonzero lambda_orth."
+
+Addresses: directly, and with the STRONGEST existing evidence of the 5
+candidates -- rank_extension_orth_factor_lam_50 (lambda_orth=50, i.e. exactly
+this mechanism already turned on) is an ALREADY-RUN, in-data demonstration
+that this class of fix helps a great deal: restricted step1 57.7% -> 83.2%
+(+25.5pp), open all_seen 22.3% -> 34.1% (+11.7pp), vs. plain rank_extension in
+the SAME run.
+
+Risk to other 3 variants: this is the candidate's real problem, not its
+mechanism. "Apply the SAME protocol to all 4 variants" (pre-authorization #2)
+means either (a) giving plain and kd_only_T2 a NEW nonzero orth-like penalty
+they don't have today, while the two FactorOrth variants ALREADY have
+lambda_orth=50 -- meaning the "same fix" would functionally be a no-op for 2
+of the 4 variants and a large change for the other 2 (not actually uniform in
+effect, only uniform in mechanism-name), or (b) adding an ADDITIONAL damping
+term on top of the existing lambda_orth=50 for the FactorOrth variants,
+risking double-regularization/compounding tension with an already-tuned
+value never designed to be stacked. Worse: turning plain RankExt and
+rank_extension_kd_only_T2 into "RankExt+some-orth" and "RankExt+KD+some-orth"
+respectively blurs the four supervisor-selected methods' whole reason for
+being four DISTINCT points of comparison (plain / +FactorOrth / +KD /
++FactorOrth+KD) -- this codebase's own commit history repeatedly emphasizes
+"one lever per run, isolate cleanly, attribute honestly" as a design
+principle; collapsing the plain/FactorOrth distinction directly conflicts
+with that principle in a way none of the other 4 candidates do.
+
+Complexity: LOW to reuse the existing machinery, but MEDIUM-HIGH to do so
+correctly without double-regularizing 2 of the 4 variants or eliminating the
+plain-vs-FactorOrth comparison the experiment is built around.
+
+================================================================================
+CANDIDATE 4 -- verify+strengthen classifier-row freezing
+================================================================================
+Addresses: nothing currently broken. diagnosis.txt sections 1-2 found NO
+drift in either the frozen LoRA blocks (bit-exact, directly measured) or the
+classifier-row protection mechanism (no drift signature in available
+evidence; the mechanism is already doubly redundant by design). Per
+pre-authorization #1 ("if Task A finds ANY drift... that IS a bug and takes
+priority"): no drift was found, so this pre-authorization's trigger condition
+is not met.
+
+Expected magnitude: ~0. Hardening an already-correctly-functioning mechanism
+against a failure mode with no evidence of occurring cannot recover any of
+plain RankExt's missing accuracy.
+
+Risk to other 3 variants: minimal, but also zero benefit -- pure added
+complexity for a problem that does not exist.
+
+Complexity: LOW-MEDIUM (e.g. adding a third, redundant restore point, or an
+assertion). Ranked last regardless of low complexity, because complexity is
+irrelevant when expected gain is zero -- and pre-authorization #7 explicitly
+rules out speculative extras beyond what the tasks require.
+
+================================================================================
+CANDIDATE 5 -- feature freezing: consistency loss vs. saved old-block features
+================================================================================
+Mechanically: save intermediate (post-LoRA-attention) features on old-class
+inputs per step, add a loss term penalizing the student's drift from them.
+Explicitly acknowledged in the task itself as needing new per-step feature
+capture. This ALSO requires OLD-CLASS input images (same rehearsal-data gap
+as candidate 3) -- either real old-class samples (replay, out of scope) or a
+synthetic/no-image proxy (not specified, not obviously sound). Even before
+that gap, it requires: a new feature-cache/replay-buffer subsystem, hooks
+into the CLIP encoder to capture intermediate activations, storage/lifecycle
+management across 5 sequential per-step Trainer instances, and a new loss
+term whose scale relative to CE would itself need tuning from scratch (no
+existing precedent in this codebase, unlike candidates 2/3).
+
+Addresses: directly and most completely IN PRINCIPLE (a true anchor against
+drift, not just a slower/gentler ramp) -- but only if the old-class-data gap
+is solved, which is out of scope this session.
+
+Expected magnitude: unknown; no comparable existing mechanism in this
+codebase to project from, and the task's own honesty requirement (pre-auth
+#4) means this should not be guessed at.
+
+Risk to other 3 variants: unclear/high -- a brand-new loss term of unproven
+scale interacting with existing KD/orth losses (already carefully tuned
+against each other, per COMBINED_LOSS_SCALE_ENABLED's own scaling logic
+elsewhere in this codebase) is the least predictable of the 5 candidates.
+
+Complexity: HIGHEST of the 5 by a wide margin -- new data pipeline, new
+instrumentation, new loss term, no reusable precedent.
+
+================================================================================
+RANKING
+================================================================================
+Scoring (expected gain x probability of success x implementation cleanliness)
+/ (risk x complexity), qualitative (no fabricated numeric scores):
+
+  1. Candidate 2 (new-block output warmup)     -- best on every axis: directly
+     targets the diagnosed mechanism, has a working precedent IN THIS
+     CODEBASE for the same class of fix, lowest risk (touches nothing else),
+     lowest complexity, and does not compromise the 4-variant comparison
+     design at all.
+  2. Candidate 3 (orth-style damping)           -- mechanistically the
+     best-EVIDENCED (FactorOrth's real, already-measured +25.5pp/+11.7pp is
+     a working example of exactly this idea), but its "apply uniformly"
+     framing collapses the plain-vs-FactorOrth distinction and risks
+     double-regularizing two of the four variants -- a real design-coherence
+     cost candidate 2 does not have.
+  3. Candidate 1 (separate lower LR for new block) -- plausible, low
+     complexity, but blunter than candidate 2 (slows the WHOLE step, not just
+     the volatile opening), with a real, unquantified risk of under-fitting
+     new classes.
+  4. Candidate 5 (feature freezing / consistency loss) -- highest potential
+     ceiling in principle, but blocked on a rehearsal-data gap this session
+     is not scoped to close, highest complexity, least predictable risk.
+  5. Candidate 4 (harden classifier freezing) -- no problem found to fix
+     (pre-authorization #1's trigger condition not met); ranked last
+     regardless of its own low complexity.
+
+================================================================================
+CHOSEN FIX: Candidate 2 -- new rank block output warmup
+================================================================================
+Commit, no hedging: implement candidate 2. It is the only candidate that
+(a) directly targets the specific mechanism diagnosis.txt identifies (the
+new block's uninformed earliest updates perturbing shared computation before
+any anchor exists), (b) has a working precedent for the identical class of
+within-step warmup already validated in this exact codebase
+(RANKEXT_ORTH_LAMBDA_WARMUP_ENABLED), (c) carries the lowest risk to the
+other 3 variants of any candidate with a plausible real effect, and (d)
+preserves the 4-way plain/FactorOrth/KD/FactorOrth+KD comparison exactly as
+designed, applying the SAME mechanism to all four without collapsing any of
+them into each other (unlike candidate 3).
+
+Per pre-authorization #2: this fix is applied identically to all 4 variants
+even though it plausibly helps plain RankExt the most (it has no other
+anchor) and may be closer to a no-op for KD/FactorOrth (which already have
+their own, likely-stronger anchors) -- that asymmetry is expected and
+acceptable; the alternative (a per-variant hack) would violate the "same
+protocol per family" principle this task explicitly protects.

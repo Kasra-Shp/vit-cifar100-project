@@ -380,6 +380,31 @@ RANKEXT_FAMILY_AWARE_CALIBRATION_ENABLED = True
 # BY_FAMILY falls back to "regime_grouped" (FIX 1) exactly as before.
 RANKEXT_CONFIDENCE_WEIGHTED_CALIBRATION_ENABLED = True
 
+# FEATURE-ANCHOR LEVER (decision doc, 2026-08-05): feature-level (not logit-KD)
+# anchor for rank_extension's two NEW non-KD variants below --
+# "rank_extension_featanchor" and "rank_extension_orth_factor_featanchor".
+# Mechanism prediction (not yet measured -- see RANKEXT_DRIFT_DIAGNOSTICS_ENABLED
+# below for the diagnostic that measures it this run): the shared backbone's
+# feature manifold drifts every step because F.cross_entropy's full-100-way
+# softmax pushes old-class logits down for current-step images, and the only
+# trainable path able to do that is the new LoRA block, which is class-agnostic
+# and so perturbs old-step images' features too. This loss compares the CLS
+# hidden state (pre-classifier) of the CURRENT model against a frozen snapshot
+# of the model as it stood at the end of the PREVIOUS step, both evaluated on
+# the SAME current-step training batch (rehearsal-free -- no stored old
+# images). Deliberately a SEPARATE mechanism from logit-KD (compare
+# DeltaOrthRankExtensionTrainer.compute_loss()'s feature_anchor_active block
+# against its teacher_active/KD block): no softmax, no classifier, no
+# temperature -- geometry of the shared representation, not output-distribution
+# matching. Does not touch simple_avg (different trainer class entirely) or
+# either of the two rank_extension KD variants (feature_anchor_weight is forced
+# to 0.0 for them at the one rank_extension call site below, mutually exclusive
+# with use_kd by construction). Existing "rank_extension" and
+# "rank_extension_orth_factor_lam_50" are left completely unchanged as the
+# non-KD baseline -- the feature-anchor variants are two brand-new methods, not
+# a retrofit.
+RANKEXT_FEATURE_ANCHOR_WEIGHT = 1.0
+
 # Master switch above still gates calibration overall (False disables it for
 # every method, same as before). When True, CALIBRATION_ENABLED_FAMILIES
 # decides which families actually get it. simple_avg: keep True (empirically
@@ -590,6 +615,8 @@ METHOD_DISPLAY_NAME_MAP = {
     "rank_extension_orth_factor_lam_50": "RankExt + FactorOrth",
     "rank_extension_orth_factor_lam_50_kd_T1": "RankExt + FactorOrth + KD T1",
     "rank_extension_orth_factor_lam_50_kd_T2": "RankExt + FactorOrth + KD T2",
+    "rank_extension_featanchor": "RankExt + FeatAnchor",
+    "rank_extension_orth_factor_featanchor": "RankExt + FactorOrth + FeatAnchor",
 }
 
 METHOD_ALIAS_NAME_MAP = {
@@ -675,6 +702,28 @@ SUPERVISOR_SELECTED_METHOD_SPECS = [
         "factor_lambda": 50.0,
         "kd_temperature": 2.0,
         "kd_weight": float(KD_WEIGHT),
+    },
+    # FEATURE-ANCHOR LEVER (decision doc, 2026-08-05): two NEW methods added to
+    # the supervisor-selected comparison set (10 total) so this run measures
+    # them directly against their non-KD baselines above, not just in the
+    # generic all-methods tables. See RANKEXT_FEATURE_ANCHOR_WEIGHT.
+    {
+        "internal_method_name": "rank_extension_featanchor",
+        "supervisor_requested_name": "rank_extension_featanchor",
+        "display_name": "RankExt + FeatAnchor",
+        "family": "rank_extension",
+        "factor_lambda": 0.0,
+        "kd_temperature": 0.0,
+        "kd_weight": 0.0,
+    },
+    {
+        "internal_method_name": "rank_extension_orth_factor_featanchor",
+        "supervisor_requested_name": "rank_extension_orth_factor_featanchor",
+        "display_name": "RankExt + FactorOrth + FeatAnchor",
+        "family": "rank_extension",
+        "factor_lambda": 50.0,
+        "kd_temperature": 0.0,
+        "kd_weight": 0.0,
     },
 ]
 SUPERVISOR_SELECTED_INTERNAL_METHODS = [
@@ -968,6 +1017,10 @@ METHODS_TO_RUN = {
     "rank_extension_orth_delta_trace_lam_50_kd": False,
     "rank_extension_orth_factor_lam_50": True,
     "rank_extension_orth_factor_lam_50_kd": True,
+    # FEATURE-ANCHOR LEVER (decision doc, 2026-08-05): two NEW methods, not a
+    # retrofit of the two lines above -- see RANKEXT_FEATURE_ANCHOR_WEIGHT.
+    "rank_extension_featanchor": True,
+    "rank_extension_orth_factor_featanchor": True,
     "do_merging_simple": False,
     "joint_upper_bound": False,
     "full_finetune": False,
@@ -1017,7 +1070,7 @@ def kd_temperature_tag(temp):
 def build_active_method_configs():
     configs = []
 
-    def add_method(method_name, family, base_method, uses_kd=False, kd_temperature=0.0, uses_delta_trace=False, uses_factor_orth=False, lambda_orth_scale=1.0, kd_weight_scale=1.0):
+    def add_method(method_name, family, base_method, uses_kd=False, kd_temperature=0.0, uses_delta_trace=False, uses_factor_orth=False, lambda_orth_scale=1.0, kd_weight_scale=1.0, uses_feature_anchor=False, feature_anchor_weight=0.0):
         if not METHODS_TO_RUN.get(base_method, False):
             return
         configs.append({
@@ -1029,6 +1082,11 @@ def build_active_method_configs():
             "kd_weight": float(KD_WEIGHT if uses_kd else 0.0) * float(kd_weight_scale),
             "uses_delta_trace": bool(uses_delta_trace),
             "uses_factor_orth": bool(uses_factor_orth),
+            # FEATURE-ANCHOR LEVER: mutually exclusive with uses_kd by
+            # construction at every call site below (never both True for the
+            # same method) -- see RANKEXT_FEATURE_ANCHOR_WEIGHT above.
+            "uses_feature_anchor": bool(uses_feature_anchor),
+            "feature_anchor_weight": float(feature_anchor_weight) if uses_feature_anchor else 0.0,
             "lambda_orth": float(LAMBDA_ORTH if (uses_delta_trace or uses_factor_orth) else 0.0) * float(lambda_orth_scale),
             # ACCURACY-PUSH CANDIDATE bookkeeping: 1.0 for every method except
             # simple_avg_factor_orth_kd_T2 when COMBINED_LOSS_SCALE_ENABLED is
@@ -1090,6 +1148,18 @@ def build_active_method_configs():
         kd_tag = kd_temperature_tag(kd_temp)
         add_method(f"rank_extension_orth_factor_lam_50_kd_{kd_tag}", "rank_extension", "rank_extension_orth_factor_lam_50_kd", uses_kd=True, kd_temperature=kd_temp, uses_factor_orth=True)
 
+    # FEATURE-ANCHOR LEVER (decision doc, 2026-08-05): two NEW methods, added
+    # alongside -- not in place of -- the existing non-KD baselines
+    # ("rank_extension", "rank_extension_orth_factor_lam_50" above are
+    # untouched). uses_kd=False (default) for both, so use_feature_anchor at
+    # the run_rank_extension_variant() call site below is always the opposite
+    # of use_kd for every rank_extension method -- mutually exclusive by
+    # construction, never both True for the same method.
+    add_method("rank_extension_featanchor", "rank_extension", "rank_extension_featanchor",
+                uses_feature_anchor=True, feature_anchor_weight=RANKEXT_FEATURE_ANCHOR_WEIGHT)
+    add_method("rank_extension_orth_factor_featanchor", "rank_extension", "rank_extension_orth_factor_featanchor",
+                uses_factor_orth=True, uses_feature_anchor=True, feature_anchor_weight=RANKEXT_FEATURE_ANCHOR_WEIGHT)
+
     return configs
 
 
@@ -1110,6 +1180,8 @@ EXPECTED_ENABLED_METHOD_FAMILIES = {
     "rank_extension_kd_only",
     "rank_extension_orth_factor_lam_50",
     "rank_extension_orth_factor_lam_50_kd",
+    "rank_extension_featanchor",
+    "rank_extension_orth_factor_featanchor",
 }
 
 assert KD_WEIGHT == 1.0
@@ -3184,6 +3256,78 @@ def calibrate_classifier_row_norms_confidence_weighted(
     return model
 
 
+# RANKEXT DRIFT DIAGNOSTIC (decision doc, 2026-08-05): bias-offset + feature-
+# alignment checks for the final calibrated rank_extension model. Answers,
+# with a real number instead of architecture inference: is the open-argmax
+# collapse a classifier-BIAS-offset problem (untested by any prior fix --
+# calibrate_classifier_row_norms()/_confidence_weighted() above only ever
+# rescale model.classifier.WEIGHT rows, never .bias) or a shared-backbone
+# FEATURE-DRIFT problem (old-step images' features pulled toward the newest
+# step's classifier directions)? Runs for all 4 EXISTING rank_extension
+# methods (not just the 2 new feature-anchor ones) so the non-KD vs. KD
+# contrast this run needs is a direct read of the two output CSVs, not a
+# separate analysis. Purely read-only: model.eval(), no_grad, no weights
+# touched, does not affect calibration, merge, or evaluate_model()'s own
+# forward passes below.
+rankext_bias_diagnostic_rows = []
+rankext_feature_alignment_diagnostic_rows = []
+RANKEXT_DRIFT_DIAGNOSTICS_ENABLED = True
+
+
+def log_rankext_drift_diagnostics(model, method_name, eps=1e-8):
+    """Bias-offset + feature-alignment diagnostic on the final (post-
+    calibration) rank_extension model. Appends to the two module-global lists
+    above; does not mutate model weights or return anything."""
+    with torch.no_grad():
+        W, b = model.classifier.weight, model.classifier.bias
+        grand_bias_mean = float(b.mean().item())
+        for step_idx in range(NUM_STEPS):
+            idx = torch.tensor(list(classes_for_step(step_idx)), device=b.device, dtype=torch.long)
+            step_bias_mean = float(b[idx].mean().item())
+            rankext_bias_diagnostic_rows.append({
+                "method": method_name,
+                "step_id": step_idx + 1,
+                "step_bias_mean": step_bias_mean,
+                "grand_bias_mean": grand_bias_mean,
+                "bias_offset_vs_grand_mean": step_bias_mean - grand_bias_mean,
+            })
+
+        W_norm = W / W.norm(dim=1, keepdim=True).clamp_min(eps)
+        recent_idx = torch.tensor(list(classes_for_step(NUM_STEPS - 1)), device=W.device, dtype=torch.long)
+        recent_rows_norm = W_norm[recent_idx]
+
+        device = next(model.parameters()).device
+        was_training = model.training
+        model.eval()
+        for step_idx in range(NUM_STEPS - 1):  # old steps only -- last step has no "more recent" step to compare against
+            val_ds = make_val_dataset(classes_for_step(step_idx))
+            if val_ds is None or len(val_ds) == 0:
+                continue
+            loader = torch.utils.data.DataLoader(val_ds, batch_size=32, shuffle=False, collate_fn=collate_fn)
+            own_sum, recent_sum, n = 0.0, 0.0, 0
+            for batch in loader:
+                pixel_values = batch["pixel_values"].to(device)
+                labels = batch["labels"].to(device)
+                feats = model.vision_model(pixel_values=pixel_values, return_dict=True).pooler_output
+                feats_norm = feats / feats.norm(dim=1, keepdim=True).clamp_min(eps)
+                own_cos = (feats_norm * W_norm[labels]).sum(dim=1)
+                recent_cos = (feats_norm @ recent_rows_norm.T).max(dim=1).values
+                own_sum += float(own_cos.sum().item())
+                recent_sum += float(recent_cos.sum().item())
+                n += int(labels.shape[0])
+            if n > 0:
+                rankext_feature_alignment_diagnostic_rows.append({
+                    "method": method_name,
+                    "old_step_id": step_idx + 1,
+                    "mean_cos_own_class_row": own_sum / n,
+                    "mean_cos_best_recent_step_row": recent_sum / n,
+                    "own_minus_recent_cos_gap": (own_sum - recent_sum) / n,
+                    "n_images": n,
+                })
+        if was_training:
+            model.train()
+
+
 def cleanup():
     gc.collect()
     if torch.cuda.is_available():
@@ -4962,6 +5106,7 @@ class DeltaOrthRankExtensionTrainer(RankExtensionTrainer):
         teacher_model=None,
         kd_weight=0.0,
         kd_temperature=2.0,
+        feature_anchor_weight=0.0,
         **kwargs,
     ):
         super().__init__(*args, **kwargs)
@@ -4974,6 +5119,14 @@ class DeltaOrthRankExtensionTrainer(RankExtensionTrainer):
         self.teacher_model = teacher_model
         self.kd_weight = float(kd_weight)
         self.kd_temperature = float(kd_temperature)
+        # FEATURE-ANCHOR LEVER: shares the same teacher_model slot as KD (both
+        # need "the model as it stood at the end of the previous step" -- see
+        # run_rank_extension_variant()), but is a genuinely separate loss term
+        # (CLS-hidden-state cosine distance, not logit KL-divergence). Mutually
+        # exclusive with kd_weight>0 for every method that currently exists
+        # (see the call site) but the compute_loss() gate below does not
+        # itself assume that -- both could in principle be active together.
+        self.feature_anchor_weight = float(feature_anchor_weight)
         self._rows = []
         self._teacher_ready = False
 
@@ -4983,7 +5136,13 @@ class DeltaOrthRankExtensionTrainer(RankExtensionTrainer):
                 p.requires_grad = False
 
     def compute_loss(self, model, inputs, return_outputs=False, num_items_in_batch=None):
-        outputs = model(**inputs)
+        # FEATURE-ANCHOR LEVER: only request hidden_states (mild extra memory/
+        # compute in the encoder) when this trainer instance actually needs
+        # them -- False (unchanged forward call) for every method except the
+        # 2 feature-anchor ones, so KD variants and simple_avg (different
+        # trainer entirely) never pay this cost.
+        need_hidden = self.feature_anchor_weight > 0.0
+        outputs = model(**inputs, output_hidden_states=need_hidden)
         ce_loss = outputs.loss
 
         zero = torch.tensor(0.0, device=ce_loss.device, dtype=ce_loss.dtype)
@@ -5039,6 +5198,17 @@ class DeltaOrthRankExtensionTrainer(RankExtensionTrainer):
         kd_loss = torch.tensor(0.0, device=ce_loss.device, dtype=ce_loss.dtype)
         teacher_active = self.teacher_model is not None and self.kd_weight > 0.0
 
+        # FEATURE-ANCHOR LEVER: separate gate, separate loss term. Compares the
+        # CLS token of the LAST hidden state (pre-classifier, pre-final-
+        # layernorm-pooling) between the current model and a frozen snapshot of
+        # the model as it stood at the end of the previous step, both run on
+        # the SAME current-step batch already being trained on (rehearsal-free
+        # -- no old images). Cosine distance, not logit KL-divergence -- no
+        # softmax, no classifier, no temperature; a genuinely different
+        # mechanism from the KD block above, not a re-skin of it.
+        feature_anchor_loss = torch.tensor(0.0, device=ce_loss.device, dtype=ce_loss.dtype)
+        feature_anchor_active = self.teacher_model is not None and self.feature_anchor_weight > 0.0
+
         if teacher_active:
             if not self._teacher_ready:
                 self.teacher_model.to(device=ce_loss.device)
@@ -5051,8 +5221,19 @@ class DeltaOrthRankExtensionTrainer(RankExtensionTrainer):
             teacher_probs = F.softmax(teacher_logits / self.kd_temperature, dim=-1)
             kd_loss = F.kl_div(student_log_probs, teacher_probs, reduction="batchmean") * (self.kd_temperature ** 2)
 
+        if feature_anchor_active:
+            if not self._teacher_ready:
+                self.teacher_model.to(device=ce_loss.device)
+                self.teacher_model.eval()
+                self._teacher_ready = True
+            with torch.no_grad():
+                teacher_hidden = self.teacher_model(**inputs, output_hidden_states=True).hidden_states[-1][:, 0, :]
+            student_hidden = outputs.hidden_states[-1][:, 0, :]
+            feature_anchor_loss = (1.0 - F.cosine_similarity(student_hidden, teacher_hidden, dim=-1)).mean()
+
         weighted_kd = float(self.kd_weight) * kd_loss
-        loss = ce_loss + weighted + weighted_kd
+        weighted_feature_anchor = float(self.feature_anchor_weight) * feature_anchor_loss
+        loss = ce_loss + weighted + weighted_kd + weighted_feature_anchor
 
         ce_v = float(ce_loss.detach().cpu().item())
         raw_inner_v = float(raw_inner.detach().cpu().item())
@@ -5108,6 +5289,15 @@ class DeltaOrthRankExtensionTrainer(RankExtensionTrainer):
             "kd_weight": float(self.kd_weight),
             "kd_temperature": float(self.kd_temperature),
             "teacher_active": bool(teacher_active),
+            # FEATURE-ANCHOR LEVER: separate, reportable columns -- never
+            # populated (stay 0.0 / False) for any method except the 2
+            # feature-anchor variants, since feature_anchor_weight is 0.0
+            # everywhere else.
+            "feature_anchor_loss": float(feature_anchor_loss.detach().cpu().item()),
+            "weighted_feature_anchor_loss": float(weighted_feature_anchor.detach().cpu().item()),
+            "feature_anchor_over_CE": float(weighted_feature_anchor.detach().cpu().item()) / (ce_v + float(self.orth_eps)),
+            "feature_anchor_weight": float(self.feature_anchor_weight),
+            "feature_anchor_active": bool(feature_anchor_active),
             "total_loss": total_loss_v,
             "effective_lambda": float(effective_lambda_orth),
         }
@@ -5117,9 +5307,11 @@ class DeltaOrthRankExtensionTrainer(RankExtensionTrainer):
             print(
                 f"[orth train] method={self.method_name} | step={row['step']} | epoch={row['epoch']:.4f} | "
                 f"ce={row['ce_loss']:.6f} | orth={row['orth_loss_used']:.6f} | "
-                f"kd={row['kd_loss']:.6f} | total={row['total_loss']:.6f} | "
+                f"kd={row['kd_loss']:.6f} | featanchor={row['feature_anchor_loss']:.6f} | "
+                f"total={row['total_loss']:.6f} | "
                 f"lambda={row['lambda_orth']:.6g} (warmup x{row['lambda_orth_warmup_multiplier']:.3g}) | "
-                f"kd_weight={row['kd_weight']:.6g} | ratio={row['orth_ratio_abs_weighted_over_ce']:.6f}"
+                f"kd_weight={row['kd_weight']:.6g} | featanchor_weight={row['feature_anchor_weight']:.6g} | "
+                f"ratio={row['orth_ratio_abs_weighted_over_ce']:.6f}"
             )
 
         return (loss, outputs) if return_outputs else loss
@@ -5262,6 +5454,8 @@ def run_rank_extension_variant(
     use_kd=False,
     kd_weight=0.0,
     kd_temperature=2.0,
+    use_feature_anchor=False,
+    feature_anchor_weight=0.0,
     orth_eval_records=None,
     orth_train_records=None,
     orth_summary_records=None,
@@ -5279,6 +5473,8 @@ def run_rank_extension_variant(
     active_lambda_orth = float(lambda_orth)
     active_kd_weight = float(kd_weight)
     active_kd_temperature = float(kd_temperature)
+    # FEATURE-ANCHOR LEVER: mirrors active_kd_weight's pattern exactly.
+    active_feature_anchor_weight = float(feature_anchor_weight)
     # RANKEXT_NEW_BLOCK_WARMUP_ENABLED (analysis_rankext_plain/): this function
     # is only ever called for rank_extension-family methods, so
     # family_uses_new_block_warmup("rank_extension") resolves the SAME way for
@@ -5299,7 +5495,12 @@ def run_rank_extension_variant(
 
         old_active_in_forward = not (zero_old_merge and step_idx > 0)
         teacher_model = None
-        if use_kd and previous_rank_state is not None:
+        # FEATURE-ANCHOR LEVER: builds the identical "model as it stood at the
+        # end of the previous step" snapshot KD's teacher already used --
+        # use_kd and use_feature_anchor are mutually exclusive at the one call
+        # site that drives every rank_extension method, so this never runs for
+        # both reasons at once, but the condition itself doesn't assume that.
+        if (use_kd or use_feature_anchor) and previous_rank_state is not None:
             teacher_old_active_in_forward = not (zero_old_merge and (step_idx - 1) > 0)
             teacher_model = build_rank_extension_model(
                 previous_rank_state=previous_rank_state,
@@ -5371,6 +5572,7 @@ def run_rank_extension_variant(
             "teacher_model": teacher_model,
             "kd_weight": active_kd_weight if teacher_model is not None else 0.0,
             "kd_temperature": active_kd_temperature,
+            "feature_anchor_weight": active_feature_anchor_weight if teacher_model is not None else 0.0,
         }
 
         total_rank, frozen_rank, new_rank = get_rank_extension_rank_triplet(step_idx)
@@ -5384,6 +5586,8 @@ def run_rank_extension_variant(
             f"orth_mode={active_orth_mode} | "
             f"lambda_orth={active_lambda_orth:.6g} | "
             f"use_kd={use_kd} | "
+            f"use_feature_anchor={use_feature_anchor} | "
+            f"feature_anchor_weight={active_feature_anchor_weight:.6g} | "
             f"teacher_active={teacher_model is not None} | "
             f"old_active_in_forward={old_active_in_forward} ====="
         )
@@ -5484,6 +5688,13 @@ def run_rank_extension_variant(
         # full coverage across all 8 methods, not just the calibrated ones.
         log_classifier_row_norm_diagnostics(final_rank_model, method_name, phase="pre_calibration")
 
+    # RANKEXT DRIFT DIAGNOSTIC: read-only, on the exact final (post-
+    # calibration) model this run evaluates -- runs for all rank_extension
+    # methods, KD and non-KD alike, so the two output CSVs give a direct
+    # non-KD-vs-KD contrast.
+    if RANKEXT_DRIFT_DIAGNOSTICS_ENABLED:
+        log_rankext_drift_diagnostics(final_rank_model, method_name)
+
     eval_rows = evaluate_model(final_rank_model, method_name)
 
     # PRE-THESIS FIX 2: keep the full stepwise accuracy matrix for the
@@ -5580,6 +5791,13 @@ for method_name in rank_extension_execution_order:
         use_kd=bool(method_cfg["uses_kd"]),
         kd_weight=float(method_cfg["kd_weight"]),
         kd_temperature=float(method_cfg["kd_temperature"]),
+        # FEATURE-ANCHOR LEVER: read from method_cfg (set in add_method()) --
+        # True/nonzero only for "rank_extension_featanchor" and
+        # "rank_extension_orth_factor_featanchor". False/0.0 for all 8
+        # existing methods, including both KD variants (mutually exclusive
+        # with uses_kd by construction, see add_method() calls above).
+        use_feature_anchor=bool(method_cfg["uses_feature_anchor"]),
+        feature_anchor_weight=float(method_cfg["feature_anchor_weight"]),
         orth_eval_records=orth_kd_eval_rows,
         orth_train_records=orth_kd_train_rows,
         orth_summary_records=orth_kd_summary_rows,
@@ -6617,10 +6835,16 @@ from matplotlib.lines import Line2D
 
 DPI = 220
 REQ = list(SUPERVISOR_SELECTED_INTERNAL_METHODS)
-SUPERVISOR_VARIANT_ORDER = ["Base", "KD (T=2)", "Factor-Orth", "KD + Factor-Orth"]
-VARIANT = {"simple_avg":"Base","rank_extension":"Base","simple_avg_factor_orth":"Factor-Orth","rank_extension_orth_factor_lam_50":"Factor-Orth","simple_avg_kd_T2":"KD (T=2)","rank_extension_kd_only_T2":"KD (T=2)","simple_avg_factor_orth_kd_T2":"KD + Factor-Orth","rank_extension_orth_factor_lam_50_kd_T2":"KD + Factor-Orth"}
-VCOL = {"Base":"#1f77b4","KD (T=2)":"#ff7f0e","Factor-Orth":"#d62728","KD + Factor-Orth":"#2ca02c"}
-VSTYLE = {"Base":"-","KD (T=2)":"--","Factor-Orth":":","KD + Factor-Orth":"-."}
+# FEATURE-ANCHOR LEVER: "FeatAnchor" / "FactorOrth + FeatAnchor" are NEW
+# variant labels, rank_extension-only -- simple_avg has no method mapped to
+# either, so every plot that grids (family x variant) just renders those two
+# rows blank in the simple_avg column (same graceful-empty pattern lossgrid()
+# and the combined-loss-decomposition panel already use for any missing
+# (family, variant) pair -- nothing crashes, nothing needed a size-4 assumption).
+SUPERVISOR_VARIANT_ORDER = ["Base", "KD (T=2)", "Factor-Orth", "KD + Factor-Orth", "FeatAnchor", "Factor-Orth + FeatAnchor"]
+VARIANT = {"simple_avg":"Base","rank_extension":"Base","simple_avg_factor_orth":"Factor-Orth","rank_extension_orth_factor_lam_50":"Factor-Orth","simple_avg_kd_T2":"KD (T=2)","rank_extension_kd_only_T2":"KD (T=2)","simple_avg_factor_orth_kd_T2":"KD + Factor-Orth","rank_extension_orth_factor_lam_50_kd_T2":"KD + Factor-Orth","rank_extension_featanchor":"FeatAnchor","rank_extension_orth_factor_featanchor":"Factor-Orth + FeatAnchor"}
+VCOL = {"Base":"#1f77b4","KD (T=2)":"#ff7f0e","Factor-Orth":"#d62728","KD + Factor-Orth":"#2ca02c","FeatAnchor":"#9467bd","Factor-Orth + FeatAnchor":"#8c564b"}
+VSTYLE = {"Base":"-","KD (T=2)":"--","Factor-Orth":":","KD + Factor-Orth":"-.","FeatAnchor":(0,(1,1)),"Factor-Orth + FeatAnchor":(0,(5,1,1,1))}
 FAMS = ["simple_avg","rank_extension"]
 FLAB = {"simple_avg":"Simple-Average Family","rank_extension":"Rank-Extension Family"}
 for d in [TABLES_DIR, PLOTS_DIR, REPORTS_DIR, LOGS_DIR, CONFIGS_DIR, MODELS_DIR]: Path(d).mkdir(parents=True, exist_ok=True)
@@ -6774,6 +6998,32 @@ classifier_confidence_calib_diag_path = Path(TABLES_DIR) / "classifier_confidenc
 classifier_confidence_calib_diag_df.to_csv(classifier_confidence_calib_diag_path, index=False)
 print("Saved classifier confidence-weighted calibration diagnostics:", classifier_confidence_calib_diag_path)
 
+# RANKEXT DRIFT DIAGNOSTIC (decision doc, 2026-08-05): see
+# log_rankext_drift_diagnostics() -- bias-offset check (calibrate_classifier_
+# row_norms* above never touches .bias, so this is untested by any prior fix)
+# and feature-alignment cosine-gap check (own-class row vs. best-of-most-
+# recent-step row), for all 4 EXISTING rank_extension methods. Same
+# empty-DataFrame-with-explicit-columns convention as the two tables above.
+rankext_bias_diag_df = pd.DataFrame(rankext_bias_diagnostic_rows)
+if len(rankext_bias_diag_df) > 0:
+    rankext_bias_diag_df = rankext_bias_diag_df[rankext_bias_diag_df["method"].isin(REQ)].copy()
+    rankext_bias_diag_df = rankext_bias_diag_df.sort_values(["method", "step_id"]).reset_index(drop=True)
+else:
+    rankext_bias_diag_df = pd.DataFrame(columns=["method", "step_id", "step_bias_mean", "grand_bias_mean", "bias_offset_vs_grand_mean"])
+rankext_bias_diag_path = Path(TABLES_DIR) / "classifier_bias_diagnostics_by_method_step.csv"
+rankext_bias_diag_df.to_csv(rankext_bias_diag_path, index=False)
+print("Saved classifier bias diagnostics:", rankext_bias_diag_path)
+
+rankext_feature_alignment_diag_df = pd.DataFrame(rankext_feature_alignment_diagnostic_rows)
+if len(rankext_feature_alignment_diag_df) > 0:
+    rankext_feature_alignment_diag_df = rankext_feature_alignment_diag_df[rankext_feature_alignment_diag_df["method"].isin(REQ)].copy()
+    rankext_feature_alignment_diag_df = rankext_feature_alignment_diag_df.sort_values(["method", "old_step_id"]).reset_index(drop=True)
+else:
+    rankext_feature_alignment_diag_df = pd.DataFrame(columns=["method", "old_step_id", "mean_cos_own_class_row", "mean_cos_best_recent_step_row", "own_minus_recent_cos_gap", "n_images"])
+rankext_feature_alignment_diag_path = Path(TABLES_DIR) / "feature_alignment_diagnostics_by_method_step.csv"
+rankext_feature_alignment_diag_df.to_csv(rankext_feature_alignment_diag_path, index=False)
+print("Saved feature-alignment diagnostics:", rankext_feature_alignment_diag_path)
+
 
 def per_step_accuracy_json(method_name):
     sub = per_step_acc_df[per_step_acc_df.method == method_name].sort_values("step_id")
@@ -6889,7 +7139,7 @@ ax.legend(loc="lower left", fontsize=8, frameon=False)
 fig.suptitle("Forgetting curves by method family", fontweight="bold")
 figsave("forgetting_curve_by_method.png")
 
-def lossgrid(metric,ylabel,name,title,methods=None,log=False,pos=False):
+def lossgrid(metric,ylabel,name,title,methods=None,log=False,pos=False,mark_selected_epoch=False):
     d=E.copy();
     if methods: d=d[d.method.isin(methods)]
     if metric not in d: d[metric]=np.nan
@@ -6907,7 +7157,26 @@ def lossgrid(metric,ylabel,name,title,methods=None,log=False,pos=False):
             if log: ax.set_yscale("log")
             for v in SUPERVISOR_VARIANT_ORDER:
                 s=fd[(fd.cl_step==st)&(fd.variant==v)].sort_values("local_epoch"); y=pd.to_numeric(s[metric],errors="coerce"); good=np.isfinite(y)&((y>0) if pos else True)
-                if len(s)>0 and good.any(): ax.plot(s.local_epoch[good], y[good], color=VCOL[v], linestyle=VSTYLE[v], lw=2.4)
+                if len(s)>0 and good.any():
+                    ax.plot(s.local_epoch[good], y[good], color=VCOL[v], linestyle=VSTYLE[v], lw=2.4)
+                    # CONVERGENCE-FIGURE ANNOTATION (decision doc, 2026-08-05):
+                    # star the (min val-CE) epoch actually reloaded into the
+                    # merged model (train_with_trainer(), PRE-THESIS FIX 1/2) --
+                    # makes the already-correct best-epoch-selection mechanism
+                    # visible on the figure instead of leaving the post-minimum
+                    # rise (e.g. simple_avg steps 3-4) looking unaddressed.
+                    if mark_selected_epoch and len(s)>0:
+                        this_method=s["method"].iloc[0]
+                        sel=best_epoch_selection_df[(best_epoch_selection_df.method_name==this_method)&(best_epoch_selection_df.step_id==st)]
+                        if len(sel)>0:
+                            sel_epoch=int(sel["selected_epoch"].iloc[0])
+                            sel_row=s[s.local_epoch==sel_epoch]
+                            if len(sel_row)>0:
+                                sel_y=pd.to_numeric(sel_row[metric],errors="coerce").iloc[0]
+                                if np.isfinite(sel_y):
+                                    ax.plot(sel_epoch, sel_y, marker="*", ms=11, color=VCOL[v], markeredgecolor="black", markeredgewidth=0.5, zorder=5)
+    if mark_selected_epoch:
+        fig.text(.5, -.01, "★ = selected (min val-CE) checkpoint actually merged into the final model -- epochs after it are trained but discarded, per method/step", ha="center", fontsize=9, style="italic", color="#444")
     fig.legend([Line2D([0],[0],color=VCOL[v],linestyle=VSTYLE[v],lw=3) for v in SUPERVISOR_VARIANT_ORDER], SUPERVISOR_VARIANT_ORDER, loc="center left", bbox_to_anchor=(.915,.52), frameon=False); fig.tight_layout(rect=[.02,.02,.90,.95]); plt.savefig(Path(PLOTS_DIR)/name,dpi=DPI,bbox_inches="tight"); plt.close()
 if len(E)>0:
     lossgrid("train_ce_loss","Train CE loss","train_ce_loss_by_method.png","Train CE Loss by Method and CL Step")
@@ -6916,7 +7185,7 @@ if len(E)>0:
     # the retrospective final-model accuracy in the per-step heatmaps/CSVs.
     # See analysis_pipeline_audit/report.txt.
     _val_ce_caption = "\n(each step's OWN local val split, model as of THAT step -- in-context, not retrospective)"
-    lossgrid("val_ce_loss","Validation CE loss","validation_ce_loss_by_method.png","Validation CE Loss by Method and CL Step"+_val_ce_caption); lossgrid("val_ce_loss","Validation CE loss","validation_ce_loss_clean.png","Validation CE Loss by CL Step"+_val_ce_caption)
+    lossgrid("val_ce_loss","Validation CE loss","validation_ce_loss_by_method.png","Validation CE Loss by Method and CL Step"+_val_ce_caption, mark_selected_epoch=True); lossgrid("val_ce_loss","Validation CE loss","validation_ce_loss_clean.png","Validation CE Loss by CL Step"+_val_ce_caption, mark_selected_epoch=True)
     kd=[m for m in REQ if ACTIVE_METHOD_MAP[m]["uses_kd"]]; fo=[m for m in REQ if ACTIVE_METHOD_MAP[m]["uses_factor_orth"]]
     lossgrid("kd_loss_weighted","Weighted KD loss","kd_loss_by_method.png","KD Loss by Method",kd,pos=True); lossgrid("factor_orth_loss_weighted","Weighted factor-orth loss","factor_orth_loss_by_method.png","Factor-Orth Loss by Method",fo,pos=True)
     lossgrid("factor_orth_loss_weighted","Weighted factor-orth loss","factor_orth_weighted_loss_log.png","Factor-Orth Weighted Loss (log)",fo,log=True,pos=True); lossgrid("train_total_loss","Total train loss","total_loss_by_method.png","Total Loss by Method"); lossgrid("train_total_loss","Total train loss","total_loss_by_method_log.png","Total Loss by Method (log)",log=True,pos=True)

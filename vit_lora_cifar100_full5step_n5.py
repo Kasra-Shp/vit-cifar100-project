@@ -1682,6 +1682,29 @@ def collate_fn(examples):
 
 def compute_metrics(eval_pred):
     logits, labels = eval_pred
+    if isinstance(logits, (tuple, list)):
+        # CRASH FIX (rank_extension feature-anchor lever): this compute_metrics
+        # is shared by every trainer class in the script (simple_avg,
+        # rank_extension, and the plain Trainer used by
+        # evaluate_seen_step_accuracies()), so it can't assume `logits` is
+        # always a single tensor. RankExtensionTrainer.preprocess_logits_for_
+        # metrics() already narrows predictions to one classification-logits
+        # tensor before Trainer hands them off, so this is only a defensive
+        # backstop -- pick the classification-logits element explicitly by
+        # shape (2-D, last dim == NUM_CLASSES) rather than assuming
+        # predictions[0].
+        candidates = [
+            t for t in logits
+            if hasattr(t, "shape") and len(t.shape) == 2 and t.shape[-1] == NUM_CLASSES
+        ]
+        if len(candidates) != 1:
+            raise ValueError(
+                "compute_metrics: expected exactly one 2-D (*, "
+                f"{NUM_CLASSES}) classification-logits array among {len(logits)} "
+                f"prediction elements, found {len(candidates)}. Shapes: "
+                f"{[getattr(t, 'shape', type(t)) for t in logits]}"
+            )
+        logits = candidates[0]
     preds = np.argmax(logits, axis=1)
     return {
         "accuracy": float((preds == labels).mean())
@@ -4774,10 +4797,52 @@ class RankExtNewBlockWarmupCallback(TrainerCallback):
 
 class RankExtensionTrainer(HeadLRTrainerMixin, Trainer):
     def __init__(self, *args, classifier_snapshot=None, **kwargs):
+        # CRASH FIX (rank_extension feature-anchor lever): Trainer.
+        # prediction_step() (i.e. every eval/evaluate() call) invokes this
+        # same DeltaOrthRankExtensionTrainer.compute_loss() used for
+        # training, and compute_loss()'s `outputs` can carry more than one
+        # non-loss tensor (classification logits + penultimate CLS hidden
+        # state, only when the feature-anchor lever is active -- see that
+        # method). HF packs every non-loss ModelOutput entry into
+        # `predictions`, so without this hook compute_metrics() would
+        # receive a (logits, hidden_states) tuple instead of a plain logits
+        # tensor. Wiring it in here -- rather than relying solely on
+        # compute_metrics() being defensive -- also drops the (much larger)
+        # hidden-state tensors right after each eval batch instead of
+        # accumulating them across the whole eval set. Only set if the
+        # caller hasn't already supplied one (setdefault, not overwrite).
+        kwargs.setdefault("preprocess_logits_for_metrics", self._select_classification_logits)
         super().__init__(*args, **kwargs)
         self.classifier_snapshot = classifier_snapshot
         if classifier_snapshot is not None:
             self.add_callback(ClassifierRowRestoreCallback(classifier_snapshot))
+
+    @staticmethod
+    def _select_classification_logits(logits, labels):
+        """
+        `preprocess_logits_for_metrics` hook (called once per eval batch,
+        before predictions are accumulated). `logits` is whatever Trainer.
+        prediction_step() extracted from compute_loss()'s `outputs` -- a
+        single tensor normally, or a tuple/list when `outputs` had more than
+        one non-loss field. Picked explicitly by shape (2-D, last dim ==
+        NUM_CLASSES) rather than assuming position 0, since the ModelOutput
+        field order (logits, hidden_states, attentions) is a transformers
+        implementation detail, not a contract this code should rely on.
+        """
+        if not isinstance(logits, (tuple, list)):
+            return logits
+        candidates = [
+            t for t in logits
+            if torch.is_tensor(t) and t.dim() == 2 and t.shape[-1] == NUM_CLASSES
+        ]
+        if len(candidates) != 1:
+            raise ValueError(
+                "RankExtensionTrainer.preprocess_logits_for_metrics: expected exactly one "
+                f"2-D (*, {NUM_CLASSES}) classification-logits tensor among {len(logits)} "
+                f"prediction elements, found {len(candidates)}. Shapes: "
+                f"{[tuple(t.shape) if torch.is_tensor(t) else type(t) for t in logits]}"
+            )
+        return candidates[0]
 
 
 def assert_rank_extension_structure(model, step_idx):
@@ -5140,8 +5205,15 @@ class DeltaOrthRankExtensionTrainer(RankExtensionTrainer):
         # compute in the encoder) when this trainer instance actually needs
         # them -- False (unchanged forward call) for every method except the
         # 2 feature-anchor ones, so KD variants and simple_avg (different
-        # trainer entirely) never pay this cost.
-        need_hidden = self.feature_anchor_weight > 0.0
+        # trainer entirely) never pay this cost. CRASH FIX: also gated on
+        # model.training -- Trainer.prediction_step() (every eval/evaluate()
+        # call) invokes this SAME compute_loss() under torch.no_grad() with
+        # model.eval() already applied, so hidden_states is never requested
+        # on the eval forward either (features are a training-loss-only
+        # concept here; see RankExtensionTrainer.preprocess_logits_for_
+        # metrics() / compute_metrics() for the defensive backstop that
+        # still applies if that ever changes).
+        need_hidden = self.feature_anchor_weight > 0.0 and model.training
         outputs = model(**inputs, output_hidden_states=need_hidden)
         ce_loss = outputs.loss
 
@@ -5207,7 +5279,16 @@ class DeltaOrthRankExtensionTrainer(RankExtensionTrainer):
         # softmax, no classifier, no temperature; a genuinely different
         # mechanism from the KD block above, not a re-skin of it.
         feature_anchor_loss = torch.tensor(0.0, device=ce_loss.device, dtype=ce_loss.dtype)
-        feature_anchor_active = self.teacher_model is not None and self.feature_anchor_weight > 0.0
+        # CRASH FIX: mirrors need_hidden's model.training gate above. Without
+        # this, feature_anchor_active could be True on the eval forward while
+        # outputs.hidden_states is None (need_hidden is now False whenever
+        # model.training is False), and the outputs.hidden_states[-1] access
+        # below would raise. Eval-time loss for the 2 feature-anchor variants
+        # is therefore CE(+orth) only, same as every other rank_extension
+        # variant -- unaffected either way, since eval_loss here was never a
+        # valid/reported number before this fix (the run crashed before ever
+        # completing an eval pass for these 2 methods).
+        feature_anchor_active = self.teacher_model is not None and self.feature_anchor_weight > 0.0 and model.training
 
         if teacher_active:
             if not self._teacher_ready:

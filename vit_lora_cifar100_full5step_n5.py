@@ -7233,6 +7233,55 @@ for d in [TABLES_DIR, PLOTS_DIR, REPORTS_DIR, LOGS_DIR, CONFIGS_DIR, MODELS_DIR]
 missing_outputs = []
 assert not [m for m in REQ if m not in ACTIVE_METHOD_NAMES], f"Missing selected methods: {[m for m in REQ if m not in ACTIVE_METHOD_NAMES]}"
 
+# A4 FAIL-FAST (silent-carryover guard, decision doc): a fresh `python
+# vit_lora_cifar100_full5step_n5.py` process (as sbatch runs it) cannot
+# reproduce the Aug-7 carryover -- all_results / method_summary_rows /
+# train_diagnostic_rows and every other per-method accumulator are reset
+# unconditionally at true module scope (lines ~1352-1397, ~3436-3437), with
+# no os.path.exists/pd.read_csv/pickle.load anywhere in this file that could
+# repopulate them from a previous run's output; see the A4 AUDIT comment
+# above METHODS_TO_RUN for the full trace of why that carryover happened
+# (persisted notebook kernel state across sessions, not this file's own
+# training logic) and why it is structurally impossible here. This assert is
+# an independent, defense-in-depth check on a DIFFERENT failure mode: a
+# method silently missing its row (a mid-run crash/bug swallowed somewhere)
+# or duplicated (an accidental double-append) even within one honest fresh
+# run -- either would desync method_summary_rows from ACTIVE_METHOD_NAMES.
+# Checks RAW ROW COUNT (catches duplicates, which a set-only comparison
+# would silently dedupe away) AND the exact method SET (catches both
+# omissions and unexpected extras, e.g. a disabled method's row somehow
+# still present) before any table/plot below is built from this data --
+# fail loudly here rather than let a 12h run's numbers ship unchecked.
+_method_summary_check_df = pd.DataFrame(method_summary_rows)
+_n_summary_rows = len(_method_summary_check_df)
+_summary_methods = set(_method_summary_check_df["method"]) if _n_summary_rows > 0 else set()
+_n_unique_summary_methods = _method_summary_check_df["method"].nunique() if _n_summary_rows > 0 else 0
+_expected_active_methods = set(ACTIVE_METHOD_NAMES)
+_n_expected_active_methods = len(_expected_active_methods)
+_missing_summary_methods = sorted(_expected_active_methods - _summary_methods)
+_extra_summary_methods = sorted(_summary_methods - _expected_active_methods)
+assert (
+    _n_summary_rows == _n_expected_active_methods
+    and _n_unique_summary_methods == _n_expected_active_methods
+    and not _missing_summary_methods
+    and not _extra_summary_methods
+), (
+    f"[A4 fail-fast] method_summary_rows has {_n_summary_rows} row(s) "
+    f"({_n_unique_summary_methods} distinct method(s)), expected exactly "
+    f"{_n_expected_active_methods} -- one per method enabled in METHODS_TO_RUN "
+    f"(ACTIVE_METHOD_NAMES). missing={_missing_summary_methods} "
+    f"extra={_extra_summary_methods}. This means either a method silently "
+    f"failed to log a result this run, or a stale/duplicate row is present. "
+    f"STOP -- do not trust any table/plot below until this is understood; "
+    f"this exists specifically so a silent carryover/duplication can never "
+    f"again waste a full training run's compute unnoticed."
+)
+print(
+    f"[A4 fail-fast] OK: {_n_summary_rows} method_summary_rows rows, "
+    f"{_n_unique_summary_methods} distinct methods, exactly matching the "
+    f"{_n_expected_active_methods} enabled ACTIVE_METHOD_NAMES."
+)
+
 def txt(path, s): Path(path).write_text(str(s).rstrip()+"\n", encoding="utf-8")
 def js(path, obj): Path(path).write_text(json.dumps(obj, indent=2, sort_keys=True, default=str), encoding="utf-8")
 def ok(path): return Path(path).exists() and Path(path).stat().st_size > 0

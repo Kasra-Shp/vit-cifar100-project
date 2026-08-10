@@ -617,6 +617,8 @@ METHOD_DISPLAY_NAME_MAP = {
     "rank_extension_orth_factor_lam_50_kd_T2": "RankExt + FactorOrth + KD T2",
     "rank_extension_featanchor": "RankExt + FeatAnchor",
     "rank_extension_orth_factor_featanchor": "RankExt + FactorOrth + FeatAnchor",
+    "rank_extension_featanchor_base": "RankExt + FeatAnchor (fixed base)",
+    "rank_extension_orth_factor_featanchor_base": "RankExt + FactorOrth + FeatAnchor (fixed base)",
 }
 
 METHOD_ALIAS_NAME_MAP = {
@@ -1004,6 +1006,69 @@ def orth_lambda_warmup_multiplier(epoch_val, warmup_epochs, enabled):
 # training/orth-loss implementation (IndependentLoraOrthTrainer /
 # DeltaOrthRankExtensionTrainer with orth_mode="delta_trace", etc.) is untouched
 # and can be re-enabled later just by flipping these two flags back to True.
+#
+# A4 AUDIT (post Aug-7 crash), VERIFIED against the two actual saved run
+# directories (results/..._20260723_173803 = July-23, results/
+# ..._20260807_004316 = Aug-7):
+#
+# 1. All 10 currently-True flags below -- the 8 original supervisor methods
+#    AND the 2 featanchor variants added 2026-08-05 -- are wired to train
+#    FRESH, from scratch, every run; this script has no resume/cache/"skip if
+#    results already exist" mechanism anywhere (no os.path.exists guard
+#    around any train_with_trainer()/run_*_variant() call site;
+#    BASE_OUTPUT_DIR is stamped with datetime.now() so every run writes into
+#    a brand-new directory). METHODS_TO_RUN already had the correct 10-method
+#    state on Aug-7, same as now -- this was never a config bug.
+#
+# 2. The REAL mechanism, confirmed by inspecting both saved runs' tables/:
+#    this file's early per-method accumulator lists -- all_results,
+#    method_summary_rows, train_diagnostic_rows (reset unconditionally at
+#    module scope a few hundred lines above, NOT here) -- are then read by
+#    orth_kd_train_rows/orth_kd_summary_rows via an explicit
+#    `X if "X" in globals() else []` reuse guard (see just above
+#    run_rank_extension_variant()'s call loop), and metrics_tables() reads
+#    summary_table the same reuse-guarded way. This is a deliberate
+#    notebook-safe convenience (this file began life as a Jupyter/Colab
+#    notebook -- see the "# In[ ]:" cell markers throughout) so re-running a
+#    handful of cells doesn't discard earlier cells' results. But it means:
+#    if the Aug-7 session reused the SAME kernel as July-23 (no restart) and
+#    only edited+re-ran the cells for the 2 NEW featanchor methods plus the
+#    final report cells -- never re-running the top-of-file cell that resets
+#    all_results/method_summary_rows/train_diagnostic_rows to [] -- every
+#    accumulator silently kept its stale July-23 rows for the 8 old methods
+#    and just appended the 2 new methods' rows on top. Confirmed directly:
+#    tables/supervisor_selected_accuracy_comparison.csv (the EARLIER of two
+#    writes to that filename in this file, the one before the post-processing
+#    crash) has all 8 old methods' first_step/later_steps/all_seen numbers
+#    matching the July-23 file to every trailing float digit (e.g.
+#    20.080000000000002, 69.6125) -- not just "close", which independent GPU
+#    retraining would essentially never produce -- while the 2 new featanchor
+#    rows are distinct fresh numbers. This is carried-over notebook STATE,
+#    not a training or config bug; the fix is operational, not code: restart
+#    the kernel/runtime (a true fresh Python process) before this rerun, so
+#    the module-level `all_results = []` / `method_summary_rows = []` /
+#    `train_diagnostic_rows = []` resets actually run and every method trains
+#    into genuinely empty accumulators.
+#
+# 3. Independently real and ALSO confirmed from the same two directories:
+#    A1's color_map KeyError crashed post-processing at the
+#    "15_supervisor_selected_train_val_ce.png" cell. Aug-7's plots/ has only
+#    08-14 (nothing from 15 onward); its tables/ is missing
+#    final_metrics_all_methods.csv, validation_diagnostics_by_method.csv, and
+#    every other CSV metrics_tables()/valdiag()/HP write (all post-crash in
+#    the old ordering); reports/ and logs/ are empty. July-23's directory has
+#    all of the above plus 34 plots and 5 populated reports. So even with a
+#    fresh kernel, the Aug-7 job would ALSO have lost its own final numbers
+#    to this crash -- A1 (color_map fix) + A2 (these CSVs now write before
+#    any plot, each plot try/excepted) fix that independently of point 2.
+#
+# No METHODS_TO_RUN change was needed for this rerun -- the state below
+# already trains rank_extension and rank_extension_orth_factor_lam_50 (the 2
+# non-KD baselines) fresh in the SAME job as rank_extension_featanchor and
+# rank_extension_orth_factor_featanchor, with both KD rank_ext variants
+# (rank_extension_kd_only, rank_extension_orth_factor_lam_50_kd) also present
+# for the feature_alignment KD-vs-non-KD contrast -- PROVIDED the rerun
+# starts from a genuinely fresh kernel/process per point 2 above.
 METHODS_TO_RUN = {
     "simple_avg": True,
     "simple_avg_kd": True,
@@ -1021,6 +1086,12 @@ METHODS_TO_RUN = {
     # retrofit of the two lines above -- see RANKEXT_FEATURE_ANCHOR_WEIGHT.
     "rank_extension_featanchor": True,
     "rank_extension_orth_factor_featanchor": True,
+    # B2 (rank_ext first_step fix, decision doc): anchor-to-fixed-base
+    # variants, parallel to the 2 chained featanchor lines above. DEFAULT-OFF
+    # -- enable after Phase A's diagnostics are reviewed (see the comment
+    # next to their add_method() calls in build_active_method_configs()).
+    "rank_extension_featanchor_base": False,
+    "rank_extension_orth_factor_featanchor_base": False,
     "do_merging_simple": False,
     "joint_upper_bound": False,
     "full_finetune": False,
@@ -1070,7 +1141,7 @@ def kd_temperature_tag(temp):
 def build_active_method_configs():
     configs = []
 
-    def add_method(method_name, family, base_method, uses_kd=False, kd_temperature=0.0, uses_delta_trace=False, uses_factor_orth=False, lambda_orth_scale=1.0, kd_weight_scale=1.0, uses_feature_anchor=False, feature_anchor_weight=0.0):
+    def add_method(method_name, family, base_method, uses_kd=False, kd_temperature=0.0, uses_delta_trace=False, uses_factor_orth=False, lambda_orth_scale=1.0, kd_weight_scale=1.0, uses_feature_anchor=False, feature_anchor_weight=0.0, feature_anchor_mode="chained"):
         if not METHODS_TO_RUN.get(base_method, False):
             return
         configs.append({
@@ -1087,6 +1158,14 @@ def build_active_method_configs():
             # same method) -- see RANKEXT_FEATURE_ANCHOR_WEIGHT above.
             "uses_feature_anchor": bool(uses_feature_anchor),
             "feature_anchor_weight": float(feature_anchor_weight) if uses_feature_anchor else 0.0,
+            # B2 (rank_ext first_step fix, DEFAULT-OFF via METHODS_TO_RUN):
+            # "chained" is the existing behavior (teacher = model as it stood
+            # at the end of the PREVIOUS step, None at step 1 -- see
+            # run_rank_extension_variant()). "fixed_base" is the new lever:
+            # teacher = the frozen pretrained CLIP backbone, used unchanged
+            # for EVERY step including step 1. See run_rank_extension_variant()
+            # for how this is actually built.
+            "feature_anchor_mode": str(feature_anchor_mode) if uses_feature_anchor else "chained",
             "lambda_orth": float(LAMBDA_ORTH if (uses_delta_trace or uses_factor_orth) else 0.0) * float(lambda_orth_scale),
             # ACCURACY-PUSH CANDIDATE bookkeeping: 1.0 for every method except
             # simple_avg_factor_orth_kd_T2 when COMBINED_LOSS_SCALE_ENABLED is
@@ -1159,6 +1238,21 @@ def build_active_method_configs():
                 uses_feature_anchor=True, feature_anchor_weight=RANKEXT_FEATURE_ANCHOR_WEIGHT)
     add_method("rank_extension_orth_factor_featanchor", "rank_extension", "rank_extension_orth_factor_featanchor",
                 uses_factor_orth=True, uses_feature_anchor=True, feature_anchor_weight=RANKEXT_FEATURE_ANCHOR_WEIGHT)
+
+    # B2 (rank_ext first_step fix, decision doc): two more NEW methods,
+    # parallel to the two chained featanchor variants directly above --
+    # DEFAULT-OFF via METHODS_TO_RUN (both base_method flags False below), so
+    # add_method() returns before appending these and they add zero cost/risk
+    # to this rerun, same "disabled not deleted" convention as
+    # simple_avg_delta_orth etc. near METHODS_TO_RUN's own definition.
+    # Deliberately NOT added to SUPERVISOR_SELECTED_METHOD_SPECS -- the
+    # pinned 10-method comparison set for this run is untouched; enable both
+    # here AND add them to SUPERVISOR_SELECTED_METHOD_SPECS together, in a
+    # later run, once Phase A's diagnostics have been reviewed.
+    add_method("rank_extension_featanchor_base", "rank_extension", "rank_extension_featanchor_base",
+                uses_feature_anchor=True, feature_anchor_weight=RANKEXT_FEATURE_ANCHOR_WEIGHT, feature_anchor_mode="fixed_base")
+    add_method("rank_extension_orth_factor_featanchor_base", "rank_extension", "rank_extension_orth_factor_featanchor_base",
+                uses_factor_orth=True, uses_feature_anchor=True, feature_anchor_weight=RANKEXT_FEATURE_ANCHOR_WEIGHT, feature_anchor_mode="fixed_base")
 
     return configs
 
@@ -2051,6 +2145,29 @@ GROWING_OVERFITTING_DIAGNOSTICS_ENABLED = True
 # methods/steps (e.g. simple_avg_factor_orth step 3/4) rise <=0.004.
 GROWING_OVERFITTING_VAL_CE_RISE_THRESHOLD = 0.05
 
+# B1 OPTIONAL (decision doc): adaptive per-step early stopping on val-CE.
+# DEFAULT-OFF -- a compute/figure-cleanliness option for a LATER run, not
+# needed for correctness. USE_BEST_EPOCH_SELECTION above already reloads the
+# true val-CE-minimum checkpoint regardless of how many epochs actually ran
+# this step, so enabling this can only shorten wall-clock/epoch-curve length;
+# it can NEVER change which epoch's weights get merged into the final model
+# or any reported accuracy, because the reload always targets the best
+# snapshot seen so far, which is already captured by the time patience runs
+# out (stopping only ever happens AFTER best_epoch + patience epochs).
+# MUST be adaptive (patience-since-improvement, not a fixed epoch cap) so it
+# never fires on simple_avg_factor_orth, whose own best epoch trends LATE
+# (e.g. 2->9 across steps -- see tables/best_epoch_generalization_gap_by_
+# method_step.csv, B1's other diagnostic above): a method still improving at
+# epoch 9 never accumulates PATIENCE consecutive non-improving epochs, so it
+# simply never stops early, while a method like simple_avg whose val CE
+# plateaus/rises after epoch ~2-3 does.
+ADAPTIVE_PER_STEP_EARLY_STOP_ENABLED = False
+# Epochs since the last val-CE improvement before stopping.
+ADAPTIVE_PER_STEP_EARLY_STOP_PATIENCE = 3
+# Never stop before this epoch, regardless of patience -- guards against a
+# noisy early-epoch "improvement" causing a premature patience countdown.
+ADAPTIVE_PER_STEP_EARLY_STOP_MIN_EPOCH = 3
+
 
 def get_training_args(
     output_dir,
@@ -2217,6 +2334,30 @@ class EpochValidationCallback(TrainerCallback):
             f"[val ce] method={self.method_name} | step={row['step_id']} | "
             f"epoch={row['epoch']} | val_ce={row['val_ce_loss']:.6f} | lr={row['learning_rate']:.6g}"
         )
+
+        # B1 OPTIONAL, DEFAULT-OFF (ADAPTIVE_PER_STEP_EARLY_STOP_ENABLED):
+        # patience-since-best-val-CE stop, gated the same way best-epoch
+        # tracking is (self.track_best_epoch) so it can only ever fire once
+        # self.best_epoch is already set -- the reload in train_with_trainer()
+        # always uses self.best_state_dict, so stopping here never changes
+        # which epoch's weights end up in the final model. See the flag's own
+        # comment (near GROWING_OVERFITTING_VAL_CE_RISE_THRESHOLD) for why
+        # this is safe for simple_avg_factor_orth's late-trending best epoch.
+        if (
+            ADAPTIVE_PER_STEP_EARLY_STOP_ENABLED
+            and self.track_best_epoch
+            and self.best_epoch is not None
+            and epoch_int >= ADAPTIVE_PER_STEP_EARLY_STOP_MIN_EPOCH
+            and (epoch_int - self.best_epoch) >= ADAPTIVE_PER_STEP_EARLY_STOP_PATIENCE
+        ):
+            print(
+                f"[adaptive early stop] method={self.method_name} | step={row['step_id']} | "
+                f"stopping at epoch {epoch_int} (best_epoch={self.best_epoch}, "
+                f"patience={ADAPTIVE_PER_STEP_EARLY_STOP_PATIENCE}) -- best-val-CE snapshot "
+                f"already captured and unaffected by stopping here."
+            )
+            control.should_training_stop = True
+
         model.train()
         return control
 
@@ -5537,6 +5678,7 @@ def run_rank_extension_variant(
     kd_temperature=2.0,
     use_feature_anchor=False,
     feature_anchor_weight=0.0,
+    feature_anchor_mode="chained",
     orth_eval_records=None,
     orth_train_records=None,
     orth_summary_records=None,
@@ -5567,6 +5709,33 @@ def run_rank_extension_variant(
         float(RANKEXT_NEW_BLOCK_WARMUP_EPOCHS) if family_uses_new_block_warmup("rank_extension") else None
     )
 
+    # B2 (rank_ext first_step fix, decision doc): "fixed_base" anchor mode --
+    # build ONE non-drifting teacher, ONCE, before the step loop, and reuse
+    # the SAME instance for every step (including step 1, unlike "chained"
+    # below which has no teacher until previous_rank_state exists). This is
+    # the FROZEN PRETRAINED CLIP backbone with no LoRA contribution: calling
+    # build_rank_extension_model(previous_rank_state=None, ...) gives a model
+    # whose new LoRA block has B_new zero-initialized (see
+    # GrowingRankLoRALinear.__init__ -- nn.init.zeros_(self.B_new)) and no
+    # frozen block at all, so lora_new/lora_old are both exactly 0 in
+    # forward() and the model's output is mathematically identical to the raw
+    # pretrained backbone -- reusing this construction path (rather than
+    # hand-stripping LoRA) keeps the teacher's forward pass on the exact same
+    # code path as every student, with zero risk of an accidental behavioral
+    # difference. Frozen (eval + requires_grad=False) and never trained, so it
+    # cannot drift across steps by construction.
+    fixed_base_anchor_model = None
+    if use_feature_anchor and str(feature_anchor_mode) == "fixed_base":
+        fixed_base_anchor_model = build_rank_extension_model(
+            previous_rank_state=None,
+            step_idx=0,
+            old_active_in_forward=True,
+        )
+        fixed_base_anchor_model.eval()
+        for p in fixed_base_anchor_model.parameters():
+            p.requires_grad = False
+        assert not any(p.requires_grad for p in fixed_base_anchor_model.parameters())
+
     for step_idx in range(NUM_STEPS):
         current_classes = classes_for_step(step_idx)
         trainable_classifier_classes = rank_extension_trainable_classifier_classes(
@@ -5576,12 +5745,23 @@ def run_rank_extension_variant(
 
         old_active_in_forward = not (zero_old_merge and step_idx > 0)
         teacher_model = None
-        # FEATURE-ANCHOR LEVER: builds the identical "model as it stood at the
-        # end of the previous step" snapshot KD's teacher already used --
-        # use_kd and use_feature_anchor are mutually exclusive at the one call
-        # site that drives every rank_extension method, so this never runs for
-        # both reasons at once, but the condition itself doesn't assume that.
-        if (use_kd or use_feature_anchor) and previous_rank_state is not None:
+        if fixed_base_anchor_model is not None:
+            # B2: non-drifting reference, active for EVERY step including
+            # step 1 -- this is the whole point of the lever (see the
+            # fixed_base_anchor_model construction above). Unlike the chained
+            # branch below, this never depends on previous_rank_state, so
+            # step 1's feature_anchor_weight (gated on `teacher_model is not
+            # None` at the trainer_kwargs assembly below) is nonzero here.
+            teacher_model = fixed_base_anchor_model
+        elif (use_kd or use_feature_anchor) and previous_rank_state is not None:
+            # FEATURE-ANCHOR LEVER: builds the identical "model as it stood at
+            # the end of the previous step" snapshot KD's teacher already
+            # used -- use_kd and use_feature_anchor are mutually exclusive at
+            # the one call site that drives every rank_extension method, so
+            # this never runs for both reasons at once, but the condition
+            # itself doesn't assume that. None at step 1 (previous_rank_state
+            # is None), which is exactly the gap the "fixed_base" branch
+            # above exists to close.
             teacher_old_active_in_forward = not (zero_old_merge and (step_idx - 1) > 0)
             teacher_model = build_rank_extension_model(
                 previous_rank_state=previous_rank_state,
@@ -5843,6 +6023,11 @@ def run_rank_extension_variant(
         })
 
     del final_rank_model
+    # B2: fixed_base_anchor_model (if built) lived for the whole function,
+    # unlike the chained teacher_model (rebuilt/discarded every step) -- free
+    # it explicitly here rather than relying on it falling out of scope.
+    if fixed_base_anchor_model is not None:
+        del fixed_base_anchor_model
     cleanup()
 
 
@@ -5879,6 +6064,10 @@ for method_name in rank_extension_execution_order:
         # with uses_kd by construction, see add_method() calls above).
         use_feature_anchor=bool(method_cfg["uses_feature_anchor"]),
         feature_anchor_weight=float(method_cfg["feature_anchor_weight"]),
+        # B2: "chained" (default) or "fixed_base" -- see method_cfg["feature_
+        # anchor_mode"] (set in add_method()) and run_rank_extension_variant()
+        # for what each does.
+        feature_anchor_mode=str(method_cfg.get("feature_anchor_mode", "chained")),
         orth_eval_records=orth_kd_eval_rows,
         orth_train_records=orth_kd_train_rows,
         orth_summary_records=orth_kd_summary_rows,
@@ -6262,6 +6451,26 @@ if GROWING_OVERFITTING_DIAGNOSTICS_ENABLED and len(best_epoch_selection_df) > 0:
             else np.nan
         )
 
+        # B1 (simple_avg "anomaly" diagnostic, decision doc): same lookup as
+        # final_train_ce just above, but at the SELECTED (best-val-CE) epoch
+        # instead of the configured final epoch -- this is the piece
+        # growing_overfitting_df didn't have. Read-only: derived entirely
+        # from already-collected training_loss_history_df/best_epoch_
+        # selection_df, no training-time change, no effect on any reported
+        # accuracy (best-epoch selection already governs that independently
+        # of this diagnostic).
+        selected_epoch_rows = step_history[step_history["epoch"] == selected_epoch]
+        selected_train_ce = (
+            float(selected_epoch_rows["train_ce_loss"].iloc[0])
+            if len(selected_epoch_rows) > 0
+            else np.nan
+        )
+        train_val_gap_at_selected_epoch = (
+            float(selected_val_ce) - selected_train_ce
+            if not (np.isnan(selected_val_ce) or np.isnan(selected_train_ce))
+            else np.nan
+        )
+
         val_ce_rise_from_best_to_final = (
             float(final_epoch_val_ce) - float(selected_val_ce)
             if not (np.isnan(final_epoch_val_ce) or np.isnan(selected_val_ce))
@@ -6282,6 +6491,8 @@ if GROWING_OVERFITTING_DIAGNOSTICS_ENABLED and len(best_epoch_selection_df) > 0:
             "epochs_configured": epochs_configured,
             "selected_epoch": selected_epoch,
             "selected_val_ce": selected_val_ce,
+            "selected_train_ce": selected_train_ce,
+            "train_val_gap_at_selected_epoch": train_val_gap_at_selected_epoch,
             "final_epoch_val_ce": final_epoch_val_ce,
             "final_epoch_train_ce": final_train_ce,
             "train_val_gap_at_final_epoch": (
@@ -6310,6 +6521,33 @@ if GROWING_OVERFITTING_DIAGNOSTICS_ENABLED and len(best_epoch_selection_df) > 0:
         f"{n_flagged_and_protected}/{n_flagged} of those were protected by best-epoch selection (final reported "
         f"accuracy uses the pre-overfitting checkpoint, not the final epoch)."
     )
+
+    # B1 (decision doc): dedicated diagnostic naming exactly what the
+    # supervisor asked for -- per (method, CL step), the selected best-epoch
+    # index and the train-vs-val CE generalization gap BOTH at that selected
+    # epoch and at the final configured epoch. Pure re-projection of columns
+    # already computed above (family added via ACTIVE_METHOD_MAP so the CSV
+    # is filterable by family without a join); no new computation, no
+    # training-time effect. This is the intended explanation for the
+    # simple_avg "anomaly": plain simple_avg's own selected_epoch should
+    # cluster early (~2-3) at the mid steps where it overfits, while
+    # simple_avg_factor_orth's trends later (toward the configured final
+    # epoch, e.g. 2->9 across steps) because it is still genuinely improving
+    # there -- both readable directly from this table without re-deriving
+    # them from the raw loss history.
+    best_epoch_gap_df = growing_overfitting_df.copy()
+    best_epoch_gap_df["family"] = best_epoch_gap_df["method_name"].map(
+        lambda m: ACTIVE_METHOD_MAP.get(m, {}).get("family", np.nan)
+    )
+    best_epoch_gap_df = best_epoch_gap_df[[
+        "method_name", "display_name", "family", "step_id", "epochs_configured",
+        "selected_epoch", "selected_train_ce", "selected_val_ce", "train_val_gap_at_selected_epoch",
+        "final_epoch_train_ce", "final_epoch_val_ce", "train_val_gap_at_final_epoch",
+        "accuracy_protected_by_best_epoch",
+    ]]
+    best_epoch_gap_path = os.path.join(TABLES_DIR, "best_epoch_generalization_gap_by_method_step.csv")
+    best_epoch_gap_df.to_csv(best_epoch_gap_path, index=False)
+    print("Saved best-epoch generalization-gap diagnostic:", best_epoch_gap_path)
 
 # analysis_rankext_plain/ (2026-07-23): per (method, step, local_epoch) record
 # of the actual RANKEXT_NEW_BLOCK_WARMUP_ENABLED multiplier applied during
@@ -6703,207 +6941,270 @@ def save_figure_object(fig, plot_name):
     print("Saved:", plot_path)
 
 
-if len(loss_plot_df) > 0:
-    plt.figure(figsize=(16, 10))
-    plt.barh(loss_plot_df["plot_label"], loss_plot_df["ce_loss_mean"].fillna(0.0), color="#4c78a8")
-    plt.xlabel("Mean train CE loss")
-    plt.title("Train CE Loss by Method")
-    save_current_plot("08_ce_loss_by_method.png")
+# A2 FIX (Aug-7 crash): the Aug-7 run died mid-post-processing (a KeyError in
+# the color_map construction further down this cell, well after training had
+# already finished) and took EVERY plot/table below the crash point with it.
+# _safe_plot() runs one named plot block, catches any exception, logs it to
+# plot_failures (surfaced in reports/plot_failures.txt at the end of this
+# cell) and lets every later block still run -- a single plot failure can now
+# only cost that one plot, never the rest of post-processing or any data CSV.
+plot_failures = []
 
-    plt.figure(figsize=(16, 10))
-    y = np.arange(len(loss_plot_df))
-    plt.barh(y - 0.18, loss_plot_df["ce_loss_mean"].fillna(0.0), height=0.35, label="Train CE", color="#4c78a8")
-    plt.barh(y + 0.18, loss_plot_df["val_ce_loss_mean"].fillna(0.0), height=0.35, label="Validation CE", color="#f58518")
-    plt.yticks(y, loss_plot_df["plot_label"])
-    plt.xlabel("Mean CE loss")
-    plt.title("Mean Train vs Validation CE by Method")
-    plt.legend()
-    save_current_plot("08b_train_val_ce_loss_by_method.png")
+
+def _safe_plot(label, fn):
+    try:
+        fn()
+    except Exception as e:
+        import traceback
+        tb = traceback.format_exc()
+        print(f"[_safe_plot] FAILED block={label}: {type(e).__name__}: {e}")
+        plot_failures.append({"block": label, "error": f"{type(e).__name__}: {e}", "traceback": tb})
+
+
+def _plot_08_ce_loss_by_method():
+    if len(loss_plot_df) > 0:
+        plt.figure(figsize=(16, 10))
+        plt.barh(loss_plot_df["plot_label"], loss_plot_df["ce_loss_mean"].fillna(0.0), color="#4c78a8")
+        plt.xlabel("Mean train CE loss")
+        plt.title("Train CE Loss by Method")
+        save_current_plot("08_ce_loss_by_method.png")
+_safe_plot("08_ce_loss_by_method", _plot_08_ce_loss_by_method)
+
+
+def _plot_08b_train_val_ce_loss_by_method():
+    if len(loss_plot_df) > 0:
+        plt.figure(figsize=(16, 10))
+        y = np.arange(len(loss_plot_df))
+        plt.barh(y - 0.18, loss_plot_df["ce_loss_mean"].fillna(0.0), height=0.35, label="Train CE", color="#4c78a8")
+        plt.barh(y + 0.18, loss_plot_df["val_ce_loss_mean"].fillna(0.0), height=0.35, label="Validation CE", color="#f58518")
+        plt.yticks(y, loss_plot_df["plot_label"])
+        plt.xlabel("Mean CE loss")
+        plt.title("Mean Train vs Validation CE by Method")
+        plt.legend()
+        save_current_plot("08b_train_val_ce_loss_by_method.png")
+_safe_plot("08b_train_val_ce_loss_by_method", _plot_08b_train_val_ce_loss_by_method)
 
 kd_plot_df = loss_plot_df[loss_plot_df["uses_kd"]].copy()
-if len(kd_plot_df) > 0:
-    y = np.arange(len(kd_plot_df))
-    plt.figure(figsize=(16, 10))
-    plt.barh(y - 0.18, kd_plot_df["kd_loss_raw_mean"].fillna(0.0), height=0.35, label="KD raw", color="#4c78a8")
-    plt.barh(y + 0.18, kd_plot_df["kd_loss_weighted_mean"].fillna(0.0), height=0.35, label="KD weighted", color="#f58518")
-    plt.yticks(y, kd_plot_df["plot_label"])
-    plt.xlabel("Mean KD loss")
-    plt.title("KD Loss by KD Method")
-    plt.legend()
-    save_current_plot("09_kd_loss_by_method.png")
+
+
+def _plot_09_kd_loss_by_method():
+    if len(kd_plot_df) > 0:
+        y = np.arange(len(kd_plot_df))
+        plt.figure(figsize=(16, 10))
+        plt.barh(y - 0.18, kd_plot_df["kd_loss_raw_mean"].fillna(0.0), height=0.35, label="KD raw", color="#4c78a8")
+        plt.barh(y + 0.18, kd_plot_df["kd_loss_weighted_mean"].fillna(0.0), height=0.35, label="KD weighted", color="#f58518")
+        plt.yticks(y, kd_plot_df["plot_label"])
+        plt.xlabel("Mean KD loss")
+        plt.title("KD Loss by KD Method")
+        plt.legend()
+        save_current_plot("09_kd_loss_by_method.png")
+_safe_plot("09_kd_loss_by_method", _plot_09_kd_loss_by_method)
 
 delta_plot_df = loss_plot_df[loss_plot_df["uses_delta_trace"]].copy()
-if len(delta_plot_df) > 0:
-    y = np.arange(len(delta_plot_df))
-    plt.figure(figsize=(16, 10))
-    plt.barh(y - 0.18, delta_plot_df["delta_trace_loss_raw_mean"].fillna(0.0), height=0.35, label="Delta-trace raw", color="#54a24b")
-    plt.barh(y + 0.18, delta_plot_df["delta_trace_loss_weighted_mean"].fillna(0.0), height=0.35, label="Delta-trace weighted", color="#2f7d32")
-    plt.yticks(y, delta_plot_df["plot_label"])
-    plt.xlabel("Mean delta-trace loss")
-    plt.title("Delta-Trace Loss by Method")
-    plt.legend()
-    save_current_plot("10_delta_trace_loss_by_method.png")
+
+
+def _plot_10_delta_trace_loss_by_method():
+    if len(delta_plot_df) > 0:
+        y = np.arange(len(delta_plot_df))
+        plt.figure(figsize=(16, 10))
+        plt.barh(y - 0.18, delta_plot_df["delta_trace_loss_raw_mean"].fillna(0.0), height=0.35, label="Delta-trace raw", color="#54a24b")
+        plt.barh(y + 0.18, delta_plot_df["delta_trace_loss_weighted_mean"].fillna(0.0), height=0.35, label="Delta-trace weighted", color="#2f7d32")
+        plt.yticks(y, delta_plot_df["plot_label"])
+        plt.xlabel("Mean delta-trace loss")
+        plt.title("Delta-Trace Loss by Method")
+        plt.legend()
+        save_current_plot("10_delta_trace_loss_by_method.png")
+_safe_plot("10_delta_trace_loss_by_method", _plot_10_delta_trace_loss_by_method)
 
 factor_plot_df = loss_plot_df[loss_plot_df["uses_factor_orth"]].copy()
-if len(factor_plot_df) > 0:
-    y = np.arange(len(factor_plot_df))
-    plt.figure(figsize=(16, 10))
-    plt.barh(y - 0.18, factor_plot_df["factor_orth_loss_raw_mean"].fillna(0.0), height=0.35, label="Factor-orth raw", color="#e45756")
-    plt.barh(y + 0.18, factor_plot_df["factor_orth_loss_weighted_mean"].fillna(0.0), height=0.35, label="Factor-orth weighted", color="#b23a48")
-    plt.yticks(y, factor_plot_df["plot_label"])
-    plt.xlabel("Mean factor-orth loss")
-    plt.title("Factor-Orth Loss by Method")
-    plt.legend()
-    save_current_plot("11_factor_orth_loss_by_method.png")
 
-if len(loss_plot_df) > 0:
-    plt.figure(figsize=(16, 10))
-    plt.barh(loss_plot_df["plot_label"], loss_plot_df["total_loss_mean"].fillna(0.0), color="#b279a2")
-    plt.xlabel("Mean train total loss")
-    plt.title("Total Loss by Method")
-    save_current_plot("12_total_loss_by_method.png")
 
-    fig, axes = plt.subplots(3, 1, figsize=(16, 14), sharex=True)
-    axes[0].bar(loss_plot_df["plot_label"], loss_plot_df["kd_over_CE_mean"].fillna(0.0), color="#4c78a8")
-    axes[0].set_ylabel("KD / CE")
-    axes[1].bar(loss_plot_df["plot_label"], loss_plot_df["delta_trace_over_CE_mean"].fillna(0.0), color="#54a24b")
-    axes[1].set_ylabel("Delta / CE")
-    axes[2].bar(loss_plot_df["plot_label"], loss_plot_df["factor_orth_over_CE_mean"].fillna(0.0), color="#e45756")
-    axes[2].set_ylabel("Factor / CE")
-    axes[2].tick_params(axis="x", rotation=30)
-    fig.suptitle("Loss Ratio Diagnostics")
-    save_figure_object(fig, "13_loss_ratio_diagnostics.png")
+def _plot_11_factor_orth_loss_by_method():
+    if len(factor_plot_df) > 0:
+        y = np.arange(len(factor_plot_df))
+        plt.figure(figsize=(16, 10))
+        plt.barh(y - 0.18, factor_plot_df["factor_orth_loss_raw_mean"].fillna(0.0), height=0.35, label="Factor-orth raw", color="#e45756")
+        plt.barh(y + 0.18, factor_plot_df["factor_orth_loss_weighted_mean"].fillna(0.0), height=0.35, label="Factor-orth weighted", color="#b23a48")
+        plt.yticks(y, factor_plot_df["plot_label"])
+        plt.xlabel("Mean factor-orth loss")
+        plt.title("Factor-Orth Loss by Method")
+        plt.legend()
+        save_current_plot("11_factor_orth_loss_by_method.png")
+_safe_plot("11_factor_orth_loss_by_method", _plot_11_factor_orth_loss_by_method)
+
+
+def _plot_12_total_loss_by_method():
+    if len(loss_plot_df) > 0:
+        plt.figure(figsize=(16, 10))
+        plt.barh(loss_plot_df["plot_label"], loss_plot_df["total_loss_mean"].fillna(0.0), color="#b279a2")
+        plt.xlabel("Mean train total loss")
+        plt.title("Total Loss by Method")
+        save_current_plot("12_total_loss_by_method.png")
+_safe_plot("12_total_loss_by_method", _plot_12_total_loss_by_method)
+
+
+def _plot_13_loss_ratio_diagnostics():
+    if len(loss_plot_df) > 0:
+        fig, axes = plt.subplots(3, 1, figsize=(16, 14), sharex=True)
+        axes[0].bar(loss_plot_df["plot_label"], loss_plot_df["kd_over_CE_mean"].fillna(0.0), color="#4c78a8")
+        axes[0].set_ylabel("KD / CE")
+        axes[1].bar(loss_plot_df["plot_label"], loss_plot_df["delta_trace_over_CE_mean"].fillna(0.0), color="#54a24b")
+        axes[1].set_ylabel("Delta / CE")
+        axes[2].bar(loss_plot_df["plot_label"], loss_plot_df["factor_orth_over_CE_mean"].fillna(0.0), color="#e45756")
+        axes[2].set_ylabel("Factor / CE")
+        axes[2].tick_params(axis="x", rotation=30)
+        fig.suptitle("Loss Ratio Diagnostics")
+        save_figure_object(fig, "13_loss_ratio_diagnostics.png")
+_safe_plot("13_loss_ratio_diagnostics", _plot_13_loss_ratio_diagnostics)
 
 combined_df = loss_plot_df[(loss_plot_df["uses_kd"]) | (loss_plot_df["uses_delta_trace"]) | (loss_plot_df["uses_factor_orth"])].copy()
-if len(combined_df) > 0:
-    combined_df["orth_weighted_mean"] = np.where(
-        combined_df["uses_delta_trace"],
-        combined_df["delta_trace_loss_weighted_mean"].fillna(0.0),
-        combined_df["factor_orth_loss_weighted_mean"].fillna(0.0),
-    )
-    plt.figure(figsize=(18, 10))
-    plt.barh(combined_df["plot_label"], combined_df["ce_loss_mean"].fillna(0.0), label="Train CE", color="#4c78a8")
-    plt.barh(combined_df["plot_label"], combined_df["kd_loss_weighted_mean"].fillna(0.0), left=combined_df["ce_loss_mean"].fillna(0.0), label="KD weighted", color="#f58518")
-    plt.barh(
-        combined_df["plot_label"],
-        combined_df["orth_weighted_mean"].fillna(0.0),
-        left=(combined_df["ce_loss_mean"].fillna(0.0) + combined_df["kd_loss_weighted_mean"].fillna(0.0)),
-        label="Orth weighted",
-        color="#54a24b",
-    )
-    plt.scatter(combined_df["total_loss_mean"].fillna(0.0), combined_df["plot_label"], color="black", label="Train total loss")
-    plt.xlabel("Mean loss value")
-    plt.title("Combined Loss Decomposition")
-    plt.legend()
-    save_current_plot("14_combined_loss_decomposition.png")
+
+
+def _plot_14_combined_loss_decomposition():
+    if len(combined_df) > 0:
+        combined_df["orth_weighted_mean"] = np.where(
+            combined_df["uses_delta_trace"],
+            combined_df["delta_trace_loss_weighted_mean"].fillna(0.0),
+            combined_df["factor_orth_loss_weighted_mean"].fillna(0.0),
+        )
+        plt.figure(figsize=(18, 10))
+        plt.barh(combined_df["plot_label"], combined_df["ce_loss_mean"].fillna(0.0), label="Train CE", color="#4c78a8")
+        plt.barh(combined_df["plot_label"], combined_df["kd_loss_weighted_mean"].fillna(0.0), left=combined_df["ce_loss_mean"].fillna(0.0), label="KD weighted", color="#f58518")
+        plt.barh(
+            combined_df["plot_label"],
+            combined_df["orth_weighted_mean"].fillna(0.0),
+            left=(combined_df["ce_loss_mean"].fillna(0.0) + combined_df["kd_loss_weighted_mean"].fillna(0.0)),
+            label="Orth weighted",
+            color="#54a24b",
+        )
+        plt.scatter(combined_df["total_loss_mean"].fillna(0.0), combined_df["plot_label"], color="black", label="Train total loss")
+        plt.xlabel("Mean loss value")
+        plt.title("Combined Loss Decomposition")
+        plt.legend()
+        save_current_plot("14_combined_loss_decomposition.png")
+_safe_plot("14_combined_loss_decomposition", _plot_14_combined_loss_decomposition)
 
 from matplotlib.lines import Line2D
 
 selected_epoch_df = training_loss_history_df[training_loss_history_df["method_name"].isin(SUPERVISOR_SELECTED_INTERNAL_METHODS)].copy()
-if len(selected_epoch_df) > 0:
-    # FIX 1 (was: "KeyError: 'family'" here, which killed the previous cluster run
-    # AFTER training had already finished, losing the final summary tables).
-    #
-    # Root cause: training_loss_history_df already carries its own "family" column
-    # (it's one of the groupby keys used to build train_epoch_df earlier in this
-    # script -- see the loss_component_cols groupby -- and it also survives the
-    # empty-history fallback branch, which lists "family" in its column set too).
-    # The old code then did
-    #     selected_epoch_df.merge(method_config_df[["method", "family"]], ...)
-    # on top of that -- since "family" exists on BOTH sides of that merge and is
-    # not a join key, pandas silently renamed the result to "family_x"/"family_y"
-    # instead of raising during the merge itself, so the *next* line
-    # (selected_epoch_df["family"] == "simple_avg") is what actually raised
-    # KeyError: 'family'.
-    #
-    # Fix: don't merge at all -- (re)derive "family" directly and unambiguously
-    # from ACTIVE_METHOD_MAP (the single source of truth for each active method's
-    # family), which cannot collide with any existing column on selected_epoch_df.
-    # Methods not present in ACTIVE_METHOD_MAP (e.g. a stale/disabled method name
-    # that somehow still shows up in the loss history) get "family"=NaN and are
-    # dropped from this plot with a warning instead of crashing.
-    selected_epoch_df["family"] = selected_epoch_df["method_name"].map(
-        lambda m: ACTIVE_METHOD_MAP.get(m, {}).get("family", np.nan)
-    )
-    _missing_family = sorted(selected_epoch_df.loc[selected_epoch_df["family"].isna(), "method_name"].unique().tolist())
-    if _missing_family:
-        print(f"[15_supervisor_selected_train_val_ce] WARNING: no family mapping for methods {_missing_family}; dropping their rows from this plot.")
-        selected_epoch_df = selected_epoch_df.dropna(subset=["family"])
-
-    selected_epoch_df["epochs_per_step"] = np.where(
-        selected_epoch_df["family"] == "simple_avg",
-        float(LORA_EPOCHS),
-        float(RANKEXT_EPOCHS),
-    )
-    selected_epoch_df["global_epoch"] = (selected_epoch_df["step_id"] - 1) * selected_epoch_df["epochs_per_step"] + selected_epoch_df["epoch"]
-
-    color_map = {
-        method_name: color
-        for method_name, color in zip(
-            SUPERVISOR_SELECTED_INTERNAL_METHODS,
-            ["#1f77b4", "#d62728", "#ff7f0e", "#9467bd", "#2ca02c", "#8c564b", "#17becf", "#e377c2"],
+def _plot_15_supervisor_selected_train_val_ce():
+    if len(selected_epoch_df) > 0:
+        # FIX 1 (was: "KeyError: 'family'" here, which killed the previous cluster run
+        # AFTER training had already finished, losing the final summary tables).
+        #
+        # Root cause: training_loss_history_df already carries its own "family" column
+        # (it's one of the groupby keys used to build train_epoch_df earlier in this
+        # script -- see the loss_component_cols groupby -- and it also survives the
+        # empty-history fallback branch, which lists "family" in its column set too).
+        # The old code then did
+        #     selected_epoch_df.merge(method_config_df[["method", "family"]], ...)
+        # on top of that -- since "family" exists on BOTH sides of that merge and is
+        # not a join key, pandas silently renamed the result to "family_x"/"family_y"
+        # instead of raising during the merge itself, so the *next* line
+        # (selected_epoch_df["family"] == "simple_avg") is what actually raised
+        # KeyError: 'family'.
+        #
+        # Fix: don't merge at all -- (re)derive "family" directly and unambiguously
+        # from ACTIVE_METHOD_MAP (the single source of truth for each active method's
+        # family), which cannot collide with any existing column on selected_epoch_df.
+        # Methods not present in ACTIVE_METHOD_MAP (e.g. a stale/disabled method name
+        # that somehow still shows up in the loss history) get "family"=NaN and are
+        # dropped from this plot with a warning instead of crashing.
+        selected_epoch_df["family"] = selected_epoch_df["method_name"].map(
+            lambda m: ACTIVE_METHOD_MAP.get(m, {}).get("family", np.nan)
         )
-    }
-    fig, axes = plt.subplots(2, 1, figsize=(12, 8), sharex=True, constrained_layout=True)
-    for ax, family in zip(axes, ["simple_avg", "rank_extension"]):
-        # .get(m, {}) instead of ACTIVE_METHOD_MAP[m]: skip gracefully rather than
-        # KeyError if a supervisor-selected method name is ever absent from the
-        # active set (e.g. a disabled family), instead of assuming it is always active.
-        family_methods = [m for m in SUPERVISOR_SELECTED_INTERNAL_METHODS if ACTIVE_METHOD_MAP.get(m, {}).get("family") == family]
-        for method_name in family_methods:
-            sub = selected_epoch_df[selected_epoch_df["method_name"] == method_name].sort_values(["step_id", "epoch"])
-            if len(sub) == 0:
-                continue
-            color = color_map[method_name]
-            # Task 3: smooth (PCHIP) curves within each CL step, broken at step
-            # boundaries -- never one continuous line across steps (see
-            # _plot_step_broken_series docstring for why).
-            _plot_step_broken_series(ax, sub, "train_ce_loss", color, None,
-                                      lw=1.8, linestyle="-", x_col="global_epoch")
-            _plot_step_broken_series(ax, sub, "val_ce_loss", color, None,
-                                      lw=1.6, linestyle="--", x_col="global_epoch")
-        ax.set_ylabel("CE loss")
-        ax.set_title("SimpleAvg Family" if family == "simple_avg" else "RankExt Family", loc="left", fontweight="bold")
-        ax.grid(axis="y", color="#e6e6e6", linewidth=0.8)
-        ax.set_xlim(1, NUM_STEPS * float(LORA_EPOCHS))
-        add_step_guides(ax, epochs_per_step=float(LORA_EPOCHS), total_steps=NUM_STEPS)
+        _missing_family = sorted(selected_epoch_df.loc[selected_epoch_df["family"].isna(), "method_name"].unique().tolist())
+        if _missing_family:
+            print(f"[15_supervisor_selected_train_val_ce] WARNING: no family mapping for methods {_missing_family}; dropping their rows from this plot.")
+            selected_epoch_df = selected_epoch_df.dropna(subset=["family"])
 
-        color_handles = [
-            Line2D([0], [0], color=color_map[m], linewidth=2.0, label=METHOD_DISPLAY_NAME_MAP.get(m, m))
-            for m in family_methods
-        ]
-        style_handles = [
-            Line2D([0], [0], color="#333333", linewidth=2.0, linestyle="-", label="Train CE"),
-            Line2D([0], [0], color="#333333", linewidth=2.0, linestyle="--", label="Validation CE"),
-        ]
-        ax.legend(handles=color_handles + style_handles, loc="upper right", frameon=False, fontsize=8)
+        selected_epoch_df["epochs_per_step"] = np.where(
+            selected_epoch_df["family"] == "simple_avg",
+            float(LORA_EPOCHS),
+            float(RANKEXT_EPOCHS),
+        )
+        selected_epoch_df["global_epoch"] = (selected_epoch_df["step_id"] - 1) * selected_epoch_df["epochs_per_step"] + selected_epoch_df["epoch"]
 
-    axes[-1].set_xlabel("Cumulative epoch")
-    save_figure_object(fig, "15_supervisor_selected_train_val_ce.png")
-else:
-    print("Skipping 15_supervisor_selected_train_val_ce.png: no epoch-level loss rows available")
+        # A1 FIX (Aug-7 crash, KeyError at the color_map[method_name] lookup a few
+        # lines below): this used to zip SUPERVISOR_SELECTED_INTERNAL_METHODS
+        # (10 methods, since the featanchor lever added 2 more on 2026-08-05)
+        # against a HARDCODED 8-color list -- zip() silently truncates to the
+        # shorter sequence, so the last 2 methods
+        # (rank_extension_featanchor / rank_extension_orth_factor_featanchor)
+        # never got a color_map entry, and the KeyError below only surfaced once
+        # training actually finished and this cell ran, losing every table/plot
+        # after it. Fix: build color_map FROM the active method list's own
+        # length -- cycling a qualitative palette (via modulo) so this never
+        # KeyErrors regardless of how many methods SUPERVISOR_SELECTED_INTERNAL_
+        # METHODS holds in the future, instead of assuming a fixed count again.
+        _color_palette = ["#1f77b4", "#d62728", "#ff7f0e", "#9467bd", "#2ca02c", "#8c564b", "#17becf", "#e377c2", "#bcbd22", "#7f7f7f"]
+        color_map = {
+            method_name: _color_palette[i % len(_color_palette)]
+            for i, method_name in enumerate(SUPERVISOR_SELECTED_INTERNAL_METHODS)
+        }
+        fig, axes = plt.subplots(2, 1, figsize=(12, 8), sharex=True, constrained_layout=True)
+        for ax, family in zip(axes, ["simple_avg", "rank_extension"]):
+            # .get(m, {}) instead of ACTIVE_METHOD_MAP[m]: skip gracefully rather than
+            # KeyError if a supervisor-selected method name is ever absent from the
+            # active set (e.g. a disabled family), instead of assuming it is always active.
+            family_methods = [m for m in SUPERVISOR_SELECTED_INTERNAL_METHODS if ACTIVE_METHOD_MAP.get(m, {}).get("family") == family]
+            for method_name in family_methods:
+                sub = selected_epoch_df[selected_epoch_df["method_name"] == method_name].sort_values(["step_id", "epoch"])
+                if len(sub) == 0:
+                    continue
+                color = color_map[method_name]
+                # Task 3: smooth (PCHIP) curves within each CL step, broken at step
+                # boundaries -- never one continuous line across steps (see
+                # _plot_step_broken_series docstring for why).
+                _plot_step_broken_series(ax, sub, "train_ce_loss", color, None,
+                                          lw=1.8, linestyle="-", x_col="global_epoch")
+                _plot_step_broken_series(ax, sub, "val_ce_loss", color, None,
+                                          lw=1.6, linestyle="--", x_col="global_epoch")
+            ax.set_ylabel("CE loss")
+            ax.set_title("SimpleAvg Family" if family == "simple_avg" else "RankExt Family", loc="left", fontweight="bold")
+            ax.grid(axis="y", color="#e6e6e6", linewidth=0.8)
+            ax.set_xlim(1, NUM_STEPS * float(LORA_EPOCHS))
+            add_step_guides(ax, epochs_per_step=float(LORA_EPOCHS), total_steps=NUM_STEPS)
+
+            color_handles = [
+                Line2D([0], [0], color=color_map[m], linewidth=2.0, label=METHOD_DISPLAY_NAME_MAP.get(m, m))
+                for m in family_methods
+            ]
+            style_handles = [
+                Line2D([0], [0], color="#333333", linewidth=2.0, linestyle="-", label="Train CE"),
+                Line2D([0], [0], color="#333333", linewidth=2.0, linestyle="--", label="Validation CE"),
+            ]
+            ax.legend(handles=color_handles + style_handles, loc="upper right", frameon=False, fontsize=8)
+
+        axes[-1].set_xlabel("Cumulative epoch")
+        save_figure_object(fig, "15_supervisor_selected_train_val_ce.png")
+    else:
+        print("Skipping 15_supervisor_selected_train_val_ce.png: no epoch-level loss rows available")
+_safe_plot("15_supervisor_selected_train_val_ce", _plot_15_supervisor_selected_train_val_ce)
 
 selected_acc_df = supervisor_selected_accuracy_export_df.copy()
-if len(selected_acc_df) > 0:
-    selected_acc_df["display_name"] = pd.Categorical(
-        selected_acc_df["display_name"],
-        categories=SUPERVISOR_SELECTED_DISPLAY_NAMES,
-        ordered=True,
-    )
-    selected_acc_df = selected_acc_df.sort_values("display_name").reset_index(drop=True)
-    x = np.arange(len(selected_acc_df))
-    width = 0.24
-    plt.figure(figsize=(16, 7))
-    plt.bar(x - width, selected_acc_df["first_step"], width=width, label="first_step", color="#4c78a8")
-    plt.bar(x, selected_acc_df["later_steps"], width=width, label="later_steps", color="#f58518")
-    plt.bar(x + width, selected_acc_df["all_seen"], width=width, label="all_seen", color="#54a24b")
-    plt.xticks(x, selected_acc_df["display_name"], rotation=25, ha="right")
-    plt.ylabel("Accuracy (%)")
-    plt.title("Supervisor-Selected Accuracy Comparison")
-    plt.legend()
-    save_current_plot("17_supervisor_selected_accuracy_comparison.png")
-else:
-    print("Skipping 17_supervisor_selected_accuracy_comparison.png: no supervisor-selected accuracy rows available")
+def _plot_17_supervisor_selected_accuracy_comparison():
+    if len(selected_acc_df) > 0:
+        selected_acc_df["display_name"] = pd.Categorical(
+            selected_acc_df["display_name"],
+            categories=SUPERVISOR_SELECTED_DISPLAY_NAMES,
+            ordered=True,
+        )
+        selected_acc_df = selected_acc_df.sort_values("display_name").reset_index(drop=True)
+        x = np.arange(len(selected_acc_df))
+        width = 0.24
+        plt.figure(figsize=(16, 7))
+        plt.bar(x - width, selected_acc_df["first_step"], width=width, label="first_step", color="#4c78a8")
+        plt.bar(x, selected_acc_df["later_steps"], width=width, label="later_steps", color="#f58518")
+        plt.bar(x + width, selected_acc_df["all_seen"], width=width, label="all_seen", color="#54a24b")
+        plt.xticks(x, selected_acc_df["display_name"], rotation=25, ha="right")
+        plt.ylabel("Accuracy (%)")
+        plt.title("Supervisor-Selected Accuracy Comparison")
+        plt.legend()
+        save_current_plot("17_supervisor_selected_accuracy_comparison.png")
+    else:
+        print("Skipping 17_supervisor_selected_accuracy_comparison.png: no supervisor-selected accuracy rows available")
+_safe_plot("17_supervisor_selected_accuracy_comparison", _plot_17_supervisor_selected_accuracy_comparison)
 
 
 # In[ ]:
@@ -7134,6 +7435,53 @@ for m in REQ:
     elif mm[["first_step_accuracy","later_steps_accuracy","all_seen_accuracy"]].isna().to_numpy().all():
         missing_outputs.append({"output":"tables/supervisor_selected_accuracy_comparison.csv","method":m,"metric_or_column":"accuracy metrics","why":"Final accuracy metrics are all NaN for this selected method.","required_or_optional":"required"})
 
+
+# A2 FIX (Aug-7 crash): valdiag() (validation_diagnostics_by_method.csv +
+# its 3 derived rankings/gap CSVs) and the hyperparameter-consistency CSV
+# used to run AFTER several plot blocks below (heat() heatmaps, the
+# per-task heatmap, forgetting curves, every lossgrid() panel, and the two
+# combined train/val + loss-decomposition figures) -- so a crash in ANY of
+# those plots (as actually happened Aug-7, see the color_map fix above)
+# meant these pure-data CSVs never reached disk even though nothing about
+# them depends on any plot succeeding. Moved up here, immediately after M
+# (metrics_tables()) is available and before the first plot call, so every
+# data CSV this cell produces is guaranteed to exist before any plot runs.
+D = pd.DataFrame()
+try:
+    def valdiag():
+        rows=[]; alook=M.set_index("method") if len(M)>0 else pd.DataFrame()
+        for m in REQ:
+            d=E[E.method==m].sort_values(["cl_step","local_epoch"]); v=d.dropna(subset=["val_ce_loss"])
+            if len(v)==0: rows.append({"method":m,"display_method_name":disp(m),"overfitting_signal":"missing_validation"}); continue
+            final=v.iloc[-1]; best=v.sort_values(["val_ce_loss","global_epoch"]).iloc[0]; inc=0
+            for _,g in v.groupby("cl_step"):
+                prev=None
+                for _,r in g.sort_values("local_epoch").iterrows():
+                    if prev is not None and r.val_ce_loss>prev.val_ce_loss and r.train_ce_loss<prev.train_ce_loss: inc+=1
+                    prev=r
+            fg=float(final.val_ce_loss-final.train_ce_loss); fmb=float(final.val_ce_loss-best.val_ce_loss); vr=float(v.val_ce_loss.max()-v.val_ce_loss.min()); flags=[]
+            if inc: flags.append("val_up_train_down")
+            if fg>1: flags.append("large_final_gap")
+            if fmb>.25: flags.append("final_val_worse_than_best")
+            if vr>1: flags.append("unstable_val_ce")
+            sig="low" if not flags else ("strong" if len(flags)>1 else "moderate")
+            rows.append({"method":m,"display_method_name":disp(m),"all_seen_accuracy":float(alook.loc[m,"all_seen_accuracy"]) if m in alook.index else np.nan,"final_validation_ce":float(final.val_ce_loss),"best_validation_ce":float(best.val_ce_loss),"global_epoch_of_best_validation_ce":int(best.global_epoch),"cl_step_of_best_validation_ce":int(best.cl_step),"local_epoch_of_best_validation_ce":int(best.local_epoch),"final_train_ce":float(final.train_ce_loss),"train_val_ce_gap_final_epoch":fg,"train_val_ce_gap_best_val_epoch":float(best.val_ce_loss-best.train_ce_loss),"validation_ce_std":float(v.val_ce_loss.std(ddof=0)),"validation_ce_range":vr,"validation_ce_trend":"decreasing" if final.val_ce_loss<v.iloc[0].val_ce_loss else "increasing","validation_ce_increases_while_train_ce_decreases":bool(inc),"num_val_up_train_down_events":inc,"final_validation_ce_minus_best":fmb,"overfitting_signal":sig,"overfitting_flags":";".join(flags) if flags else "none","overfitting_score":max(fg,0)+max(fmb,0)+.25*inc+.25*vr})
+        D=pd.DataFrame(rows); D.to_csv(Path(TABLES_DIR)/"validation_diagnostics_by_method.csv",index=False); D.sort_values("best_validation_ce").to_csv(Path(TABLES_DIR)/"validation_ranking_by_best_val_ce.csv",index=False); D.sort_values("final_validation_ce").to_csv(Path(TABLES_DIR)/"validation_ranking_by_final_val_ce.csv",index=False); D.sort_values("train_val_ce_gap_final_epoch",ascending=False).to_csv(Path(TABLES_DIR)/"train_val_gap_by_method.csv",index=False); return D
+    D=valdiag()
+    for m in REQ:
+        dd=D[D.method==m] if len(D)>0 and "method" in D else pd.DataFrame()
+        if len(dd)==0 or "final_validation_ce" not in dd or dd["final_validation_ce"].isna().all():
+            missing_outputs.append({"output":"tables/validation_diagnostics_by_method.csv","method":m,"metric_or_column":"final_validation_ce / val_ce_loss","why":"Validation CE was not available for this selected method.","required_or_optional":"required"})
+except Exception as e:
+    import traceback
+    print(f"[valdiag] FAILED: {type(e).__name__}: {e}")
+    plot_failures.append({"block": "valdiag", "error": f"{type(e).__name__}: {e}", "traceback": traceback.format_exc()})
+
+# Hyperparameter check
+HP=CFG[["method","display_method_name","lora_rank","lora_alpha","lora_dropout","target_modules","num_epochs","learning_rate","batch_size","lambda_orth","kd_temperature","optimizer","scheduler","seed"]].copy(); HP.to_csv(Path(TABLES_DIR)/"hyperparameter_consistency_check.csv",index=False)
+hp_note="Delta-trace and factor-orth variants use the same main hyperparameters when matched by family and KD temperature: LoRA rank/alpha/dropout, target modules, epochs, LR, batch size, optimizer, scheduler, KD temperature and KD weight. If simple_avg_delta_trace outperforms simple_avg_factor_orth, the difference is therefore more likely due to orthogonality formulation and loss scale than hyperparameter mismatch."
+txt(Path(REPORTS_DIR)/"hyperparameter_consistency_notes.txt", "Hyperparameter consistency notes\n================================\n\n"+hp_note)
+
 def heat(df, cols, name, title):
     d=df.copy(); d["display_method_name"]=pd.Categorical(d.display_method_name, SUPERVISOR_SELECTED_DISPLAY_NAMES, ordered=True); d=d.sort_values("display_method_name"); mat=d.set_index("display_method_name")[cols].apply(pd.to_numeric, errors="coerce")
     fig,ax=plt.subplots(figsize=(max(8,1.4*len(cols)+5), max(5,.55*len(mat)+2))); im=ax.imshow(mat.values, aspect="auto", cmap="YlGnBu")
@@ -7142,31 +7490,56 @@ def heat(df, cols, name, title):
         for j in range(mat.shape[1]):
             v=mat.iloc[i,j]; ax.text(j,i,"NA" if pd.isna(v) else f"{v:.1f}",ha="center",va="center",fontsize=9)
     fig.colorbar(im, ax=ax); figsave(name)
-heat(M,["first_step_accuracy","later_steps_accuracy","all_seen_accuracy"],"supervisor_method_step_accuracy_heatmap.png","Available Accuracy Groups Heatmap")
-heat(M,["first_step_accuracy","later_steps_accuracy","all_seen_accuracy","average_accuracy","forgetting_metric"],"supervisor_method_metric_heatmap.png","Method x Metric Heatmap")
 
-# PRE-THESIS FIX 2: real 8-methods x 5-steps per-CL-step accuracy heatmap
-# (previously a placeholder -- per-task/class-group accuracy was not retained).
-if len(per_step_acc_df) > 0:
-    _pt = per_step_acc_df.copy()
-    _pt["display_method_name"] = _pt["method"].map(METHOD_DISPLAY_NAME_MAP).fillna(_pt["method"])
-    _pt_mat = _pt.pivot(index="display_method_name", columns="step_id", values="accuracy")
-    _pt_mat = _pt_mat.reindex(SUPERVISOR_SELECTED_DISPLAY_NAMES)
-    _pt_mat.columns = [f"step_{c}" for c in _pt_mat.columns]
-    fig, ax = plt.subplots(figsize=(max(8, 1.4 * len(_pt_mat.columns) + 5), max(5, .55 * len(_pt_mat) + 2)))
-    im = ax.imshow(_pt_mat.values, aspect="auto", cmap="YlGnBu")
-    ax.set_xticks(range(len(_pt_mat.columns))); ax.set_xticklabels(_pt_mat.columns, rotation=25, ha="right")
-    ax.set_yticks(range(len(_pt_mat))); ax.set_yticklabels(_pt_mat.index)
-    ax.set_title("Per-CL-step accuracy (%) of each method's FINAL model", fontweight="bold")
-    for i in range(_pt_mat.shape[0]):
-        for j in range(_pt_mat.shape[1]):
-            v = _pt_mat.iloc[i, j]
-            ax.text(j, i, "NA" if pd.isna(v) else f"{v:.1f}", ha="center", va="center", fontsize=9)
-    fig.colorbar(im, ax=ax)
-    figsave("per_task_accuracy_heatmap.png")
-else:
-    missing_outputs.append({"output":"plots/per_task_accuracy_heatmap.png","method":"all","metric_or_column":"per-task/class-group accuracy","why":"per_step_accuracy_rows was empty after training (see evaluate_per_step_accuracy call sites).","required_or_optional":"conditional"})
-    plt.figure(figsize=(10,3)); plt.axis("off"); plt.text(.5,.5,"Per-task/class-group accuracy unavailable.\nSee reports/missing_outputs_or_metrics.txt.",ha="center",va="center"); figsave("per_task_accuracy_heatmap.png")
+# A3 FIX: this heatmap (methods x {first_step, later_steps, all_seen} /
+# methods x metric) must always land a PNG in plots/, robust to method
+# count -- heat() above already builds its tick/index lists FROM len(cols)/
+# len(mat), never a fixed size, but wrap it anyway so any OTHER failure
+# (empty df, unexpected dtype, ...) still leaves a placeholder image on
+# disk instead of silently dropping plots/<name>.
+def heat_guaranteed(df, cols, name, title):
+    try:
+        heat(df, cols, name, title)
+    except Exception as e:
+        import traceback
+        print(f"[heat:{name}] FAILED: {type(e).__name__}: {e}")
+        plot_failures.append({"block": f"heat:{name}", "error": f"{type(e).__name__}: {e}", "traceback": traceback.format_exc()})
+        plt.figure(figsize=(10,3)); plt.axis("off"); plt.text(.5,.5,f"{title} unavailable.\nSee reports/missing_outputs_or_metrics.txt.",ha="center",va="center"); figsave(name)
+heat_guaranteed(M,["first_step_accuracy","later_steps_accuracy","all_seen_accuracy"],"supervisor_method_step_accuracy_heatmap.png","Available Accuracy Groups Heatmap")
+heat_guaranteed(M,["first_step_accuracy","later_steps_accuracy","all_seen_accuracy","average_accuracy","forgetting_metric"],"supervisor_method_metric_heatmap.png","Method x Metric Heatmap")
+
+# PRE-THESIS FIX 2 / A3 FIX: methods x per-CL-step accuracy heatmap, robust
+# to method count (pivot/reindex are index-driven, not fixed-length) AND now
+# guaranteed to still save a placeholder PNG if the plotting code itself
+# throws (not just the already-handled "no data" case).
+def _plot_per_task_heatmap():
+    if len(per_step_acc_df) > 0:
+        _pt = per_step_acc_df.copy()
+        _pt["display_method_name"] = _pt["method"].map(METHOD_DISPLAY_NAME_MAP).fillna(_pt["method"])
+        _pt_mat = _pt.pivot(index="display_method_name", columns="step_id", values="accuracy")
+        _pt_mat = _pt_mat.reindex(SUPERVISOR_SELECTED_DISPLAY_NAMES)
+        _pt_mat.columns = [f"step_{c}" for c in _pt_mat.columns]
+        fig, ax = plt.subplots(figsize=(max(8, 1.4 * len(_pt_mat.columns) + 5), max(5, .55 * len(_pt_mat) + 2)))
+        im = ax.imshow(_pt_mat.values, aspect="auto", cmap="YlGnBu")
+        ax.set_xticks(range(len(_pt_mat.columns))); ax.set_xticklabels(_pt_mat.columns, rotation=25, ha="right")
+        ax.set_yticks(range(len(_pt_mat))); ax.set_yticklabels(_pt_mat.index)
+        ax.set_title("Per-CL-step accuracy (%) of each method's FINAL model", fontweight="bold")
+        for i in range(_pt_mat.shape[0]):
+            for j in range(_pt_mat.shape[1]):
+                v = _pt_mat.iloc[i, j]
+                ax.text(j, i, "NA" if pd.isna(v) else f"{v:.1f}", ha="center", va="center", fontsize=9)
+        fig.colorbar(im, ax=ax)
+        figsave("per_task_accuracy_heatmap.png")
+    else:
+        missing_outputs.append({"output":"plots/per_task_accuracy_heatmap.png","method":"all","metric_or_column":"per-task/class-group accuracy","why":"per_step_accuracy_rows was empty after training (see evaluate_per_step_accuracy call sites).","required_or_optional":"conditional"})
+        plt.figure(figsize=(10,3)); plt.axis("off"); plt.text(.5,.5,"Per-task/class-group accuracy unavailable.\nSee reports/missing_outputs_or_metrics.txt.",ha="center",va="center"); figsave("per_task_accuracy_heatmap.png")
+try:
+    _plot_per_task_heatmap()
+except Exception as e:
+    import traceback
+    print(f"[per_task_accuracy_heatmap] FAILED: {type(e).__name__}: {e}")
+    plot_failures.append({"block": "per_task_accuracy_heatmap", "error": f"{type(e).__name__}: {e}", "traceback": traceback.format_exc()})
+    plt.figure(figsize=(10,3)); plt.axis("off"); plt.text(.5,.5,"Per-task/class-group accuracy unavailable (plot error).\nSee reports/missing_outputs_or_metrics.txt.",ha="center",va="center"); figsave("per_task_accuracy_heatmap.png")
 
 # PRE-THESIS FIX 2: forgetting curve per method. rank_extension methods get a
 # TRUE forgetting curve (accuracy on task i re-measured after each later step,
@@ -7175,90 +7548,100 @@ else:
 # per-step-accuracy point per task instead -- plotted in a separate panel and
 # clearly labeled, rather than faking an intermediate trajectory that family
 # does not have.
-fig, axes = plt.subplots(1, 2, figsize=(16, 6))
+def _plot_forgetting_curves():
+    fig, axes = plt.subplots(1, 2, figsize=(16, 6))
 
-ax = axes[0]
-rankext_methods_present = [m for m in REQ if ACTIVE_METHOD_MAP.get(m, {}).get("family") == "rank_extension" and m in rank_extension_stepwise_accuracy_by_method]
-for method_name in rankext_methods_present:
-    matrix = rank_extension_stepwise_accuracy_by_method[method_name]
-    for task_step in range(NUM_STEPS):
-        xs, ys = [], []
-        for later_step in range(task_step, NUM_STEPS):
-            if later_step in matrix and task_step in matrix[later_step]:
-                xs.append(later_step + 1)
-                ys.append(matrix[later_step][task_step] * 100.0)
-        if len(xs) >= 2:
-            ax.plot(xs, ys, marker="o", ms=4, lw=1.6,
-                    color=VCOL.get(variant(method_name), "#333333"),
-                    linestyle=VSTYLE.get(variant(method_name), "-"),
-                    label=f"{disp(method_name)} / task {task_step + 1}" if task_step == 0 else None,
-                    alpha=0.85)
-ax.set_xlabel("CL step at evaluation time")
-ax.set_ylabel("Accuracy on task i (%)")
-ax.set_title("RankExt family: true forgetting curves\n(one line per method, resampling task i after each later step)", fontsize=10)
-ax.grid(axis="y", color="#e6e6e6", linewidth=0.8)
-handles = [Line2D([0], [0], color=VCOL[v], linestyle=VSTYLE[v], lw=2, label=v) for v in SUPERVISOR_VARIANT_ORDER]
-ax.legend(handles=handles, loc="lower left", fontsize=8, frameon=False)
+    ax = axes[0]
+    rankext_methods_present = [m for m in REQ if ACTIVE_METHOD_MAP.get(m, {}).get("family") == "rank_extension" and m in rank_extension_stepwise_accuracy_by_method]
+    for method_name in rankext_methods_present:
+        matrix = rank_extension_stepwise_accuracy_by_method[method_name]
+        for task_step in range(NUM_STEPS):
+            xs, ys = [], []
+            for later_step in range(task_step, NUM_STEPS):
+                if later_step in matrix and task_step in matrix[later_step]:
+                    xs.append(later_step + 1)
+                    ys.append(matrix[later_step][task_step] * 100.0)
+            if len(xs) >= 2:
+                ax.plot(xs, ys, marker="o", ms=4, lw=1.6,
+                        color=VCOL.get(variant(method_name), "#333333"),
+                        linestyle=VSTYLE.get(variant(method_name), "-"),
+                        label=f"{disp(method_name)} / task {task_step + 1}" if task_step == 0 else None,
+                        alpha=0.85)
+    ax.set_xlabel("CL step at evaluation time")
+    ax.set_ylabel("Accuracy on task i (%)")
+    ax.set_title("RankExt family: true forgetting curves\n(one line per method, resampling task i after each later step)", fontsize=10)
+    ax.grid(axis="y", color="#e6e6e6", linewidth=0.8)
+    handles = [Line2D([0], [0], color=VCOL[v], linestyle=VSTYLE[v], lw=2, label=v) for v in SUPERVISOR_VARIANT_ORDER]
+    ax.legend(handles=handles, loc="lower left", fontsize=8, frameon=False)
 
-ax = axes[1]
-simple_methods_present = [m for m in REQ if ACTIVE_METHOD_MAP.get(m, {}).get("family") == "simple_avg"]
-_pt_simple = per_step_acc_df[per_step_acc_df["method"].isin(simple_methods_present)]
-for method_name in simple_methods_present:
-    sub = _pt_simple[_pt_simple["method"] == method_name].sort_values("step_id")
-    if len(sub) == 0:
-        continue
-    ax.plot(sub["step_id"], sub["accuracy"], marker="o", ms=5, lw=1.6,
-            color=VCOL.get(variant(method_name), "#333333"),
-            linestyle=VSTYLE.get(variant(method_name), "-"),
-            label=disp(method_name))
-ax.set_xlabel("Task (CL step) index")
-ax.set_ylabel("Accuracy on task i, FINAL model only (%)")
-ax.set_title("SimpleAvg family: final-model accuracy per task\n(no intermediate checkpoints exist for this merge-based family)", fontsize=10)
-ax.grid(axis="y", color="#e6e6e6", linewidth=0.8)
-ax.legend(loc="lower left", fontsize=8, frameon=False)
+    ax = axes[1]
+    simple_methods_present = [m for m in REQ if ACTIVE_METHOD_MAP.get(m, {}).get("family") == "simple_avg"]
+    _pt_simple = per_step_acc_df[per_step_acc_df["method"].isin(simple_methods_present)]
+    for method_name in simple_methods_present:
+        sub = _pt_simple[_pt_simple["method"] == method_name].sort_values("step_id")
+        if len(sub) == 0:
+            continue
+        ax.plot(sub["step_id"], sub["accuracy"], marker="o", ms=5, lw=1.6,
+                color=VCOL.get(variant(method_name), "#333333"),
+                linestyle=VSTYLE.get(variant(method_name), "-"),
+                label=disp(method_name))
+    ax.set_xlabel("Task (CL step) index")
+    ax.set_ylabel("Accuracy on task i, FINAL model only (%)")
+    ax.set_title("SimpleAvg family: final-model accuracy per task\n(no intermediate checkpoints exist for this merge-based family)", fontsize=10)
+    ax.grid(axis="y", color="#e6e6e6", linewidth=0.8)
+    ax.legend(loc="lower left", fontsize=8, frameon=False)
 
-fig.suptitle("Forgetting curves by method family", fontweight="bold")
-figsave("forgetting_curve_by_method.png")
+    fig.suptitle("Forgetting curves by method family", fontweight="bold")
+    figsave("forgetting_curve_by_method.png")
+_safe_plot("forgetting_curve_by_method", _plot_forgetting_curves)
 
 def lossgrid(metric,ylabel,name,title,methods=None,log=False,pos=False,mark_selected_epoch=False):
-    d=E.copy();
-    if methods: d=d[d.method.isin(methods)]
-    if metric not in d: d[metric]=np.nan
-    d[metric]=pd.to_numeric(d[metric],errors="coerce");
-    if pos: d=d[d[metric]>0]
-    if len(d.dropna(subset=[metric]))==0:
-        plt.figure(figsize=(10,3)); plt.axis("off"); plt.text(.5,.5,f"No logged values for {ylabel}",ha="center",va="center"); figsave(name); return
-    d["variant"]=d.method.map(variant); d["family"]=d.method.map(fam); fig,axs=plt.subplots(2,NUM_STEPS,figsize=(18,8),sharey=True); fig.suptitle(title,fontsize=22,fontweight="bold",y=.995)
-    for r,f in enumerate(FAMS):
-        axs[r,0].text(-.35,1.15,FLAB[f],transform=axs[r,0].transAxes,fontsize=16,fontweight="bold"); fd=d[d.family==f]
-        for c,st in enumerate(range(1,NUM_STEPS+1)):
-            ax=axs[r,c]; ax.set_title(f"Step {st}",color="#666"); ax.set_xlim(.9,max(LORA_EPOCHS,RANKEXT_EPOCHS)+.1); ax.set_xticks(range(1,max(LORA_EPOCHS,RANKEXT_EPOCHS)+1)); ax.grid(True,axis="y",color="#ddd");
-            if c==0: ax.set_ylabel(ylabel)
-            if r==1: ax.set_xlabel("Local epoch")
-            if log: ax.set_yscale("log")
-            for v in SUPERVISOR_VARIANT_ORDER:
-                s=fd[(fd.cl_step==st)&(fd.variant==v)].sort_values("local_epoch"); y=pd.to_numeric(s[metric],errors="coerce"); good=np.isfinite(y)&((y>0) if pos else True)
-                if len(s)>0 and good.any():
-                    ax.plot(s.local_epoch[good], y[good], color=VCOL[v], linestyle=VSTYLE[v], lw=2.4)
-                    # CONVERGENCE-FIGURE ANNOTATION (decision doc, 2026-08-05):
-                    # star the (min val-CE) epoch actually reloaded into the
-                    # merged model (train_with_trainer(), PRE-THESIS FIX 1/2) --
-                    # makes the already-correct best-epoch-selection mechanism
-                    # visible on the figure instead of leaving the post-minimum
-                    # rise (e.g. simple_avg steps 3-4) looking unaddressed.
-                    if mark_selected_epoch and len(s)>0:
-                        this_method=s["method"].iloc[0]
-                        sel=best_epoch_selection_df[(best_epoch_selection_df.method_name==this_method)&(best_epoch_selection_df.step_id==st)]
-                        if len(sel)>0:
-                            sel_epoch=int(sel["selected_epoch"].iloc[0])
-                            sel_row=s[s.local_epoch==sel_epoch]
-                            if len(sel_row)>0:
-                                sel_y=pd.to_numeric(sel_row[metric],errors="coerce").iloc[0]
-                                if np.isfinite(sel_y):
-                                    ax.plot(sel_epoch, sel_y, marker="*", ms=11, color=VCOL[v], markeredgecolor="black", markeredgewidth=0.5, zorder=5)
-    if mark_selected_epoch:
-        fig.text(.5, -.01, "★ = selected (min val-CE) checkpoint actually merged into the final model -- epochs after it are trained but discarded, per method/step", ha="center", fontsize=9, style="italic", color="#444")
-    fig.legend([Line2D([0],[0],color=VCOL[v],linestyle=VSTYLE[v],lw=3) for v in SUPERVISOR_VARIANT_ORDER], SUPERVISOR_VARIANT_ORDER, loc="center left", bbox_to_anchor=(.915,.52), frameon=False); fig.tight_layout(rect=[.02,.02,.90,.95]); plt.savefig(Path(PLOTS_DIR)/name,dpi=DPI,bbox_inches="tight"); plt.close()
+    try:
+        d=E.copy();
+        if methods: d=d[d.method.isin(methods)]
+        if metric not in d: d[metric]=np.nan
+        d[metric]=pd.to_numeric(d[metric],errors="coerce");
+        if pos: d=d[d[metric]>0]
+        if len(d.dropna(subset=[metric]))==0:
+            plt.figure(figsize=(10,3)); plt.axis("off"); plt.text(.5,.5,f"No logged values for {ylabel}",ha="center",va="center"); figsave(name); return
+        d["variant"]=d.method.map(variant); d["family"]=d.method.map(fam); fig,axs=plt.subplots(2,NUM_STEPS,figsize=(18,8),sharey=True); fig.suptitle(title,fontsize=22,fontweight="bold",y=.995)
+        for r,f in enumerate(FAMS):
+            axs[r,0].text(-.35,1.15,FLAB[f],transform=axs[r,0].transAxes,fontsize=16,fontweight="bold"); fd=d[d.family==f]
+            for c,st in enumerate(range(1,NUM_STEPS+1)):
+                ax=axs[r,c]; ax.set_title(f"Step {st}",color="#666"); ax.set_xlim(.9,max(LORA_EPOCHS,RANKEXT_EPOCHS)+.1); ax.set_xticks(range(1,max(LORA_EPOCHS,RANKEXT_EPOCHS)+1)); ax.grid(True,axis="y",color="#ddd");
+                if c==0: ax.set_ylabel(ylabel)
+                if r==1: ax.set_xlabel("Local epoch")
+                if log: ax.set_yscale("log")
+                for v in SUPERVISOR_VARIANT_ORDER:
+                    s=fd[(fd.cl_step==st)&(fd.variant==v)].sort_values("local_epoch"); y=pd.to_numeric(s[metric],errors="coerce"); good=np.isfinite(y)&((y>0) if pos else True)
+                    if len(s)>0 and good.any():
+                        ax.plot(s.local_epoch[good], y[good], color=VCOL[v], linestyle=VSTYLE[v], lw=2.4)
+                        # CONVERGENCE-FIGURE ANNOTATION (decision doc, 2026-08-05):
+                        # star the (min val-CE) epoch actually reloaded into the
+                        # merged model (train_with_trainer(), PRE-THESIS FIX 1/2) --
+                        # makes the already-correct best-epoch-selection mechanism
+                        # visible on the figure instead of leaving the post-minimum
+                        # rise (e.g. simple_avg steps 3-4) looking unaddressed.
+                        if mark_selected_epoch and len(s)>0:
+                            this_method=s["method"].iloc[0]
+                            sel=best_epoch_selection_df[(best_epoch_selection_df.method_name==this_method)&(best_epoch_selection_df.step_id==st)]
+                            if len(sel)>0:
+                                sel_epoch=int(sel["selected_epoch"].iloc[0])
+                                sel_row=s[s.local_epoch==sel_epoch]
+                                if len(sel_row)>0:
+                                    sel_y=pd.to_numeric(sel_row[metric],errors="coerce").iloc[0]
+                                    if np.isfinite(sel_y):
+                                        ax.plot(sel_epoch, sel_y, marker="*", ms=11, color=VCOL[v], markeredgecolor="black", markeredgewidth=0.5, zorder=5)
+        if mark_selected_epoch:
+            fig.text(.5, -.01, "★ = selected (min val-CE) checkpoint actually merged into the final model -- epochs after it are trained but discarded, per method/step", ha="center", fontsize=9, style="italic", color="#444")
+        fig.legend([Line2D([0],[0],color=VCOL[v],linestyle=VSTYLE[v],lw=3) for v in SUPERVISOR_VARIANT_ORDER], SUPERVISOR_VARIANT_ORDER, loc="center left", bbox_to_anchor=(.915,.52), frameon=False); fig.tight_layout(rect=[.02,.02,.90,.95]); plt.savefig(Path(PLOTS_DIR)/name,dpi=DPI,bbox_inches="tight"); plt.close()
+    except Exception as e:
+        import traceback
+        print(f"[lossgrid:{name}] FAILED: {type(e).__name__}: {e}")
+        plot_failures.append({"block": f"lossgrid:{name}", "error": f"{type(e).__name__}: {e}", "traceback": traceback.format_exc()})
+        plt.close("all")
+        plt.figure(figsize=(10,3)); plt.axis("off"); plt.text(.5,.5,f"{title} unavailable (plot error).\nSee reports/missing_outputs_or_metrics.txt.",ha="center",va="center"); figsave(name)
+
 if len(E)>0:
     lossgrid("train_ce_loss","Train CE loss","train_ce_loss_by_method.png","Train CE Loss by Method and CL Step")
     # EVAL-PIPELINE AUDIT ADD: val CE per (step, epoch) panel here is each CL
@@ -7271,100 +7654,85 @@ if len(E)>0:
     lossgrid("kd_loss_weighted","Weighted KD loss","kd_loss_by_method.png","KD Loss by Method",kd,pos=True); lossgrid("factor_orth_loss_weighted","Weighted factor-orth loss","factor_orth_loss_by_method.png","Factor-Orth Loss by Method",fo,pos=True)
     lossgrid("factor_orth_loss_weighted","Weighted factor-orth loss","factor_orth_weighted_loss_log.png","Factor-Orth Weighted Loss (log)",fo,log=True,pos=True); lossgrid("train_total_loss","Total train loss","total_loss_by_method.png","Total Loss by Method"); lossgrid("train_total_loss","Total train loss","total_loss_by_method_log.png","Total Loss by Method (log)",log=True,pos=True)
     # train-val combined
-    T=E.copy(); T["variant"]=T.method.map(variant); T["family"]=T.method.map(fam); fig,axs=plt.subplots(2,NUM_STEPS,figsize=(18,8)); fig.suptitle("Train CE vs Validation CE by Method and CL Step",fontsize=22,fontweight="bold",y=.995)
-    for r,f in enumerate(FAMS):
-        axs[r,0].text(-.35,1.15,FLAB[f],transform=axs[r,0].transAxes,fontsize=16,fontweight="bold"); fd=T[T.family==f]
-        for c,st in enumerate(range(1,NUM_STEPS+1)):
-            ax=axs[r,c]; ax.set_title(f"Step {st}"); ax.grid(True,axis="y",color="#ddd");
-            if c==0: ax.set_ylabel("CE loss")
-            if r==1: ax.set_xlabel("Local epoch")
-            for v in SUPERVISOR_VARIANT_ORDER:
-                s=fd[(fd.cl_step==st)&(fd.variant==v)].sort_values("local_epoch")
-                if len(s)>0: ax.plot(s.local_epoch,s.train_ce_loss,color=VCOL[v],linestyle=VSTYLE[v],lw=2.3); ax.plot(s.local_epoch,s.val_ce_loss,color=VCOL[v],linestyle=VSTYLE[v],lw=2.0,alpha=.45)
-    fig.tight_layout(rect=[.02,.02,.90,.95]); plt.savefig(Path(PLOTS_DIR)/"train_val_ce_loss_by_method.png",dpi=DPI,bbox_inches="tight"); plt.close()
-    # STRICT-REVIEW REDESIGN (2026-07-17, analysis_strict_review/report.txt A1):
-    # the previous layout (rows=loss component, cols=family, all 4 variants
-    # overlaid per cell) put a variant's CE and its Total on two DIFFERENT
-    # panels with two DIFFERENT y-scales (CE linear, Total log) and no legend.
-    # For the Base variant, Total IS CE (KD=orth=0 identically), so any visual
-    # difference between those two panels was 100% a rendering artifact of
-    # axis choice, never a real difference in the data -- proved numerically in
-    # analysis_strict_review/report.txt Part A1a (same 18 numbers, two axes).
-    # Fix: one panel PER VARIANT, all 4 quantities (CE, KD weighted, Factor-
-    # Orth weighted, Total) plotted TOGETHER on the SAME (necessarily log,
-    # since components span 1e-4 to 1e4) axis, so "Total = sum of the other
-    # three" is checkable by eye in a single panel instead of inferred across
-    # panels. Grid is now rows=variant (4), cols=family (2) -- same 8-panel
-    # footprint as before.
-    C=E.copy(); C["variant"]=C.method.map(variant); C["family"]=C.method.map(fam)
-    method_by_family_variant={(fam(m),variant(m)):m for m in REQ}
-    line_specs=[
-        ("train_ce_loss","Train CE","#1f77b4","-",2.0),
-        ("kd_loss_weighted","KD weighted","#ff7f0e","--",2.0),
-        ("factor_orth_loss_weighted","Factor-Orth weighted","#d62728",":",2.0),
-        ("train_total_loss","TOTAL (= sum of the above)","#000000","-",3.0),
-    ]
-    fig,axs=plt.subplots(len(SUPERVISOR_VARIANT_ORDER),2,figsize=(16,15),sharex=True)
-    fig.suptitle("Combined Loss Decomposition -- per-variant panels\n"
-                 "(all lines share ONE log-scale y-axis per panel; TOTAL is plotted, never a separate scale, so 'TOTAL = sum of the other lines' is directly checkable by eye)",
-                 fontsize=16,fontweight="bold",y=.995)
-    for rr,v in enumerate(SUPERVISOR_VARIANT_ORDER):
-        for cc,f in enumerate(FAMS):
-            ax=axs[rr,cc]
-            m=method_by_family_variant.get((f,v))
-            if rr==0: ax.set_title(FLAB[f],fontweight="bold")
-            if cc==0: ax.set_ylabel(f"{v}\n(log scale)")
-            ax.grid(True,axis="y",color="#ddd"); ax.set_yscale("log")
-            for b in range(LORA_EPOCHS,NUM_STEPS*LORA_EPOCHS,LORA_EPOCHS): ax.axvline(b+.5,color="#bbb",linestyle=":",lw=1)
-            fd=C[(C.family==f)&(C.method==m)] if m is not None else C.iloc[0:0]
-            for st in range(1,NUM_STEPS+1):
-                s=fd[fd.cl_step==st].sort_values("local_epoch")
-                if len(s)==0: continue
-                x=(st-1)*LORA_EPOCHS+s.local_epoch.astype(float)
-                for met,lab,color,ls,lw in line_specs:
-                    y=pd.to_numeric(s.get(met,np.nan),errors="coerce"); good=np.isfinite(y)&(y>0)
-                    if good.any(): ax.plot(x[good],y[good],color=color,linestyle=ls,lw=lw)
-            ax.set_xticks([(i*LORA_EPOCHS)+2 for i in range(NUM_STEPS)]); ax.set_xticklabels([f"S{i}" for i in range(1,NUM_STEPS+1)])
-    legend_handles=[Line2D([0],[0],color=color,linestyle=ls,lw=max(lw,2.5)) for _,lab,color,ls,lw in line_specs]
-    legend_labels=[lab for _,lab,_,_,_ in line_specs]
-    fig.legend(legend_handles, legend_labels, loc="center left", bbox_to_anchor=(.915,.52), frameon=False, title="Line (all 4 on\nthe same axis)")
-    fig.tight_layout(rect=[.02,.02,.90,.94]); plt.savefig(Path(PLOTS_DIR)/"combined_loss_decomposition.png",dpi=DPI,bbox_inches="tight"); plt.close()
+    def _plot_train_val_combined():
+        T=E.copy(); T["variant"]=T.method.map(variant); T["family"]=T.method.map(fam); fig,axs=plt.subplots(2,NUM_STEPS,figsize=(18,8)); fig.suptitle("Train CE vs Validation CE by Method and CL Step",fontsize=22,fontweight="bold",y=.995)
+        for r,f in enumerate(FAMS):
+            axs[r,0].text(-.35,1.15,FLAB[f],transform=axs[r,0].transAxes,fontsize=16,fontweight="bold"); fd=T[T.family==f]
+            for c,st in enumerate(range(1,NUM_STEPS+1)):
+                ax=axs[r,c]; ax.set_title(f"Step {st}"); ax.grid(True,axis="y",color="#ddd");
+                if c==0: ax.set_ylabel("CE loss")
+                if r==1: ax.set_xlabel("Local epoch")
+                for v in SUPERVISOR_VARIANT_ORDER:
+                    s=fd[(fd.cl_step==st)&(fd.variant==v)].sort_values("local_epoch")
+                    if len(s)>0: ax.plot(s.local_epoch,s.train_ce_loss,color=VCOL[v],linestyle=VSTYLE[v],lw=2.3); ax.plot(s.local_epoch,s.val_ce_loss,color=VCOL[v],linestyle=VSTYLE[v],lw=2.0,alpha=.45)
+        fig.tight_layout(rect=[.02,.02,.90,.95]); plt.savefig(Path(PLOTS_DIR)/"train_val_ce_loss_by_method.png",dpi=DPI,bbox_inches="tight"); plt.close()
+    _safe_plot("train_val_ce_loss_by_method", _plot_train_val_combined)
+
+    def _plot_combined_loss_decomposition():
+        # STRICT-REVIEW REDESIGN (2026-07-17, analysis_strict_review/report.txt A1):
+        # the previous layout (rows=loss component, cols=family, all 4 variants
+        # overlaid per cell) put a variant's CE and its Total on two DIFFERENT
+        # panels with two DIFFERENT y-scales (CE linear, Total log) and no legend.
+        # For the Base variant, Total IS CE (KD=orth=0 identically), so any visual
+        # difference between those two panels was 100% a rendering artifact of
+        # axis choice, never a real difference in the data -- proved numerically in
+        # analysis_strict_review/report.txt Part A1a (same 18 numbers, two axes).
+        # Fix: one panel PER VARIANT, all 4 quantities (CE, KD weighted, Factor-
+        # Orth weighted, Total) plotted TOGETHER on the SAME (necessarily log,
+        # since components span 1e-4 to 1e4) axis, so "Total = sum of the other
+        # three" is checkable by eye in a single panel instead of inferred across
+        # panels. Grid is now rows=variant (4), cols=family (2) -- same 8-panel
+        # footprint as before.
+        C=E.copy(); C["variant"]=C.method.map(variant); C["family"]=C.method.map(fam)
+        method_by_family_variant={(fam(m),variant(m)):m for m in REQ}
+        line_specs=[
+            ("train_ce_loss","Train CE","#1f77b4","-",2.0),
+            ("kd_loss_weighted","KD weighted","#ff7f0e","--",2.0),
+            ("factor_orth_loss_weighted","Factor-Orth weighted","#d62728",":",2.0),
+            ("train_total_loss","TOTAL (= sum of the above)","#000000","-",3.0),
+        ]
+        fig,axs=plt.subplots(len(SUPERVISOR_VARIANT_ORDER),2,figsize=(16,15),sharex=True)
+        fig.suptitle("Combined Loss Decomposition -- per-variant panels\n"
+                     "(all lines share ONE log-scale y-axis per panel; TOTAL is plotted, never a separate scale, so 'TOTAL = sum of the other lines' is directly checkable by eye)",
+                     fontsize=16,fontweight="bold",y=.995)
+        for rr,v in enumerate(SUPERVISOR_VARIANT_ORDER):
+            for cc,f in enumerate(FAMS):
+                ax=axs[rr,cc]
+                m=method_by_family_variant.get((f,v))
+                if rr==0: ax.set_title(FLAB[f],fontweight="bold")
+                if cc==0: ax.set_ylabel(f"{v}\n(log scale)")
+                ax.grid(True,axis="y",color="#ddd"); ax.set_yscale("log")
+                for b in range(LORA_EPOCHS,NUM_STEPS*LORA_EPOCHS,LORA_EPOCHS): ax.axvline(b+.5,color="#bbb",linestyle=":",lw=1)
+                fd=C[(C.family==f)&(C.method==m)] if m is not None else C.iloc[0:0]
+                for st in range(1,NUM_STEPS+1):
+                    s=fd[fd.cl_step==st].sort_values("local_epoch")
+                    if len(s)==0: continue
+                    x=(st-1)*LORA_EPOCHS+s.local_epoch.astype(float)
+                    for met,lab,color,ls,lw in line_specs:
+                        y=pd.to_numeric(s.get(met,np.nan),errors="coerce"); good=np.isfinite(y)&(y>0)
+                        if good.any(): ax.plot(x[good],y[good],color=color,linestyle=ls,lw=lw)
+                ax.set_xticks([(i*LORA_EPOCHS)+2 for i in range(NUM_STEPS)]); ax.set_xticklabels([f"S{i}" for i in range(1,NUM_STEPS+1)])
+        legend_handles=[Line2D([0],[0],color=color,linestyle=ls,lw=max(lw,2.5)) for _,lab,color,ls,lw in line_specs]
+        legend_labels=[lab for _,lab,_,_,_ in line_specs]
+        fig.legend(legend_handles, legend_labels, loc="center left", bbox_to_anchor=(.915,.52), frameon=False, title="Line (all 4 on\nthe same axis)")
+        fig.tight_layout(rect=[.02,.02,.90,.94]); plt.savefig(Path(PLOTS_DIR)/"combined_loss_decomposition.png",dpi=DPI,bbox_inches="tight"); plt.close()
+    _safe_plot("combined_loss_decomposition", _plot_combined_loss_decomposition)
 else: missing_outputs.append({"output":"loss plots","method":"all","metric_or_column":"training_loss_history_by_epoch","why":"No epoch-level rows available","required_or_optional":"required"})
 
-def valdiag():
-    rows=[]; alook=M.set_index("method") if len(M)>0 else pd.DataFrame()
-    for m in REQ:
-        d=E[E.method==m].sort_values(["cl_step","local_epoch"]); v=d.dropna(subset=["val_ce_loss"])
-        if len(v)==0: rows.append({"method":m,"display_method_name":disp(m),"overfitting_signal":"missing_validation"}); continue
-        final=v.iloc[-1]; best=v.sort_values(["val_ce_loss","global_epoch"]).iloc[0]; inc=0
-        for _,g in v.groupby("cl_step"):
-            prev=None
-            for _,r in g.sort_values("local_epoch").iterrows():
-                if prev is not None and r.val_ce_loss>prev.val_ce_loss and r.train_ce_loss<prev.train_ce_loss: inc+=1
-                prev=r
-        fg=float(final.val_ce_loss-final.train_ce_loss); fmb=float(final.val_ce_loss-best.val_ce_loss); vr=float(v.val_ce_loss.max()-v.val_ce_loss.min()); flags=[]
-        if inc: flags.append("val_up_train_down")
-        if fg>1: flags.append("large_final_gap")
-        if fmb>.25: flags.append("final_val_worse_than_best")
-        if vr>1: flags.append("unstable_val_ce")
-        sig="low" if not flags else ("strong" if len(flags)>1 else "moderate")
-        rows.append({"method":m,"display_method_name":disp(m),"all_seen_accuracy":float(alook.loc[m,"all_seen_accuracy"]) if m in alook.index else np.nan,"final_validation_ce":float(final.val_ce_loss),"best_validation_ce":float(best.val_ce_loss),"global_epoch_of_best_validation_ce":int(best.global_epoch),"cl_step_of_best_validation_ce":int(best.cl_step),"local_epoch_of_best_validation_ce":int(best.local_epoch),"final_train_ce":float(final.train_ce_loss),"train_val_ce_gap_final_epoch":fg,"train_val_ce_gap_best_val_epoch":float(best.val_ce_loss-best.train_ce_loss),"validation_ce_std":float(v.val_ce_loss.std(ddof=0)),"validation_ce_range":vr,"validation_ce_trend":"decreasing" if final.val_ce_loss<v.iloc[0].val_ce_loss else "increasing","validation_ce_increases_while_train_ce_decreases":bool(inc),"num_val_up_train_down_events":inc,"final_validation_ce_minus_best":fmb,"overfitting_signal":sig,"overfitting_flags":";".join(flags) if flags else "none","overfitting_score":max(fg,0)+max(fmb,0)+.25*inc+.25*vr})
-    D=pd.DataFrame(rows); D.to_csv(Path(TABLES_DIR)/"validation_diagnostics_by_method.csv",index=False); D.sort_values("best_validation_ce").to_csv(Path(TABLES_DIR)/"validation_ranking_by_best_val_ce.csv",index=False); D.sort_values("final_validation_ce").to_csv(Path(TABLES_DIR)/"validation_ranking_by_final_val_ce.csv",index=False); D.sort_values("train_val_ce_gap_final_epoch",ascending=False).to_csv(Path(TABLES_DIR)/"train_val_gap_by_method.csv",index=False); return D
-D=valdiag()
-for m in REQ:
-    dd=D[D.method==m] if len(D)>0 and "method" in D else pd.DataFrame()
-    if len(dd)==0 or "final_validation_ce" not in dd or dd["final_validation_ce"].isna().all():
-        missing_outputs.append({"output":"tables/validation_diagnostics_by_method.csv","method":m,"metric_or_column":"final_validation_ce / val_ce_loss","why":"Validation CE was not available for this selected method.","required_or_optional":"required"})
 if len(D)>0 and "final_validation_ce" in D:
-    y=np.arange(len(D.sort_values("train_val_ce_gap_final_epoch"))); P=D.sort_values("train_val_ce_gap_final_epoch"); plt.figure(figsize=(12,6)); plt.barh(y,P.train_val_ce_gap_final_epoch); plt.yticks(y,P.display_method_name); plt.xlabel("Validation CE - Train CE"); plt.title("Train-Validation CE Gap by Method"); figsave("train_val_ce_gap_by_method.png")
-    P=D.sort_values("best_validation_ce",ascending=False); y=np.arange(len(P)); plt.figure(figsize=(12,6)); plt.hlines(y,P.best_validation_ce,P.final_validation_ce,color="#999"); plt.scatter(P.best_validation_ce,y,label="best"); plt.scatter(P.final_validation_ce,y,label="final"); plt.yticks(y,P.display_method_name); plt.xlabel("Validation CE"); plt.title("Best vs Final Validation CE"); plt.legend(); figsave("best_vs_final_validation_ce.png")
-    plt.figure(figsize=(10,7));
-    for _,r in D.iterrows(): plt.scatter(r.final_validation_ce,r.all_seen_accuracy,s=90); plt.annotate(r.display_method_name,(r.final_validation_ce,r.all_seen_accuracy),xytext=(5,4),textcoords="offset points",fontsize=9)
-    plt.xlabel("Final validation CE loss"); plt.ylabel("All-seen accuracy (%)"); plt.title("All-Seen Accuracy vs Final Validation CE"); plt.grid(True,color="#ddd"); figsave("accuracy_vs_validation_ce.png")
-# Hyperparameter check
-HP=CFG[["method","display_method_name","lora_rank","lora_alpha","lora_dropout","target_modules","num_epochs","learning_rate","batch_size","lambda_orth","kd_temperature","optimizer","scheduler","seed"]].copy(); HP.to_csv(Path(TABLES_DIR)/"hyperparameter_consistency_check.csv",index=False)
-hp_note="Delta-trace and factor-orth variants use the same main hyperparameters when matched by family and KD temperature: LoRA rank/alpha/dropout, target modules, epochs, LR, batch size, optimizer, scheduler, KD temperature and KD weight. If simple_avg_delta_trace outperforms simple_avg_factor_orth, the difference is therefore more likely due to orthogonality formulation and loss scale than hyperparameter mismatch."
-txt(Path(REPORTS_DIR)/"hyperparameter_consistency_notes.txt", "Hyperparameter consistency notes\n================================\n\n"+hp_note)
+    def _plot_train_val_gap_bar():
+        y=np.arange(len(D.sort_values("train_val_ce_gap_final_epoch"))); P=D.sort_values("train_val_ce_gap_final_epoch"); plt.figure(figsize=(12,6)); plt.barh(y,P.train_val_ce_gap_final_epoch); plt.yticks(y,P.display_method_name); plt.xlabel("Validation CE - Train CE"); plt.title("Train-Validation CE Gap by Method"); figsave("train_val_ce_gap_by_method.png")
+    _safe_plot("train_val_ce_gap_by_method", _plot_train_val_gap_bar)
+
+    def _plot_best_vs_final_val_ce():
+        P=D.sort_values("best_validation_ce",ascending=False); y=np.arange(len(P)); plt.figure(figsize=(12,6)); plt.hlines(y,P.best_validation_ce,P.final_validation_ce,color="#999"); plt.scatter(P.best_validation_ce,y,label="best"); plt.scatter(P.final_validation_ce,y,label="final"); plt.yticks(y,P.display_method_name); plt.xlabel("Validation CE"); plt.title("Best vs Final Validation CE"); plt.legend(); figsave("best_vs_final_validation_ce.png")
+    _safe_plot("best_vs_final_validation_ce", _plot_best_vs_final_val_ce)
+
+    def _plot_accuracy_vs_val_ce():
+        plt.figure(figsize=(10,7));
+        for _,r in D.iterrows(): plt.scatter(r.final_validation_ce,r.all_seen_accuracy,s=90); plt.annotate(r.display_method_name,(r.final_validation_ce,r.all_seen_accuracy),xytext=(5,4),textcoords="offset points",fontsize=9)
+        plt.xlabel("Final validation CE loss"); plt.ylabel("All-seen accuracy (%)"); plt.title("All-Seen Accuracy vs Final Validation CE"); plt.grid(True,color="#ddd"); figsave("accuracy_vs_validation_ce.png")
+    _safe_plot("accuracy_vs_validation_ce", _plot_accuracy_vs_val_ce)
 # Reports
 if len(D)>0:
     ba=D.sort_values("all_seen_accuracy",ascending=False).iloc[0]; bv=D.sort_values("best_validation_ce").iloc[0]; bf=D.sort_values("final_validation_ce").iloc[0]; st=D.sort_values(["validation_ce_std","validation_ce_range"]).iloc[0]; of=D.sort_values("overfitting_score",ascending=False).iloc[0]
@@ -7373,12 +7741,27 @@ else: val_report="Validation CE missing; validation-based ranking cannot be comp
 txt(Path(REPORTS_DIR)/"validation_based_result_report.txt", val_report)
 miss="\n".join([f"- output: {x['output']}\n  method: {x['method']}\n  metric/column/file: {x['metric_or_column']}\n  why: {x['why']}\n  required_or_optional: {x['required_or_optional']}" for x in missing_outputs]) or "No required outputs were silently skipped."
 txt(Path(REPORTS_DIR)/"missing_outputs_or_metrics.txt", "Missing outputs or metrics\n==========================\n\n"+miss)
+
+# A2 FIX: standing record of every plot/heatmap block that _safe_plot caught
+# an exception from (see the _safe_plot definition above) -- empty file means
+# every plot block in this cell completed without raising. This is the
+# guaranteed-visibility counterpart to A2/A3: a plot can still fail, but it
+# can no longer fail SILENTLY or take any other block down with it.
+plot_failures_report = (
+    "\n\n".join(
+        f"- block: {pf['block']}\n  error: {pf['error']}\n  traceback:\n{pf['traceback']}"
+        for pf in plot_failures
+    )
+    or "No plot/heatmap block raised an exception this run."
+)
+txt(Path(REPORTS_DIR)/"plot_failures.txt", "Plot/heatmap block failures\n============================\n\n"+plot_failures_report)
+print(f"[plot_failures] {len(plot_failures)} plot/heatmap block(s) failed this run (see reports/plot_failures.txt).")
 files=[]
 for root in [TABLES_DIR,PLOTS_DIR,REPORTS_DIR,LOGS_DIR,CONFIGS_DIR]: files += [str(x.relative_to(BASE_OUTPUT_DIR)) for x in sorted(Path(root).glob('*')) if x.is_file()]
 summary=f"""Supervisor summary report\n=========================\n\nOfficial methods:\n{chr(10).join('- '+m for m in REQ)}\n\nMissing-method confirmation:\n- simple_avg_factor_orth included: {'simple_avg_factor_orth' in REQ}\n- simple_avg_factor_orth_kd_T2 included: {'simple_avg_factor_orth_kd_T2' in REQ}\n\nFinal accuracy ranking:\n{M.sort_values('all_seen_accuracy',ascending=False).to_string(index=False)}\n\nValidation ranking:\n{D.sort_values('final_validation_ce').to_string(index=False) if len(D)>0 else 'No validation rows.'}\n\nCE, KD, factor-orth, and total losses are logged/plotted with CL-step separation. Hyperparameter consistency answer: {hp_note}\n\nGenerated files:\n{chr(10).join('- '+f for f in files)}\n\nSupervisor requests are satisfied unless listed in reports/missing_outputs_or_metrics.txt.\n"""
 txt(Path(REPORTS_DIR)/"supervisor_summary_report.txt", summary)
 # Checklist
-required=["tables/training_loss_history_by_epoch.csv","tables/supervisor_selected_accuracy_comparison.csv","tables/final_metrics_all_methods.csv","tables/validation_diagnostics_by_method.csv","tables/validation_ranking_by_best_val_ce.csv","tables/validation_ranking_by_final_val_ce.csv","tables/train_val_gap_by_method.csv","tables/hyperparameter_consistency_check.csv","tables/best_epoch_selected_by_method_step.csv","tables/per_step_accuracy_by_method.csv","plots/train_ce_loss_by_method.png","plots/validation_ce_loss_by_method.png","plots/train_val_ce_loss_by_method.png","plots/kd_loss_by_method.png","plots/factor_orth_loss_by_method.png","plots/total_loss_by_method.png","plots/combined_loss_decomposition.png","plots/supervisor_method_step_accuracy_heatmap.png","plots/supervisor_method_metric_heatmap.png","plots/per_task_accuracy_heatmap.png","plots/forgetting_curve_by_method.png","plots/accuracy_vs_validation_ce.png","plots/train_val_ce_gap_by_method.png","reports/validation_based_result_report.txt","reports/hyperparameter_consistency_notes.txt","reports/supervisor_summary_report.txt"]
+required=["tables/training_loss_history_by_epoch.csv","tables/supervisor_selected_accuracy_comparison.csv","tables/final_metrics_all_methods.csv","tables/validation_diagnostics_by_method.csv","tables/validation_ranking_by_best_val_ce.csv","tables/validation_ranking_by_final_val_ce.csv","tables/train_val_gap_by_method.csv","tables/hyperparameter_consistency_check.csv","tables/best_epoch_selected_by_method_step.csv","tables/per_step_accuracy_by_method.csv","plots/train_ce_loss_by_method.png","plots/validation_ce_loss_by_method.png","plots/train_val_ce_loss_by_method.png","plots/kd_loss_by_method.png","plots/factor_orth_loss_by_method.png","plots/total_loss_by_method.png","plots/combined_loss_decomposition.png","plots/supervisor_method_step_accuracy_heatmap.png","plots/supervisor_method_metric_heatmap.png","plots/per_task_accuracy_heatmap.png","plots/forgetting_curve_by_method.png","plots/accuracy_vs_validation_ce.png","plots/train_val_ce_gap_by_method.png","reports/validation_based_result_report.txt","reports/hyperparameter_consistency_notes.txt","reports/supervisor_summary_report.txt","reports/plot_failures.txt"]
 lines=["Final supervisor-output checklist","=================================",""]; all_ok=True
 for r in required:
     good=ok(Path(BASE_OUTPUT_DIR)/r); all_ok=all_ok and good; lines.append(("PASS " if good else "FAIL ")+r)

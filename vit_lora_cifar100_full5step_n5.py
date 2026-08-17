@@ -380,30 +380,61 @@ RANKEXT_FAMILY_AWARE_CALIBRATION_ENABLED = True
 # BY_FAMILY falls back to "regime_grouped" (FIX 1) exactly as before.
 RANKEXT_CONFIDENCE_WEIGHTED_CALIBRATION_ENABLED = True
 
-# FEATURE-ANCHOR LEVER (decision doc, 2026-08-05): feature-level (not logit-KD)
-# anchor for rank_extension's two NEW non-KD variants below --
-# "rank_extension_featanchor" and "rank_extension_orth_factor_featanchor".
-# Mechanism prediction (not yet measured -- see RANKEXT_DRIFT_DIAGNOSTICS_ENABLED
-# below for the diagnostic that measures it this run): the shared backbone's
-# feature manifold drifts every step because F.cross_entropy's full-100-way
-# softmax pushes old-class logits down for current-step images, and the only
-# trainable path able to do that is the new LoRA block, which is class-agnostic
-# and so perturbs old-step images' features too. This loss compares the CLS
-# hidden state (pre-classifier) of the CURRENT model against a frozen snapshot
-# of the model as it stood at the end of the PREVIOUS step, both evaluated on
-# the SAME current-step training batch (rehearsal-free -- no stored old
-# images). Deliberately a SEPARATE mechanism from logit-KD (compare
-# DeltaOrthRankExtensionTrainer.compute_loss()'s feature_anchor_active block
-# against its teacher_active/KD block): no softmax, no classifier, no
-# temperature -- geometry of the shared representation, not output-distribution
-# matching. Does not touch simple_avg (different trainer class entirely) or
-# either of the two rank_extension KD variants (feature_anchor_weight is forced
-# to 0.0 for them at the one rank_extension call site below, mutually exclusive
-# with use_kd by construction). Existing "rank_extension" and
-# "rank_extension_orth_factor_lam_50" are left completely unchanged as the
-# non-KD baseline -- the feature-anchor variants are two brand-new methods, not
-# a retrofit.
-RANKEXT_FEATURE_ANCHOR_WEIGHT = 1.0
+# RANK_EXT FIRST_STEP FIX (task 2 decision doc, 2026-08-17): the opt-in
+# "feature-anchor lever" (two extra methods, "rank_extension_featanchor" /
+# "rank_extension_orth_factor_featanchor", plus a DEFAULT-OFF "fixed_base"
+# mode, all toggled per-method via METHODS_TO_RUN) has been REMOVED -- see the
+# git history for that code. This constant/mechanism replaces it: read from
+# the completed R3 run's diagnostics before deciding what to build --
+#
+# 1. feature_alignment_diagnostics_by_method_step.csv: own_minus_recent_cos_gap
+#    (cosine to the OLD step's own classifier row minus cosine to the best-
+#    matching RECENT step's row, measured on the final model) is strongly
+#    negative for both non-KD rank_extension baselines -- rank_extension:
+#    -0.41/-0.38/-0.38/-0.32 across steps 1-4; rank_extension_orth_factor_lam_50:
+#    -0.21/-0.17/-0.18/-0.13 -- meaning old-step images' features have drifted
+#    CLOSER to a recent step's classifier direction than to their own by the
+#    end of training. The two KD variants (rank_extension_kd_only_T2,
+#    rank_extension_orth_factor_lam_50_kd_T2), which already have healthy
+#    first_step accuracy (51.3%, 54.0% vs 0.0%/5.65% for the non-KD pair),
+#    show near-zero gaps (-0.005 to +0.14) -- feature-drift magnitude tracks
+#    first_step failure almost exactly.
+# 2. classifier_bias_diagnostics_by_method_step.csv: bias_offset_vs_grand_mean
+#    never exceeds ~0.011 in magnitude for ANY method/step -- two orders of
+#    magnitude smaller than the cosine gaps above. A classifier-logit-offset
+#    explanation cannot account for a 0.0% open-vs-38.9%-restricted accuracy
+#    collapse (per_step_accuracy_open_vs_restricted_by_method.csv, rank_extension
+#    step 1) at that scale.
+#
+# Conclusion: feature drift, not classifier bias, drives rank_ext first_step
+# failure -- so the fix is option (a) (functional anchor to a non-drifting
+# reference), not (b) (logit/margin calibration). Implemented as an
+# UNCONDITIONAL, always-on mechanism (no more per-method opt-in) in
+# run_rank_extension_variant()/DeltaOrthRankExtensionTrainer.compute_loss():
+# every rank_extension-family method that does NOT use KD anchors its CLS
+# hidden state (cosine distance) to the frozen PRETRAINED CLIP backbone (no
+# LoRA contribution at all, not just "previous step") on every training step,
+# including step 1. KD methods are left alone -- their existing logit-KD
+# teacher already produces the same near-zero drift per (1) above, so adding a
+# second anchor mechanism on top would only add risk with no diagnosed upside.
+# Weight kept at 1.0 -- the only value with any measured precedent (the
+# now-removed chained variant used this weight and it materially fixed
+# first_step, 0.0% -> 51.9%, without hurting later_steps, 25.85% -> 51.45%).
+#
+# Expected effect: first_step should rise materially for "rank_extension" and
+# "rank_extension_orth_factor_lam_50" (the two non-KD core methods), plausibly
+# by a similar order of magnitude to the measured chained result above, since
+# anchoring to the pretrained backbone is at least as constraining as
+# anchoring to the immediate predecessor step (no cumulative multi-hop drift
+# possible). Risk: this loss actively resists the shared backbone moving away
+# from pretrained-feature space at EVERY step, which is also the mechanism
+# that lets new-class (later_steps) accuracy improve step over step -- some
+# tension with later_steps/new-class learning is possible even though the
+# analogous chained mechanism measured a later_steps IMPROVEMENT, not a
+# regression; if a real training run shows later_steps or new-class accuracy
+# regressing materially, RANKEXT_PRETRAINED_ANCHOR_WEIGHT below is the single
+# knob to lower.
+RANKEXT_PRETRAINED_ANCHOR_WEIGHT = 1.0
 
 # Master switch above still gates calibration overall (False disables it for
 # every method, same as before). When True, CALIBRATION_ENABLED_FAMILIES
@@ -615,10 +646,6 @@ METHOD_DISPLAY_NAME_MAP = {
     "rank_extension_orth_factor_lam_50": "RankExt + FactorOrth",
     "rank_extension_orth_factor_lam_50_kd_T1": "RankExt + FactorOrth + KD T1",
     "rank_extension_orth_factor_lam_50_kd_T2": "RankExt + FactorOrth + KD T2",
-    "rank_extension_featanchor": "RankExt + FeatAnchor",
-    "rank_extension_orth_factor_featanchor": "RankExt + FactorOrth + FeatAnchor",
-    "rank_extension_featanchor_base": "RankExt + FeatAnchor (fixed base)",
-    "rank_extension_orth_factor_featanchor_base": "RankExt + FactorOrth + FeatAnchor (fixed base)",
 }
 
 METHOD_ALIAS_NAME_MAP = {
@@ -704,28 +731,6 @@ SUPERVISOR_SELECTED_METHOD_SPECS = [
         "factor_lambda": 50.0,
         "kd_temperature": 2.0,
         "kd_weight": float(KD_WEIGHT),
-    },
-    # FEATURE-ANCHOR LEVER (decision doc, 2026-08-05): two NEW methods added to
-    # the supervisor-selected comparison set (10 total) so this run measures
-    # them directly against their non-KD baselines above, not just in the
-    # generic all-methods tables. See RANKEXT_FEATURE_ANCHOR_WEIGHT.
-    {
-        "internal_method_name": "rank_extension_featanchor",
-        "supervisor_requested_name": "rank_extension_featanchor",
-        "display_name": "RankExt + FeatAnchor",
-        "family": "rank_extension",
-        "factor_lambda": 0.0,
-        "kd_temperature": 0.0,
-        "kd_weight": 0.0,
-    },
-    {
-        "internal_method_name": "rank_extension_orth_factor_featanchor",
-        "supervisor_requested_name": "rank_extension_orth_factor_featanchor",
-        "display_name": "RankExt + FactorOrth + FeatAnchor",
-        "family": "rank_extension",
-        "factor_lambda": 50.0,
-        "kd_temperature": 0.0,
-        "kd_weight": 0.0,
     },
 ]
 SUPERVISOR_SELECTED_INTERNAL_METHODS = [
@@ -1082,16 +1087,14 @@ METHODS_TO_RUN = {
     "rank_extension_orth_delta_trace_lam_50_kd": False,
     "rank_extension_orth_factor_lam_50": True,
     "rank_extension_orth_factor_lam_50_kd": True,
-    # FEATURE-ANCHOR LEVER (decision doc, 2026-08-05): two NEW methods, not a
-    # retrofit of the two lines above -- see RANKEXT_FEATURE_ANCHOR_WEIGHT.
-    "rank_extension_featanchor": True,
-    "rank_extension_orth_factor_featanchor": True,
-    # B2 (rank_ext first_step fix, decision doc): anchor-to-fixed-base
-    # variants, parallel to the 2 chained featanchor lines above. DEFAULT-OFF
-    # -- enable after Phase A's diagnostics are reviewed (see the comment
-    # next to their add_method() calls in build_active_method_configs()).
-    "rank_extension_featanchor_base": False,
-    "rank_extension_orth_factor_featanchor_base": False,
+    # RANK_EXT FIRST_STEP FIX (task 2 decision doc, 2026-08-17): the
+    # feature-anchor lever's 4 opt-in method flags (rank_extension_featanchor,
+    # rank_extension_orth_factor_featanchor, and their DEFAULT-OFF
+    # "_base"/fixed_base siblings) were removed from here entirely -- the fix
+    # they were exploring is now unconditional for the 2 non-KD rank_extension
+    # methods above, not a separate opt-in method. See
+    # RANKEXT_PRETRAINED_ANCHOR_WEIGHT for the mechanism and diagnostic
+    # evidence.
     "do_merging_simple": False,
     "joint_upper_bound": False,
     "full_finetune": False,
@@ -1141,7 +1144,7 @@ def kd_temperature_tag(temp):
 def build_active_method_configs():
     configs = []
 
-    def add_method(method_name, family, base_method, uses_kd=False, kd_temperature=0.0, uses_delta_trace=False, uses_factor_orth=False, lambda_orth_scale=1.0, kd_weight_scale=1.0, uses_feature_anchor=False, feature_anchor_weight=0.0, feature_anchor_mode="chained"):
+    def add_method(method_name, family, base_method, uses_kd=False, kd_temperature=0.0, uses_delta_trace=False, uses_factor_orth=False, lambda_orth_scale=1.0, kd_weight_scale=1.0):
         if not METHODS_TO_RUN.get(base_method, False):
             return
         configs.append({
@@ -1153,19 +1156,6 @@ def build_active_method_configs():
             "kd_weight": float(KD_WEIGHT if uses_kd else 0.0) * float(kd_weight_scale),
             "uses_delta_trace": bool(uses_delta_trace),
             "uses_factor_orth": bool(uses_factor_orth),
-            # FEATURE-ANCHOR LEVER: mutually exclusive with uses_kd by
-            # construction at every call site below (never both True for the
-            # same method) -- see RANKEXT_FEATURE_ANCHOR_WEIGHT above.
-            "uses_feature_anchor": bool(uses_feature_anchor),
-            "feature_anchor_weight": float(feature_anchor_weight) if uses_feature_anchor else 0.0,
-            # B2 (rank_ext first_step fix, DEFAULT-OFF via METHODS_TO_RUN):
-            # "chained" is the existing behavior (teacher = model as it stood
-            # at the end of the PREVIOUS step, None at step 1 -- see
-            # run_rank_extension_variant()). "fixed_base" is the new lever:
-            # teacher = the frozen pretrained CLIP backbone, used unchanged
-            # for EVERY step including step 1. See run_rank_extension_variant()
-            # for how this is actually built.
-            "feature_anchor_mode": str(feature_anchor_mode) if uses_feature_anchor else "chained",
             "lambda_orth": float(LAMBDA_ORTH if (uses_delta_trace or uses_factor_orth) else 0.0) * float(lambda_orth_scale),
             # ACCURACY-PUSH CANDIDATE bookkeeping: 1.0 for every method except
             # simple_avg_factor_orth_kd_T2 when COMBINED_LOSS_SCALE_ENABLED is
@@ -1227,33 +1217,6 @@ def build_active_method_configs():
         kd_tag = kd_temperature_tag(kd_temp)
         add_method(f"rank_extension_orth_factor_lam_50_kd_{kd_tag}", "rank_extension", "rank_extension_orth_factor_lam_50_kd", uses_kd=True, kd_temperature=kd_temp, uses_factor_orth=True)
 
-    # FEATURE-ANCHOR LEVER (decision doc, 2026-08-05): two NEW methods, added
-    # alongside -- not in place of -- the existing non-KD baselines
-    # ("rank_extension", "rank_extension_orth_factor_lam_50" above are
-    # untouched). uses_kd=False (default) for both, so use_feature_anchor at
-    # the run_rank_extension_variant() call site below is always the opposite
-    # of use_kd for every rank_extension method -- mutually exclusive by
-    # construction, never both True for the same method.
-    add_method("rank_extension_featanchor", "rank_extension", "rank_extension_featanchor",
-                uses_feature_anchor=True, feature_anchor_weight=RANKEXT_FEATURE_ANCHOR_WEIGHT)
-    add_method("rank_extension_orth_factor_featanchor", "rank_extension", "rank_extension_orth_factor_featanchor",
-                uses_factor_orth=True, uses_feature_anchor=True, feature_anchor_weight=RANKEXT_FEATURE_ANCHOR_WEIGHT)
-
-    # B2 (rank_ext first_step fix, decision doc): two more NEW methods,
-    # parallel to the two chained featanchor variants directly above --
-    # DEFAULT-OFF via METHODS_TO_RUN (both base_method flags False below), so
-    # add_method() returns before appending these and they add zero cost/risk
-    # to this rerun, same "disabled not deleted" convention as
-    # simple_avg_delta_orth etc. near METHODS_TO_RUN's own definition.
-    # Deliberately NOT added to SUPERVISOR_SELECTED_METHOD_SPECS -- the
-    # pinned 10-method comparison set for this run is untouched; enable both
-    # here AND add them to SUPERVISOR_SELECTED_METHOD_SPECS together, in a
-    # later run, once Phase A's diagnostics have been reviewed.
-    add_method("rank_extension_featanchor_base", "rank_extension", "rank_extension_featanchor_base",
-                uses_feature_anchor=True, feature_anchor_weight=RANKEXT_FEATURE_ANCHOR_WEIGHT, feature_anchor_mode="fixed_base")
-    add_method("rank_extension_orth_factor_featanchor_base", "rank_extension", "rank_extension_orth_factor_featanchor_base",
-                uses_factor_orth=True, uses_feature_anchor=True, feature_anchor_weight=RANKEXT_FEATURE_ANCHOR_WEIGHT, feature_anchor_mode="fixed_base")
-
     return configs
 
 
@@ -1274,8 +1237,6 @@ EXPECTED_ENABLED_METHOD_FAMILIES = {
     "rank_extension_kd_only",
     "rank_extension_orth_factor_lam_50",
     "rank_extension_orth_factor_lam_50_kd",
-    "rank_extension_featanchor",
-    "rank_extension_orth_factor_featanchor",
 }
 
 assert KD_WEIGHT == 1.0
@@ -1539,8 +1500,36 @@ def refresh_live_convergence(method_name):
             return
 
         fig, ax = plt.subplots(figsize=(8, 5))
-        _plot_step_broken_series(ax, df, "train_ce_loss", "#1f77b4", "train CE")
-        _plot_step_broken_series(ax, df, "val_ce_loss", "#d62728", "val CE")
+        df["_global_epoch"] = np.arange(1, len(df) + 1)
+        _plot_step_broken_series(ax, df, "train_ce_loss", "#1f77b4", "train CE", x_col="_global_epoch")
+        _plot_step_broken_series(ax, df, "val_ce_loss", "#d62728", "val CE", x_col="_global_epoch")
+
+        # TASK 3(a) (decision doc, 2026-08-17): mark each CL step's SELECTED
+        # (best-val-CE) epoch directly on the curve. best_epoch_selection_rows
+        # already has one row per (method, step) with the true selected epoch
+        # (USE_BEST_EPOCH_SELECTION's own bookkeeping, not re-derived here) by
+        # the time this step's refresh_live_convergence() call happens.
+        # Plotted as a gold star at (this row's global-epoch position, that
+        # epoch's val CE) so it is visually obvious that the "rise after the
+        # minimum" the raw curve shows is exactly what best-epoch selection
+        # already discards when merging into the final model -- see the
+        # module comment near USE_BEST_EPOCH_SELECTION for why the reload
+        # always uses this epoch regardless of how many epochs the curve
+        # keeps plotting after it.
+        best_rows_this_method = [r for r in best_epoch_selection_rows if r.get("method_name") == method_name]
+        first_marker = True
+        for r in best_rows_this_method:
+            match = df[(df["step_id"] == int(r["step_id"])) & (df["epoch"] == int(r["selected_epoch"]))]
+            if len(match) == 0:
+                continue
+            mrow = match.iloc[0]
+            ax.plot(
+                mrow["_global_epoch"], mrow["val_ce_loss"],
+                marker="*", ms=14, mec="black", mew=0.6, color="gold", zorder=5, linestyle="None",
+                label=("selected (best) epoch" if first_marker else None),
+            )
+            first_marker = False
+
         step_sizes = df.groupby("step_id").size()
         boundary = 0
         for step_id in sorted(df["step_id"].unique())[:-1]:
@@ -2145,28 +2134,51 @@ GROWING_OVERFITTING_DIAGNOSTICS_ENABLED = True
 # methods/steps (e.g. simple_avg_factor_orth step 3/4) rise <=0.004.
 GROWING_OVERFITTING_VAL_CE_RISE_THRESHOLD = 0.05
 
-# B1 OPTIONAL (decision doc): adaptive per-step early stopping on val-CE.
-# DEFAULT-OFF -- a compute/figure-cleanliness option for a LATER run, not
-# needed for correctness. USE_BEST_EPOCH_SELECTION above already reloads the
-# true val-CE-minimum checkpoint regardless of how many epochs actually ran
-# this step, so enabling this can only shorten wall-clock/epoch-curve length;
-# it can NEVER change which epoch's weights get merged into the final model
-# or any reported accuracy, because the reload always targets the best
-# snapshot seen so far, which is already captured by the time patience runs
-# out (stopping only ever happens AFTER best_epoch + patience epochs).
-# MUST be adaptive (patience-since-improvement, not a fixed epoch cap) so it
-# never fires on simple_avg_factor_orth, whose own best epoch trends LATE
-# (e.g. 2->9 across steps -- see tables/best_epoch_generalization_gap_by_
-# method_step.csv, B1's other diagnostic above): a method still improving at
-# epoch 9 never accumulates PATIENCE consecutive non-improving epochs, so it
-# simply never stops early, while a method like simple_avg whose val CE
-# plateaus/rises after epoch ~2-3 does.
-ADAPTIVE_PER_STEP_EARLY_STOP_ENABLED = False
+# B1 (task 3 decision doc, 2026-08-17): adaptive per-step early stopping on
+# val-CE -- NOW ENABLED, scoped to plain "simple_avg" only (see
+# adaptive_early_stop_applies_to_method() just below). USE_BEST_EPOCH_
+# SELECTION above already reloads the true val-CE-minimum checkpoint
+# regardless of how many epochs actually ran this step, so enabling this can
+# only shorten wall-clock/epoch-curve length; it can NEVER change which
+# epoch's weights get merged into the final model or any reported accuracy,
+# because the reload always targets the best snapshot seen so far, which is
+# already captured by the time patience runs out (stopping only ever happens
+# AFTER best_epoch + patience epochs). MUST be adaptive (patience-since-
+# improvement, not a fixed epoch cap) so it would never fire on
+# simple_avg_factor_orth even if it weren't also explicitly excluded below --
+# its own best epoch trends LATE (e.g. 2->9 across steps -- see
+# tables/best_epoch_generalization_gap_by_method_step.csv, B1's other
+# diagnostic above): a method still improving at epoch 9 never accumulates
+# PATIENCE consecutive non-improving epochs. Plain simple_avg's val CE
+# plateaus/rises after epoch ~2-3 every CL step instead (selected_epoch
+# 2, 5, 4, 2, 6 out of 9 configured), which is exactly the "curve keeps
+# rising after the true minimum" pattern this flag makes visually go away in
+# plots/live_convergence_simple_avg.png (see refresh_live_convergence()).
+ADAPTIVE_PER_STEP_EARLY_STOP_ENABLED = True
 # Epochs since the last val-CE improvement before stopping.
 ADAPTIVE_PER_STEP_EARLY_STOP_PATIENCE = 3
 # Never stop before this epoch, regardless of patience -- guards against a
 # noisy early-epoch "improvement" causing a premature patience countdown.
 ADAPTIVE_PER_STEP_EARLY_STOP_MIN_EPOCH = 3
+
+
+def adaptive_early_stop_applies_to_method(method_name):
+    """B1 (task 3 decision doc, 2026-08-17): restricts
+    ADAPTIVE_PER_STEP_EARLY_STOP_ENABLED to plain "simple_avg" ONLY -- not
+    simple_avg_kd_T2 / simple_avg_factor_orth / simple_avg_factor_orth_kd_T2,
+    and not any rank_extension method. This is a second, EXPLICIT safety net
+    on top of the patience-based design (which the flag's own comment already
+    argues should never fire on simple_avg_factor_orth given this run's
+    numbers) so simple_avg_factor_orth cannot be stopped early even if a
+    future run's val-CE curve behaves differently than this one's -- task 3
+    is explicit that it "must NOT stop simple_avg_factor_orth early". Every
+    other simple_avg sibling and all of rank_extension are left off too, so
+    their convergence plots/curves stay exactly as they were -- task 3 only
+    asked to fix simple_avg's. Accuracy is unaffected regardless of which
+    methods this returns True for (see ADAPTIVE_PER_STEP_EARLY_STOP_ENABLED's
+    own comment) -- this function only controls which methods' PLOTS get
+    shorter."""
+    return str(method_name) == "simple_avg"
 
 
 def get_training_args(
@@ -2335,16 +2347,18 @@ class EpochValidationCallback(TrainerCallback):
             f"epoch={row['epoch']} | val_ce={row['val_ce_loss']:.6f} | lr={row['learning_rate']:.6g}"
         )
 
-        # B1 OPTIONAL, DEFAULT-OFF (ADAPTIVE_PER_STEP_EARLY_STOP_ENABLED):
-        # patience-since-best-val-CE stop, gated the same way best-epoch
-        # tracking is (self.track_best_epoch) so it can only ever fire once
-        # self.best_epoch is already set -- the reload in train_with_trainer()
-        # always uses self.best_state_dict, so stopping here never changes
-        # which epoch's weights end up in the final model. See the flag's own
-        # comment (near GROWING_OVERFITTING_VAL_CE_RISE_THRESHOLD) for why
-        # this is safe for simple_avg_factor_orth's late-trending best epoch.
+        # B1 (task 3 decision doc, 2026-08-17): patience-since-best-val-CE
+        # stop, gated the same way best-epoch tracking is (self.track_best_epoch)
+        # so it can only ever fire once self.best_epoch is already set -- the
+        # reload in train_with_trainer() always uses self.best_state_dict, so
+        # stopping here never changes which epoch's weights end up in the
+        # final model. adaptive_early_stop_applies_to_method() restricts this
+        # to plain "simple_avg" only -- see that function's own comment for
+        # why simple_avg_factor_orth is explicitly excluded rather than
+        # relying only on its late-trending best epoch to never trip patience.
         if (
             ADAPTIVE_PER_STEP_EARLY_STOP_ENABLED
+            and adaptive_early_stop_applies_to_method(self.method_name)
             and self.track_best_epoch
             and self.best_epoch is not None
             and epoch_int >= ADAPTIVE_PER_STEP_EARLY_STOP_MIN_EPOCH
@@ -5312,7 +5326,7 @@ class DeltaOrthRankExtensionTrainer(RankExtensionTrainer):
         teacher_model=None,
         kd_weight=0.0,
         kd_temperature=2.0,
-        feature_anchor_weight=0.0,
+        pretrained_anchor_weight=0.0,
         **kwargs,
     ):
         super().__init__(*args, **kwargs)
@@ -5325,14 +5339,17 @@ class DeltaOrthRankExtensionTrainer(RankExtensionTrainer):
         self.teacher_model = teacher_model
         self.kd_weight = float(kd_weight)
         self.kd_temperature = float(kd_temperature)
-        # FEATURE-ANCHOR LEVER: shares the same teacher_model slot as KD (both
-        # need "the model as it stood at the end of the previous step" -- see
-        # run_rank_extension_variant()), but is a genuinely separate loss term
-        # (CLS-hidden-state cosine distance, not logit KL-divergence). Mutually
-        # exclusive with kd_weight>0 for every method that currently exists
-        # (see the call site) but the compute_loss() gate below does not
-        # itself assume that -- both could in principle be active together.
-        self.feature_anchor_weight = float(feature_anchor_weight)
+        # RANK_EXT FIRST_STEP FIX (task 2 decision doc, 2026-08-17 -- see
+        # RANKEXT_PRETRAINED_ANCHOR_WEIGHT above for the diagnostic evidence
+        # and mechanism writeup): shares the same teacher_model slot as KD
+        # (both need a frozen reference model run on the current batch), but
+        # is a genuinely separate loss term (CLS-hidden-state cosine distance,
+        # not logit KL-divergence). Unconditionally mutually exclusive with
+        # kd_weight>0 at the one call site that drives every rank_extension
+        # method (run_rank_extension_variant() never sets both nonzero for
+        # the same method) but the compute_loss() gate below does not itself
+        # assume that -- both could in principle be active together.
+        self.pretrained_anchor_weight = float(pretrained_anchor_weight)
         self._rows = []
         self._teacher_ready = False
 
@@ -5342,19 +5359,20 @@ class DeltaOrthRankExtensionTrainer(RankExtensionTrainer):
                 p.requires_grad = False
 
     def compute_loss(self, model, inputs, return_outputs=False, num_items_in_batch=None):
-        # FEATURE-ANCHOR LEVER: only request hidden_states (mild extra memory/
-        # compute in the encoder) when this trainer instance actually needs
-        # them -- False (unchanged forward call) for every method except the
-        # 2 feature-anchor ones, so KD variants and simple_avg (different
-        # trainer entirely) never pay this cost. CRASH FIX: also gated on
-        # model.training -- Trainer.prediction_step() (every eval/evaluate()
-        # call) invokes this SAME compute_loss() under torch.no_grad() with
-        # model.eval() already applied, so hidden_states is never requested
-        # on the eval forward either (features are a training-loss-only
-        # concept here; see RankExtensionTrainer.preprocess_logits_for_
-        # metrics() / compute_metrics() for the defensive backstop that
-        # still applies if that ever changes).
-        need_hidden = self.feature_anchor_weight > 0.0 and model.training
+        # RANK_EXT FIRST_STEP FIX: only request hidden_states (mild extra
+        # memory/compute in the encoder) when this trainer instance actually
+        # needs them -- False (unchanged forward call) for every KD method
+        # and for simple_avg (different trainer entirely), so only the
+        # non-KD rank_extension methods that get the pretrained-backbone
+        # anchor pay this cost. CRASH FIX: also gated on model.training --
+        # Trainer.prediction_step() (every eval/evaluate() call) invokes this
+        # SAME compute_loss() under torch.no_grad() with model.eval() already
+        # applied, so hidden_states is never requested on the eval forward
+        # either (features are a training-loss-only concept here; see
+        # RankExtensionTrainer.preprocess_logits_for_metrics() /
+        # compute_metrics() for the defensive backstop that still applies if
+        # that ever changes).
+        need_hidden = self.pretrained_anchor_weight > 0.0 and model.training
         outputs = model(**inputs, output_hidden_states=need_hidden)
         ce_loss = outputs.loss
 
@@ -5411,25 +5429,23 @@ class DeltaOrthRankExtensionTrainer(RankExtensionTrainer):
         kd_loss = torch.tensor(0.0, device=ce_loss.device, dtype=ce_loss.dtype)
         teacher_active = self.teacher_model is not None and self.kd_weight > 0.0
 
-        # FEATURE-ANCHOR LEVER: separate gate, separate loss term. Compares the
-        # CLS token of the LAST hidden state (pre-classifier, pre-final-
+        # RANK_EXT FIRST_STEP FIX: separate gate, separate loss term. Compares
+        # the CLS token of the LAST hidden state (pre-classifier, pre-final-
         # layernorm-pooling) between the current model and a frozen snapshot of
-        # the model as it stood at the end of the previous step, both run on
-        # the SAME current-step batch already being trained on (rehearsal-free
-        # -- no old images). Cosine distance, not logit KL-divergence -- no
+        # the PRETRAINED CLIP backbone (no LoRA contribution), both run on the
+        # SAME current-step batch already being trained on (rehearsal-free --
+        # no old images). Cosine distance, not logit KL-divergence -- no
         # softmax, no classifier, no temperature; a genuinely different
         # mechanism from the KD block above, not a re-skin of it.
-        feature_anchor_loss = torch.tensor(0.0, device=ce_loss.device, dtype=ce_loss.dtype)
+        pretrained_anchor_loss = torch.tensor(0.0, device=ce_loss.device, dtype=ce_loss.dtype)
         # CRASH FIX: mirrors need_hidden's model.training gate above. Without
-        # this, feature_anchor_active could be True on the eval forward while
-        # outputs.hidden_states is None (need_hidden is now False whenever
-        # model.training is False), and the outputs.hidden_states[-1] access
-        # below would raise. Eval-time loss for the 2 feature-anchor variants
-        # is therefore CE(+orth) only, same as every other rank_extension
-        # variant -- unaffected either way, since eval_loss here was never a
-        # valid/reported number before this fix (the run crashed before ever
-        # completing an eval pass for these 2 methods).
-        feature_anchor_active = self.teacher_model is not None and self.feature_anchor_weight > 0.0 and model.training
+        # this, pretrained_anchor_active could be True on the eval forward
+        # while outputs.hidden_states is None (need_hidden is now False
+        # whenever model.training is False), and the
+        # outputs.hidden_states[-1] access below would raise. Eval-time loss
+        # for the anchored (non-KD) rank_extension methods is therefore
+        # CE(+orth) only, same as every other rank_extension variant.
+        pretrained_anchor_active = self.teacher_model is not None and self.pretrained_anchor_weight > 0.0 and model.training
 
         if teacher_active:
             if not self._teacher_ready:
@@ -5443,7 +5459,7 @@ class DeltaOrthRankExtensionTrainer(RankExtensionTrainer):
             teacher_probs = F.softmax(teacher_logits / self.kd_temperature, dim=-1)
             kd_loss = F.kl_div(student_log_probs, teacher_probs, reduction="batchmean") * (self.kd_temperature ** 2)
 
-        if feature_anchor_active:
+        if pretrained_anchor_active:
             if not self._teacher_ready:
                 self.teacher_model.to(device=ce_loss.device)
                 self.teacher_model.eval()
@@ -5451,11 +5467,11 @@ class DeltaOrthRankExtensionTrainer(RankExtensionTrainer):
             with torch.no_grad():
                 teacher_hidden = self.teacher_model(**inputs, output_hidden_states=True).hidden_states[-1][:, 0, :]
             student_hidden = outputs.hidden_states[-1][:, 0, :]
-            feature_anchor_loss = (1.0 - F.cosine_similarity(student_hidden, teacher_hidden, dim=-1)).mean()
+            pretrained_anchor_loss = (1.0 - F.cosine_similarity(student_hidden, teacher_hidden, dim=-1)).mean()
 
         weighted_kd = float(self.kd_weight) * kd_loss
-        weighted_feature_anchor = float(self.feature_anchor_weight) * feature_anchor_loss
-        loss = ce_loss + weighted + weighted_kd + weighted_feature_anchor
+        weighted_pretrained_anchor = float(self.pretrained_anchor_weight) * pretrained_anchor_loss
+        loss = ce_loss + weighted + weighted_kd + weighted_pretrained_anchor
 
         ce_v = float(ce_loss.detach().cpu().item())
         raw_inner_v = float(raw_inner.detach().cpu().item())
@@ -5511,15 +5527,14 @@ class DeltaOrthRankExtensionTrainer(RankExtensionTrainer):
             "kd_weight": float(self.kd_weight),
             "kd_temperature": float(self.kd_temperature),
             "teacher_active": bool(teacher_active),
-            # FEATURE-ANCHOR LEVER: separate, reportable columns -- never
-            # populated (stay 0.0 / False) for any method except the 2
-            # feature-anchor variants, since feature_anchor_weight is 0.0
-            # everywhere else.
-            "feature_anchor_loss": float(feature_anchor_loss.detach().cpu().item()),
-            "weighted_feature_anchor_loss": float(weighted_feature_anchor.detach().cpu().item()),
-            "feature_anchor_over_CE": float(weighted_feature_anchor.detach().cpu().item()) / (ce_v + float(self.orth_eps)),
-            "feature_anchor_weight": float(self.feature_anchor_weight),
-            "feature_anchor_active": bool(feature_anchor_active),
+            # RANK_EXT FIRST_STEP FIX: separate, reportable columns -- stay
+            # 0.0 / False for KD methods and simple_avg, since
+            # pretrained_anchor_weight is 0.0 there.
+            "pretrained_anchor_loss": float(pretrained_anchor_loss.detach().cpu().item()),
+            "weighted_pretrained_anchor_loss": float(weighted_pretrained_anchor.detach().cpu().item()),
+            "pretrained_anchor_over_CE": float(weighted_pretrained_anchor.detach().cpu().item()) / (ce_v + float(self.orth_eps)),
+            "pretrained_anchor_weight": float(self.pretrained_anchor_weight),
+            "pretrained_anchor_active": bool(pretrained_anchor_active),
             "total_loss": total_loss_v,
             "effective_lambda": float(effective_lambda_orth),
         }
@@ -5529,10 +5544,10 @@ class DeltaOrthRankExtensionTrainer(RankExtensionTrainer):
             print(
                 f"[orth train] method={self.method_name} | step={row['step']} | epoch={row['epoch']:.4f} | "
                 f"ce={row['ce_loss']:.6f} | orth={row['orth_loss_used']:.6f} | "
-                f"kd={row['kd_loss']:.6f} | featanchor={row['feature_anchor_loss']:.6f} | "
+                f"kd={row['kd_loss']:.6f} | anchor={row['pretrained_anchor_loss']:.6f} | "
                 f"total={row['total_loss']:.6f} | "
                 f"lambda={row['lambda_orth']:.6g} (warmup x{row['lambda_orth_warmup_multiplier']:.3g}) | "
-                f"kd_weight={row['kd_weight']:.6g} | featanchor_weight={row['feature_anchor_weight']:.6g} | "
+                f"kd_weight={row['kd_weight']:.6g} | anchor_weight={row['pretrained_anchor_weight']:.6g} | "
                 f"ratio={row['orth_ratio_abs_weighted_over_ce']:.6f}"
             )
 
@@ -5676,9 +5691,6 @@ def run_rank_extension_variant(
     use_kd=False,
     kd_weight=0.0,
     kd_temperature=2.0,
-    use_feature_anchor=False,
-    feature_anchor_weight=0.0,
-    feature_anchor_mode="chained",
     orth_eval_records=None,
     orth_train_records=None,
     orth_summary_records=None,
@@ -5696,8 +5708,6 @@ def run_rank_extension_variant(
     active_lambda_orth = float(lambda_orth)
     active_kd_weight = float(kd_weight)
     active_kd_temperature = float(kd_temperature)
-    # FEATURE-ANCHOR LEVER: mirrors active_kd_weight's pattern exactly.
-    active_feature_anchor_weight = float(feature_anchor_weight)
     # RANKEXT_NEW_BLOCK_WARMUP_ENABLED (analysis_rankext_plain/): this function
     # is only ever called for rank_extension-family methods, so
     # family_uses_new_block_warmup("rank_extension") resolves the SAME way for
@@ -5709,11 +5719,12 @@ def run_rank_extension_variant(
         float(RANKEXT_NEW_BLOCK_WARMUP_EPOCHS) if family_uses_new_block_warmup("rank_extension") else None
     )
 
-    # B2 (rank_ext first_step fix, decision doc): "fixed_base" anchor mode --
+    # RANK_EXT FIRST_STEP FIX (task 2 decision doc, 2026-08-17 -- see
+    # RANKEXT_PRETRAINED_ANCHOR_WEIGHT above for the diagnostic evidence):
     # build ONE non-drifting teacher, ONCE, before the step loop, and reuse
-    # the SAME instance for every step (including step 1, unlike "chained"
-    # below which has no teacher until previous_rank_state exists). This is
-    # the FROZEN PRETRAINED CLIP backbone with no LoRA contribution: calling
+    # the SAME instance for every step (including step 1, which has no
+    # previous_rank_state to chain from). This is the FROZEN PRETRAINED CLIP
+    # backbone with no LoRA contribution: calling
     # build_rank_extension_model(previous_rank_state=None, ...) gives a model
     # whose new LoRA block has B_new zero-initialized (see
     # GrowingRankLoRALinear.__init__ -- nn.init.zeros_(self.B_new)) and no
@@ -5723,18 +5734,19 @@ def run_rank_extension_variant(
     # hand-stripping LoRA) keeps the teacher's forward pass on the exact same
     # code path as every student, with zero risk of an accidental behavioral
     # difference. Frozen (eval + requires_grad=False) and never trained, so it
-    # cannot drift across steps by construction.
-    fixed_base_anchor_model = None
-    if use_feature_anchor and str(feature_anchor_mode) == "fixed_base":
-        fixed_base_anchor_model = build_rank_extension_model(
+    # cannot drift across steps by construction. Unconditional for every
+    # non-KD rank_extension method -- no more per-method opt-in.
+    pretrained_anchor_model = None
+    if not use_kd:
+        pretrained_anchor_model = build_rank_extension_model(
             previous_rank_state=None,
             step_idx=0,
             old_active_in_forward=True,
         )
-        fixed_base_anchor_model.eval()
-        for p in fixed_base_anchor_model.parameters():
+        pretrained_anchor_model.eval()
+        for p in pretrained_anchor_model.parameters():
             p.requires_grad = False
-        assert not any(p.requires_grad for p in fixed_base_anchor_model.parameters())
+        assert not any(p.requires_grad for p in pretrained_anchor_model.parameters())
 
     for step_idx in range(NUM_STEPS):
         current_classes = classes_for_step(step_idx)
@@ -5745,23 +5757,20 @@ def run_rank_extension_variant(
 
         old_active_in_forward = not (zero_old_merge and step_idx > 0)
         teacher_model = None
-        if fixed_base_anchor_model is not None:
-            # B2: non-drifting reference, active for EVERY step including
-            # step 1 -- this is the whole point of the lever (see the
-            # fixed_base_anchor_model construction above). Unlike the chained
-            # branch below, this never depends on previous_rank_state, so
-            # step 1's feature_anchor_weight (gated on `teacher_model is not
-            # None` at the trainer_kwargs assembly below) is nonzero here.
-            teacher_model = fixed_base_anchor_model
-        elif (use_kd or use_feature_anchor) and previous_rank_state is not None:
-            # FEATURE-ANCHOR LEVER: builds the identical "model as it stood at
-            # the end of the previous step" snapshot KD's teacher already
-            # used -- use_kd and use_feature_anchor are mutually exclusive at
-            # the one call site that drives every rank_extension method, so
-            # this never runs for both reasons at once, but the condition
-            # itself doesn't assume that. None at step 1 (previous_rank_state
-            # is None), which is exactly the gap the "fixed_base" branch
-            # above exists to close.
+        if pretrained_anchor_model is not None:
+            # RANK_EXT FIRST_STEP FIX: non-drifting reference, active for
+            # EVERY step including step 1 -- this is the whole point of the
+            # fix (see the pretrained_anchor_model construction above).
+            # Unlike the KD branch below, this never depends on
+            # previous_rank_state, so step 1's pretrained_anchor_weight
+            # (gated on `teacher_model is not None` at the trainer_kwargs
+            # assembly below) is nonzero here.
+            teacher_model = pretrained_anchor_model
+        elif use_kd and previous_rank_state is not None:
+            # KD teacher: "the model as it stood at the end of the previous
+            # step" -- unreachable for non-KD methods (pretrained_anchor_model
+            # is non-None for those, so the branch above always wins). None at
+            # step 1 (previous_rank_state is None yet), same as before.
             teacher_old_active_in_forward = not (zero_old_merge and (step_idx - 1) > 0)
             teacher_model = build_rank_extension_model(
                 previous_rank_state=previous_rank_state,
@@ -5831,9 +5840,9 @@ def run_rank_extension_variant(
             "method_name": method_name,
             "step_idx": int(step_idx),
             "teacher_model": teacher_model,
-            "kd_weight": active_kd_weight if teacher_model is not None else 0.0,
+            "kd_weight": active_kd_weight if (use_kd and teacher_model is not None) else 0.0,
             "kd_temperature": active_kd_temperature,
-            "feature_anchor_weight": active_feature_anchor_weight if teacher_model is not None else 0.0,
+            "pretrained_anchor_weight": RANKEXT_PRETRAINED_ANCHOR_WEIGHT if (not use_kd and teacher_model is not None) else 0.0,
         }
 
         total_rank, frozen_rank, new_rank = get_rank_extension_rank_triplet(step_idx)
@@ -5847,8 +5856,7 @@ def run_rank_extension_variant(
             f"orth_mode={active_orth_mode} | "
             f"lambda_orth={active_lambda_orth:.6g} | "
             f"use_kd={use_kd} | "
-            f"use_feature_anchor={use_feature_anchor} | "
-            f"feature_anchor_weight={active_feature_anchor_weight:.6g} | "
+            f"pretrained_anchor_active={(not use_kd) and teacher_model is not None} | "
             f"teacher_active={teacher_model is not None} | "
             f"old_active_in_forward={old_active_in_forward} ====="
         )
@@ -6023,11 +6031,12 @@ def run_rank_extension_variant(
         })
 
     del final_rank_model
-    # B2: fixed_base_anchor_model (if built) lived for the whole function,
-    # unlike the chained teacher_model (rebuilt/discarded every step) -- free
-    # it explicitly here rather than relying on it falling out of scope.
-    if fixed_base_anchor_model is not None:
-        del fixed_base_anchor_model
+    # RANK_EXT FIRST_STEP FIX: pretrained_anchor_model (if built) lived for
+    # the whole function, unlike the KD teacher_model (rebuilt/discarded every
+    # step) -- free it explicitly here rather than relying on it falling out
+    # of scope.
+    if pretrained_anchor_model is not None:
+        del pretrained_anchor_model
     cleanup()
 
 
@@ -6057,17 +6066,6 @@ for method_name in rank_extension_execution_order:
         use_kd=bool(method_cfg["uses_kd"]),
         kd_weight=float(method_cfg["kd_weight"]),
         kd_temperature=float(method_cfg["kd_temperature"]),
-        # FEATURE-ANCHOR LEVER: read from method_cfg (set in add_method()) --
-        # True/nonzero only for "rank_extension_featanchor" and
-        # "rank_extension_orth_factor_featanchor". False/0.0 for all 8
-        # existing methods, including both KD variants (mutually exclusive
-        # with uses_kd by construction, see add_method() calls above).
-        use_feature_anchor=bool(method_cfg["uses_feature_anchor"]),
-        feature_anchor_weight=float(method_cfg["feature_anchor_weight"]),
-        # B2: "chained" (default) or "fixed_base" -- see method_cfg["feature_
-        # anchor_mode"] (set in add_method()) and run_rank_extension_variant()
-        # for what each does.
-        feature_anchor_mode=str(method_cfg.get("feature_anchor_mode", "chained")),
         orth_eval_records=orth_kd_eval_rows,
         orth_train_records=orth_kd_train_rows,
         orth_summary_records=orth_kd_summary_rows,
@@ -7127,11 +7125,10 @@ def _plot_15_supervisor_selected_train_val_ce():
 
         # A1 FIX (Aug-7 crash, KeyError at the color_map[method_name] lookup a few
         # lines below): this used to zip SUPERVISOR_SELECTED_INTERNAL_METHODS
-        # (10 methods, since the featanchor lever added 2 more on 2026-08-05)
+        # (10 methods, back when the now-removed featanchor lever added 2 more)
         # against a HARDCODED 8-color list -- zip() silently truncates to the
-        # shorter sequence, so the last 2 methods
-        # (rank_extension_featanchor / rank_extension_orth_factor_featanchor)
-        # never got a color_map entry, and the KeyError below only surfaced once
+        # shorter sequence, so the last 2 methods never got a color_map entry,
+        # and the KeyError below only surfaced once
         # training actually finished and this cell ran, losing every table/plot
         # after it. Fix: build color_map FROM the active method list's own
         # length -- cycling a qualitative palette (via modulo) so this never
@@ -7217,16 +7214,10 @@ from matplotlib.lines import Line2D
 
 DPI = 220
 REQ = list(SUPERVISOR_SELECTED_INTERNAL_METHODS)
-# FEATURE-ANCHOR LEVER: "FeatAnchor" / "FactorOrth + FeatAnchor" are NEW
-# variant labels, rank_extension-only -- simple_avg has no method mapped to
-# either, so every plot that grids (family x variant) just renders those two
-# rows blank in the simple_avg column (same graceful-empty pattern lossgrid()
-# and the combined-loss-decomposition panel already use for any missing
-# (family, variant) pair -- nothing crashes, nothing needed a size-4 assumption).
-SUPERVISOR_VARIANT_ORDER = ["Base", "KD (T=2)", "Factor-Orth", "KD + Factor-Orth", "FeatAnchor", "Factor-Orth + FeatAnchor"]
-VARIANT = {"simple_avg":"Base","rank_extension":"Base","simple_avg_factor_orth":"Factor-Orth","rank_extension_orth_factor_lam_50":"Factor-Orth","simple_avg_kd_T2":"KD (T=2)","rank_extension_kd_only_T2":"KD (T=2)","simple_avg_factor_orth_kd_T2":"KD + Factor-Orth","rank_extension_orth_factor_lam_50_kd_T2":"KD + Factor-Orth","rank_extension_featanchor":"FeatAnchor","rank_extension_orth_factor_featanchor":"Factor-Orth + FeatAnchor"}
-VCOL = {"Base":"#1f77b4","KD (T=2)":"#ff7f0e","Factor-Orth":"#d62728","KD + Factor-Orth":"#2ca02c","FeatAnchor":"#9467bd","Factor-Orth + FeatAnchor":"#8c564b"}
-VSTYLE = {"Base":"-","KD (T=2)":"--","Factor-Orth":":","KD + Factor-Orth":"-.","FeatAnchor":(0,(1,1)),"Factor-Orth + FeatAnchor":(0,(5,1,1,1))}
+SUPERVISOR_VARIANT_ORDER = ["Base", "KD (T=2)", "Factor-Orth", "KD + Factor-Orth"]
+VARIANT = {"simple_avg":"Base","rank_extension":"Base","simple_avg_factor_orth":"Factor-Orth","rank_extension_orth_factor_lam_50":"Factor-Orth","simple_avg_kd_T2":"KD (T=2)","rank_extension_kd_only_T2":"KD (T=2)","simple_avg_factor_orth_kd_T2":"KD + Factor-Orth","rank_extension_orth_factor_lam_50_kd_T2":"KD + Factor-Orth"}
+VCOL = {"Base":"#1f77b4","KD (T=2)":"#ff7f0e","Factor-Orth":"#d62728","KD + Factor-Orth":"#2ca02c"}
+VSTYLE = {"Base":"-","KD (T=2)":"--","Factor-Orth":":","KD + Factor-Orth":"-."}
 FAMS = ["simple_avg","rank_extension"]
 FLAB = {"simple_avg":"Simple-Average Family","rank_extension":"Rank-Extension Family"}
 for d in [TABLES_DIR, PLOTS_DIR, REPORTS_DIR, LOGS_DIR, CONFIGS_DIR, MODELS_DIR]: Path(d).mkdir(parents=True, exist_ok=True)

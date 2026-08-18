@@ -976,6 +976,25 @@ def family_uses_new_block_warmup(family):
     return bool(RANKEXT_NEW_BLOCK_WARMUP_ENABLED) and str(family) == "rank_extension"
 
 
+RANKEXT_NEW_BLOCK_WARMUP_DISABLED_METHODS = {
+    "rank_extension_kd_only_T2",
+    "rank_extension_orth_factor_lam_50_kd_T2",
+}
+
+
+def method_rankext_new_block_warmup_epochs(method_name, family):
+    """Resolve rank_extension new-block warmup per method.
+
+    Keep the existing 1-epoch warmup for non-KD rank_extension methods, but
+    disable it only for the two active T2 KD rank_extension methods.
+    """
+    if not family_uses_new_block_warmup(family):
+        return 0.0
+    if str(method_name) in RANKEXT_NEW_BLOCK_WARMUP_DISABLED_METHODS:
+        return 0.0
+    return float(RANKEXT_NEW_BLOCK_WARMUP_EPOCHS)
+
+
 # One row per (method, step, local_epoch) actually applied during training --
 # see RankExtNewBlockWarmupCallback below and its CSV write near the other
 # diagnostic tables (best_epoch_selection_rows / growing_overfitting_rows).
@@ -1067,20 +1086,16 @@ def orth_lambda_warmup_multiplier(epoch_val, warmup_epochs, enabled):
 #    to this crash -- A1 (color_map fix) + A2 (these CSVs now write before
 #    any plot, each plot try/excepted) fix that independently of point 2.
 #
-# No METHODS_TO_RUN change was needed for this rerun -- the state below
-# already trains rank_extension and rank_extension_orth_factor_lam_50 (the 2
-# non-KD baselines) fresh in the SAME job as rank_extension_featanchor and
-# rank_extension_orth_factor_featanchor, with both KD rank_ext variants
-# (rank_extension_kd_only, rank_extension_orth_factor_lam_50_kd) also present
-# for the feature_alignment KD-vs-non-KD contrast -- PROVIDED the rerun
-# starts from a genuinely fresh kernel/process per point 2 above.
+# TEMP R6 runtime reduction: simple_avg-family methods are disabled here only
+# through run-selection flags. Their implementations/config construction remain
+# intact below and can be re-enabled by flipping these booleans back.
 METHODS_TO_RUN = {
-    "simple_avg": True,
-    "simple_avg_kd": True,
+    "simple_avg": False,
+    "simple_avg_kd": False,
     "simple_avg_delta_orth": False,  # disabled for FIX 2 -- was True; delta-trace excluded from the 8-method set
     "simple_avg_delta_orth_kd": False,
-    "simple_avg_factor_orth": True,
-    "simple_avg_factor_orth_kd": True,
+    "simple_avg_factor_orth": False,
+    "simple_avg_factor_orth_kd": False,
     "rank_extension": True,
     "rank_extension_kd_only": True,
     "rank_extension_orth_delta_trace_lam_50": False,  # disabled for FIX 2 -- was True; delta-trace excluded from the 8-method set
@@ -1147,6 +1162,7 @@ def build_active_method_configs():
     def add_method(method_name, family, base_method, uses_kd=False, kd_temperature=0.0, uses_delta_trace=False, uses_factor_orth=False, lambda_orth_scale=1.0, kd_weight_scale=1.0):
         if not METHODS_TO_RUN.get(base_method, False):
             return
+        rankext_new_block_warmup_epochs = method_rankext_new_block_warmup_epochs(method_name, family)
         configs.append({
             "method": str(method_name),
             "family": str(family),
@@ -1174,12 +1190,10 @@ def build_active_method_configs():
             "apply_calibration": family_applies_calibration(family),
             "calibration_mode": family_calibration_mode(family) if family_applies_calibration(family) else "off",
             # analysis_rankext_plain/ (2026-07-23): rank_extension-only,
-            # applied identically to all 4 active rank_extension variants --
-            # see family_uses_new_block_warmup() above.
-            "rankext_new_block_warmup_enabled": family_uses_new_block_warmup(family),
-            "rankext_new_block_warmup_epochs": (
-                float(RANKEXT_NEW_BLOCK_WARMUP_EPOCHS) if family_uses_new_block_warmup(family) else 0.0
-            ),
+            # method-specific after R6: non-KD rank_extension keeps the
+            # existing warmup, KD rank_extension disables it.
+            "rankext_new_block_warmup_enabled": rankext_new_block_warmup_epochs > 0.0,
+            "rankext_new_block_warmup_epochs": rankext_new_block_warmup_epochs,
         })
 
     add_method("simple_avg", "simple_avg", "simple_avg")
@@ -1223,16 +1237,26 @@ def build_active_method_configs():
 ACTIVE_METHOD_CONFIGS = build_active_method_configs()
 ACTIVE_METHOD_NAMES = [cfg["method"] for cfg in ACTIVE_METHOD_CONFIGS]
 ACTIVE_METHOD_MAP = {cfg["method"]: cfg for cfg in ACTIVE_METHOD_CONFIGS}
+_SUPERVISOR_SELECTED_METHOD_SPECS_BY_METHOD = {
+    spec["internal_method_name"]: spec for spec in SUPERVISOR_SELECTED_METHOD_SPECS
+}
+ACTIVE_SUPERVISOR_SELECTED_METHOD_SPECS = [
+    _SUPERVISOR_SELECTED_METHOD_SPECS_BY_METHOD[method_name]
+    for method_name in ACTIVE_METHOD_NAMES
+    if method_name in _SUPERVISOR_SELECTED_METHOD_SPECS_BY_METHOD
+]
+ACTIVE_SUPERVISOR_SELECTED_INTERNAL_METHODS = [
+    spec["internal_method_name"] for spec in ACTIVE_SUPERVISOR_SELECTED_METHOD_SPECS
+]
+ACTIVE_SUPERVISOR_SELECTED_DISPLAY_NAMES = [
+    spec["display_name"] for spec in ACTIVE_SUPERVISOR_SELECTED_METHOD_SPECS
+]
 ENABLED_METHOD_FAMILIES = [name for name, enabled in METHODS_TO_RUN.items() if enabled]
 # FIX 2: "simple_avg_delta_orth" and "rank_extension_orth_delta_trace_lam_50"
 # removed from the expected set to match the two flags flipped to False above --
 # otherwise `assert set(ENABLED_METHOD_FAMILIES) == EXPECTED_ENABLED_METHOD_FAMILIES`
 # below would fail as soon as those two were disabled.
 EXPECTED_ENABLED_METHOD_FAMILIES = {
-    "simple_avg",
-    "simple_avg_kd",
-    "simple_avg_factor_orth",
-    "simple_avg_factor_orth_kd",
     "rank_extension",
     "rank_extension_kd_only",
     "rank_extension_orth_factor_lam_50",
@@ -5708,15 +5732,18 @@ def run_rank_extension_variant(
     active_lambda_orth = float(lambda_orth)
     active_kd_weight = float(kd_weight)
     active_kd_temperature = float(kd_temperature)
-    # RANKEXT_NEW_BLOCK_WARMUP_ENABLED (analysis_rankext_plain/): this function
-    # is only ever called for rank_extension-family methods, so
-    # family_uses_new_block_warmup("rank_extension") resolves the SAME way for
-    # every one of the 4 active variants -- applied identically to plain,
-    # +FactorOrth, +KD, and +FactorOrth+KD, per the "same protocol per family"
-    # requirement. None (not 0.0) when the flag is off, so train_with_trainer()
-    # skips attaching the callback entirely rather than attaching a no-op one.
+    # R6 follow-up: keep the existing new-block warmup for non-KD rank_extension
+    # methods, but disable it for KD variants so KD remains the stabilizer.
+    # None (not 0.0) when disabled, so train_with_trainer() skips attaching the
+    # callback entirely rather than attaching a no-op one.
+    active_new_block_warmup_epochs_value = method_rankext_new_block_warmup_epochs(
+        method_name,
+        "rank_extension",
+    )
     active_new_block_warmup_epochs = (
-        float(RANKEXT_NEW_BLOCK_WARMUP_EPOCHS) if family_uses_new_block_warmup("rank_extension") else None
+        float(active_new_block_warmup_epochs_value)
+        if active_new_block_warmup_epochs_value > 0.0
+        else None
     )
 
     # RANK_EXT FIRST_STEP FIX (task 2 decision doc, 2026-08-17 -- see
@@ -6233,7 +6260,7 @@ method_config_df["lora_alpha"] = np.where(
 )
 method_config_df["internal_method_name"] = method_config_df["method"]
 
-supervisor_method_mapping_df = pd.DataFrame(SUPERVISOR_SELECTED_METHOD_SPECS)
+supervisor_method_mapping_df = pd.DataFrame(ACTIVE_SUPERVISOR_SELECTED_METHOD_SPECS)
 supervisor_method_mapping_path = os.path.join(TABLES_DIR, "supervisor_method_mapping.csv")
 supervisor_method_mapping_df.to_csv(supervisor_method_mapping_path, index=False)
 print("Saved supervisor method mapping:", supervisor_method_mapping_path)
@@ -6797,10 +6824,10 @@ method_run_metadata_cols = [
 method_run_metadata_df = summary_table[method_run_metadata_cols].copy()
 method_run_metadata_df.to_csv(method_metadata_path, index=False)
 
-supervisor_selected_accuracy_df = summary_table[summary_table["method"].isin(SUPERVISOR_SELECTED_INTERNAL_METHODS)].copy()
+supervisor_selected_accuracy_df = summary_table[summary_table["method"].isin(ACTIVE_SUPERVISOR_SELECTED_INTERNAL_METHODS)].copy()
 supervisor_selected_accuracy_df["method"] = pd.Categorical(
     supervisor_selected_accuracy_df["method"],
-    categories=SUPERVISOR_SELECTED_INTERNAL_METHODS,
+    categories=ACTIVE_SUPERVISOR_SELECTED_INTERNAL_METHODS,
     ordered=True,
 )
 supervisor_selected_accuracy_df = supervisor_selected_accuracy_df.sort_values("method").reset_index(drop=True)
@@ -7084,7 +7111,7 @@ _safe_plot("14_combined_loss_decomposition", _plot_14_combined_loss_decompositio
 
 from matplotlib.lines import Line2D
 
-selected_epoch_df = training_loss_history_df[training_loss_history_df["method_name"].isin(SUPERVISOR_SELECTED_INTERNAL_METHODS)].copy()
+selected_epoch_df = training_loss_history_df[training_loss_history_df["method_name"].isin(ACTIVE_SUPERVISOR_SELECTED_INTERNAL_METHODS)].copy()
 def _plot_15_supervisor_selected_train_val_ce():
     if len(selected_epoch_df) > 0:
         # FIX 1 (was: "KeyError: 'family'" here, which killed the previous cluster run
@@ -7137,14 +7164,14 @@ def _plot_15_supervisor_selected_train_val_ce():
         _color_palette = ["#1f77b4", "#d62728", "#ff7f0e", "#9467bd", "#2ca02c", "#8c564b", "#17becf", "#e377c2", "#bcbd22", "#7f7f7f"]
         color_map = {
             method_name: _color_palette[i % len(_color_palette)]
-            for i, method_name in enumerate(SUPERVISOR_SELECTED_INTERNAL_METHODS)
+            for i, method_name in enumerate(ACTIVE_SUPERVISOR_SELECTED_INTERNAL_METHODS)
         }
         fig, axes = plt.subplots(2, 1, figsize=(12, 8), sharex=True, constrained_layout=True)
         for ax, family in zip(axes, ["simple_avg", "rank_extension"]):
             # .get(m, {}) instead of ACTIVE_METHOD_MAP[m]: skip gracefully rather than
             # KeyError if a supervisor-selected method name is ever absent from the
             # active set (e.g. a disabled family), instead of assuming it is always active.
-            family_methods = [m for m in SUPERVISOR_SELECTED_INTERNAL_METHODS if ACTIVE_METHOD_MAP.get(m, {}).get("family") == family]
+            family_methods = [m for m in ACTIVE_SUPERVISOR_SELECTED_INTERNAL_METHODS if ACTIVE_METHOD_MAP.get(m, {}).get("family") == family]
             for method_name in family_methods:
                 sub = selected_epoch_df[selected_epoch_df["method_name"] == method_name].sort_values(["step_id", "epoch"])
                 if len(sub) == 0:
@@ -7184,7 +7211,7 @@ def _plot_17_supervisor_selected_accuracy_comparison():
     if len(selected_acc_df) > 0:
         selected_acc_df["display_name"] = pd.Categorical(
             selected_acc_df["display_name"],
-            categories=SUPERVISOR_SELECTED_DISPLAY_NAMES,
+            categories=ACTIVE_SUPERVISOR_SELECTED_DISPLAY_NAMES,
             ordered=True,
         )
         selected_acc_df = selected_acc_df.sort_values("display_name").reset_index(drop=True)
@@ -7213,7 +7240,7 @@ import json
 from matplotlib.lines import Line2D
 
 DPI = 220
-REQ = list(SUPERVISOR_SELECTED_INTERNAL_METHODS)
+REQ = list(ACTIVE_SUPERVISOR_SELECTED_INTERNAL_METHODS)
 SUPERVISOR_VARIANT_ORDER = ["Base", "KD (T=2)", "Factor-Orth", "KD + Factor-Orth"]
 VARIANT = {"simple_avg":"Base","rank_extension":"Base","simple_avg_factor_orth":"Factor-Orth","rank_extension_orth_factor_lam_50":"Factor-Orth","simple_avg_kd_T2":"KD (T=2)","rank_extension_kd_only_T2":"KD (T=2)","simple_avg_factor_orth_kd_T2":"KD + Factor-Orth","rank_extension_orth_factor_lam_50_kd_T2":"KD + Factor-Orth"}
 VCOL = {"Base":"#1f77b4","KD (T=2)":"#ff7f0e","Factor-Orth":"#d62728","KD + Factor-Orth":"#2ca02c"}
@@ -7326,7 +7353,7 @@ def cfg_df():
     return c.reset_index(drop=True)
 CFG=cfg_df()
 js(Path(CONFIGS_DIR)/"run_config.json", {"run_name":RUN_NAME,"run_tag":RUN_TAG,"base_output_dir":BASE_OUTPUT_DIR,"model_checkpoint":MODEL_CHECKPOINT,"seed":SEED,"num_steps":NUM_STEPS,"classes_per_step":CLASSES_PER_STEP,"lora_rank":LORA_R,"lora_alpha":LORA_ALPHA,"lora_alpha_note":"lora_rank/lora_alpha above describe simple_avg only; rank_extension is family-conditional, see rankext_rank_schedule_active / rankext_alpha_per_rank / rankext_lora_alpha_active","lora_dropout":LORA_DROPOUT,"target_modules_default":TARGET_MODULES,"target_modules_by_family":{k:list(v) for k,v in TARGET_MODULES_BY_FAMILY.items()},"lambda_orth":LAMBDA_ORTH,"kd_temperatures":KD_TEMPERATURES,"kd_weight":KD_WEIGHT,"optimizer":"AdamW","scheduler":SCHED,"batch_size":BATCH_LORA,"use_classifier_calibration_master_switch":bool(USE_CLASSIFIER_CALIBRATION),"classifier_calibration_by_family":dict(CALIBRATION_ENABLED_FAMILIES),"classifier_calibration_mode_by_family":dict(CALIBRATION_MODE_BY_FAMILY),"rankext_family_aware_calibration_enabled":bool(RANKEXT_FAMILY_AWARE_CALIBRATION_ENABLED),"rankext_confidence_weighted_calibration_enabled":bool(RANKEXT_CONFIDENCE_WEIGHTED_CALIBRATION_ENABLED),"head_lr_multiplier_default":float(HEAD_LR_MULTIPLIER),"head_lr_multiplier_by_family":{k:float(v) for k,v in HEAD_LR_MULTIPLIER_BY_FAMILY.items()},"rankext_rank_schedule_active":active_rankext_rank_schedule(),"rankext_rank_schedule_wide_enabled":bool(USE_RANKEXT_RANK_SCHEDULE_WIDE),"rankext_alpha_per_rank":float(RANKEXT_ALPHA_PER_RANK),"rankext_lora_alpha_active":float(active_rankext_lora_alpha()),"rankext_more_params_than_simple_avg":bool(USE_RANKEXT_RANK_SCHEDULE_WIDE),"rankext_orth_lambda_warmup_enabled":bool(RANKEXT_ORTH_LAMBDA_WARMUP_ENABLED),"rankext_orth_lambda_warmup_epochs":float(RANKEXT_ORTH_LAMBDA_WARMUP_EPOCHS),"combined_loss_scale_enabled":bool(COMBINED_LOSS_SCALE_ENABLED),"combined_lambda_orth_scale":float(COMBINED_LAMBDA_ORTH_SCALE),"combined_kd_weight_scale":float(COMBINED_KD_WEIGHT_SCALE),"combined_orth_warmup_enabled":bool(COMBINED_ORTH_WARMUP_ENABLED),"combined_orth_warmup_epochs":float(COMBINED_ORTH_WARMUP_EPOCHS),"growing_overfitting_diagnostics_enabled":bool(GROWING_OVERFITTING_DIAGNOSTICS_ENABLED),"growing_overfitting_val_ce_rise_threshold":float(GROWING_OVERFITTING_VAL_CE_RISE_THRESHOLD),"rankext_new_block_warmup_enabled":bool(RANKEXT_NEW_BLOCK_WARMUP_ENABLED),"rankext_new_block_warmup_epochs":float(RANKEXT_NEW_BLOCK_WARMUP_EPOCHS)})
-js(Path(CONFIGS_DIR)/"supervisor_selected_methods.json", SUPERVISOR_SELECTED_METHOD_SPECS)
+js(Path(CONFIGS_DIR)/"supervisor_selected_methods.json", ACTIVE_SUPERVISOR_SELECTED_METHOD_SPECS)
 js(Path(CONFIGS_DIR)/"hyperparameters_by_method.json", CFG.to_dict("records"))
 
 def epoch_table():
@@ -7523,7 +7550,7 @@ hp_note="Delta-trace and factor-orth variants use the same main hyperparameters 
 txt(Path(REPORTS_DIR)/"hyperparameter_consistency_notes.txt", "Hyperparameter consistency notes\n================================\n\n"+hp_note)
 
 def heat(df, cols, name, title):
-    d=df.copy(); d["display_method_name"]=pd.Categorical(d.display_method_name, SUPERVISOR_SELECTED_DISPLAY_NAMES, ordered=True); d=d.sort_values("display_method_name"); mat=d.set_index("display_method_name")[cols].apply(pd.to_numeric, errors="coerce")
+    d=df.copy(); d["display_method_name"]=pd.Categorical(d.display_method_name, ACTIVE_SUPERVISOR_SELECTED_DISPLAY_NAMES, ordered=True); d=d.sort_values("display_method_name"); mat=d.set_index("display_method_name")[cols].apply(pd.to_numeric, errors="coerce")
     fig,ax=plt.subplots(figsize=(max(8,1.4*len(cols)+5), max(5,.55*len(mat)+2))); im=ax.imshow(mat.values, aspect="auto", cmap="YlGnBu")
     ax.set_xticks(range(len(cols))); ax.set_xticklabels(cols, rotation=25, ha="right"); ax.set_yticks(range(len(mat))); ax.set_yticklabels(mat.index); ax.set_title(title, fontweight="bold")
     for i in range(mat.shape[0]):
@@ -7557,7 +7584,7 @@ def _plot_per_task_heatmap():
         _pt = per_step_acc_df.copy()
         _pt["display_method_name"] = _pt["method"].map(METHOD_DISPLAY_NAME_MAP).fillna(_pt["method"])
         _pt_mat = _pt.pivot(index="display_method_name", columns="step_id", values="accuracy")
-        _pt_mat = _pt_mat.reindex(SUPERVISOR_SELECTED_DISPLAY_NAMES)
+        _pt_mat = _pt_mat.reindex(ACTIVE_SUPERVISOR_SELECTED_DISPLAY_NAMES)
         _pt_mat.columns = [f"step_{c}" for c in _pt_mat.columns]
         fig, ax = plt.subplots(figsize=(max(8, 1.4 * len(_pt_mat.columns) + 5), max(5, .55 * len(_pt_mat) + 2)))
         im = ax.imshow(_pt_mat.values, aspect="auto", cmap="YlGnBu")

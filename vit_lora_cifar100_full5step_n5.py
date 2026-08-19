@@ -3315,7 +3315,7 @@ def calibrate_classifier_row_norms(model, eps=1e-8, mode="global", uses_kd=False
 
 def calibrate_classifier_row_norms_confidence_weighted(
     model, epoch_loss_rows, method_name, eps=1e-8, uses_kd=False,
-    gamma=0.5, boost_min=0.85, boost_max=1.3,
+    gamma=0.5, boost_min=1.0, boost_max=1.3,
 ):
     """
     FIX 2 (analysis_recency_fix2/report.txt): confidence-weighted regime-

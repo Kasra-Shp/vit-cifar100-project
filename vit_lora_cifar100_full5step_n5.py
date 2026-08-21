@@ -436,6 +436,31 @@ RANKEXT_CONFIDENCE_WEIGHTED_CALIBRATION_ENABLED = True
 # knob to lower.
 RANKEXT_PRETRAINED_ANCHOR_WEIGHT = 1.0
 
+# OLD-CLASS SEMANTIC-SUBSPACE PROJECTED FEATURE CONSOLIDATION (R6 follow-up,
+# 2026-08-21): additive training-side mechanism, KD RankExt methods only (see
+# RANKEXT_PROJECTED_PROTECT_METHODS below). Motivation (R6 NCM/staleness
+# analysis): old-representation drift -- the shared backbone's embedding of an
+# already-learned class keeps moving as later steps add new LoRA rank blocks
+# into the SAME weight matrices -- is the primary diagnosed failure mechanism
+# (frozen NCM prototypes go stale monotonically with age; cross-step/new-class
+# overlap may also contribute but is not separately established by the current
+# diagnostics). This loss penalizes the component of each current-step
+# training image's student-vs-previous-step-teacher feature displacement that
+# falls inside the subspace spanned by the teacher's already-learned
+# classifier-row directions -- i.e. "don't move old-class-relevant directions
+# more than necessary while learning new classes," leaving the orthogonal
+# (plausibly new-class-relevant) directions completely free. Never applied to
+# old images (current-step images only, teacher forward is no_grad) --
+# compatible with strict no-replay CIL. Weight kept at 1.0 as the initial,
+# untuned value pending a real training run; see
+# RANKEXT_PROJECTED_FEATURE_PROTECT_WEIGHT's own comment below for the sweep
+# plan.
+RANKEXT_PROJECTED_PROTECT_METHODS = {
+    "rank_extension_kd_only_T2",
+    "rank_extension_orth_factor_lam_50_kd_T2",
+}
+RANKEXT_PROJECTED_FEATURE_PROTECT_WEIGHT = 1.0
+
 # Master switch above still gates calibration overall (False disables it for
 # every method, same as before). When True, CALIBRATION_ENABLED_FAMILIES
 # decides which families actually get it. simple_avg: keep True (empirically
@@ -1380,28 +1405,6 @@ classifier_row_norm_diagnostic_rows = []
 # applied, not just the resulting row norms (which classifier_row_norm_
 # diagnostic_rows above already covers).
 classifier_confidence_calibration_diagnostic_rows = []
-# STRICT NCM PROTOTYPE MEMORY (R6 follow-up, 2026-08-21): ADDITIVE side-by-
-# side evaluation path only -- see extract_step_prototypes() /
-# run_ncm_evaluation() below for what populates these. Never read by, and
-# never feeds back into, the existing linear-classifier eval_rows /
-# per_step_accuracy_rows / method_summary_rows results above; scoped to
-# NCM_METHODS only (the two KD RankExt methods), all other methods leave
-# these accumulators/store empty, same empty-DataFrame-with-explicit-columns
-# convention as every other diagnostic table in this file.
-NCM_METHODS = {"rank_extension_kd_only_T2", "rank_extension_orth_factor_lam_50_kd_T2"}
-# {method_name: {class_id: L2-normalized mean-feature prototype tensor}}.
-# Populated once per class, immediately after that class's own step finishes
-# training (current-step TRAINING images only -- never validation, never a
-# later step's images); NEVER recomputed afterwards. Only the resulting
-# [hidden_size] vector is kept -- no raw images, no per-image features.
-ncm_prototype_store = {m: {} for m in NCM_METHODS}
-# {method_name: {class_id: step_id (1-indexed) the prototype was learned at}}
-# -- staleness/age bookkeeping only, never used in the prediction rule.
-ncm_prototype_step_learned = {m: {} for m in NCM_METHODS}
-ncm_prototype_memory_rows = []      # method, step_id, num_prototypes, hidden_size, memory_bytes_fp32
-ncm_per_step_accuracy_rows = []     # method, step_id, accuracy_open_ncm, n_images
-ncm_vs_baseline_summary_rows = []   # method, eval_set, accuracy_baseline_pct, accuracy_ncm_pct, delta_pp, n_images
-ncm_staleness_diagnostic_rows = []  # method, step_id, prototype_age_steps, mean_cos_own_prototype, mean_cos_best_other_prototype, own_minus_other_cos_gap
 # PRE-THESIS FIX 2: {method_name: {step_idx: {task_step: accuracy_fraction}}} --
 # only populated for rank_extension family (the only family with a genuinely
 # evolving model to checkpoint mid-training); used to draw a true forgetting
@@ -3552,194 +3555,6 @@ def log_rankext_drift_diagnostics(model, method_name, eps=1e-8):
             model.train()
 
 
-# =============================================================================
-# STRICT NCM PROTOTYPE MEMORY (R6 follow-up, 2026-08-21)
-# =============================================================================
-# Additional side-by-side classifier decision rule for the two KD RankExt
-# methods (NCM_METHODS), evaluated ALONGSIDE the existing linear-classifier
-# results -- never in place of them. See the R6 NCM protocol review for the
-# design rationale: one frozen, L2-normalized mean-feature prototype per
-# class, computed exactly once (right after that class's own step finishes
-# training) from that class's CURRENT-STEP TRAINING images only, then never
-# touched again. No task ID at inference, no old-image replay, no cumulative
-# old-validation reuse, no learned scale/temperature/bias, no row-norm
-# calibration, no prototype gradient training.
-
-
-def extract_step_prototypes(model, method_name, step_idx, eps=1e-8):
-    """Compute one L2-normalized mean-feature prototype per class introduced
-    at `step_idx`, using ONLY that class's current-step TRAINING images (never
-    validation, never replay, never a later step's images), through `model`
-    exactly as it stands right after this step's own training + best-epoch
-    restoration (the same object run_rank_extension_variant()'s per-step loop
-    already has in hand -- no separate checkpoint reload, no extra training).
-
-    Deterministic preprocessing (val_transform: resize + normalize only, no
-    random-crop/flip/color-jitter) is used for this extra forward pass so the
-    prototype is a stable class mean rather than an artifact of one random
-    augmentation draw -- this does not touch how the model was actually
-    trained, only how this diagnostic embeds the (same) images afterward.
-
-    Stores only the resulting [hidden_size] vector per class into the
-    module-global ncm_prototype_store (moved to CPU); the per-image features
-    and the DataLoader are discarded when this function returns -- no raw
-    images and no per-image features persist past this call. No-op if
-    method_name is not in NCM_METHODS.
-    """
-    if method_name not in NCM_METHODS:
-        return
-
-    current_classes = classes_for_step(step_idx)
-    proto_ds = filter_by_classes(train_source, current_classes).with_transform(preprocess_val)
-    loader = torch.utils.data.DataLoader(proto_ds, batch_size=32, shuffle=False, collate_fn=collate_fn)
-
-    device = next(model.parameters()).device
-    was_training = model.training
-    model.eval()
-
-    feat_sum = {int(c): None for c in current_classes}
-    feat_count = {int(c): 0 for c in current_classes}
-
-    with torch.no_grad():
-        for batch in loader:
-            pixel_values = batch["pixel_values"].to(device)
-            labels = batch["labels"].to(device)
-            feats = model.vision_model(pixel_values=pixel_values, return_dict=True).pooler_output
-            for c in current_classes:
-                mask = labels == int(c)
-                if not bool(mask.any()):
-                    continue
-                cls_sum = feats[mask].sum(dim=0)
-                feat_sum[int(c)] = cls_sum if feat_sum[int(c)] is None else feat_sum[int(c)] + cls_sum
-                feat_count[int(c)] += int(mask.sum().item())
-
-    if was_training:
-        model.train()
-
-    for c in current_classes:
-        c = int(c)
-        if feat_count[c] == 0:
-            raise ValueError(f"NCM prototype: no training images found for class {c} at step {step_idx} (method={method_name})")
-        mean_feat = feat_sum[c] / feat_count[c]
-        norm = mean_feat.norm().clamp_min(eps)
-        ncm_prototype_store[method_name][c] = (mean_feat / norm).detach().to("cpu")
-        ncm_prototype_step_learned[method_name][c] = step_idx + 1
-
-    n_protos = len(ncm_prototype_store[method_name])
-    hidden_size = int(model.vision_model.config.hidden_size)
-    ncm_prototype_memory_rows.append({
-        "method": method_name,
-        "step_id": step_idx + 1,
-        "num_prototypes": n_protos,
-        "hidden_size": hidden_size,
-        "memory_bytes_fp32": int(n_protos * hidden_size * 4),
-    })
-
-
-def run_ncm_evaluation(final_rank_model, method_name, eval_rows):
-    """Side-by-side-only evaluation of the frozen prototype store built during
-    training (see extract_step_prototypes()) against `final_rank_model`'s
-    TEST-set accuracy -- the exact same `dataset["test"]`-derived eval_ds
-    objects (eval_first/eval_later/eval_all_seen/make_eval_dataset(...)) the
-    existing baseline linear-classifier evaluation already uses, so the two
-    decision rules are compared on identical query sets. Strictly additive
-    and read-only: never mutates final_rank_model or any weight (pure
-    torch.no_grad() forward passes), never touches eval_rows/
-    per_step_accuracy_rows/method_summary_rows or any other existing
-    accumulator. No-op if method_name is not in NCM_METHODS.
-
-    Query features are L2-normalized; prediction is argmax cosine similarity
-    against the full frozen prototype store (open, no task ID). All accuracy
-    values recorded here are PERCENT (0-100) -- `eval_rows`'s in-memory
-    "accuracy" field is a FRACTION (0-1), so it is explicitly multiplied by
-    100 below before being placed alongside the NCM percent column, to avoid
-    the unit mismatch the now-reverted cosine-classifier report had.
-    """
-    if method_name not in NCM_METHODS:
-        return
-
-    proto_dict = ncm_prototype_store[method_name]
-    assert len(proto_dict) == NUM_CLASSES, (
-        f"NCM prototype store incomplete for {method_name}: "
-        f"{len(proto_dict)}/{NUM_CLASSES} classes present"
-    )
-    assert sorted(proto_dict.keys()) == list(range(NUM_CLASSES)), (
-        f"NCM prototype store class ids for {method_name} are not a dense "
-        f"0..{NUM_CLASSES - 1} range -- class-id-as-row-index shortcut below is unsafe"
-    )
-    proto_matrix = torch.stack([proto_dict[c] for c in range(NUM_CLASSES)], dim=0)
-
-    device = next(final_rank_model.parameters()).device
-    proto_matrix = proto_matrix.to(device)
-
-    was_training = final_rank_model.training
-    final_rank_model.eval()
-
-    def _run(eval_ds, eps=1e-8):
-        loader = torch.utils.data.DataLoader(eval_ds, batch_size=32, shuffle=False, collate_fn=collate_fn)
-        n_correct, n_total = 0, 0
-        own_cos_sum, other_cos_sum = 0.0, 0.0
-        with torch.no_grad():
-            for batch in loader:
-                pixel_values = batch["pixel_values"].to(device)
-                labels = batch["labels"].to(device)
-                feats = final_rank_model.vision_model(pixel_values=pixel_values, return_dict=True).pooler_output
-                feats = feats / feats.norm(dim=1, keepdim=True).clamp_min(eps)
-                sims = feats @ proto_matrix.T
-                pred = sims.argmax(dim=1)
-                n_correct += int((pred == labels).sum().item())
-                n_total += int(labels.shape[0])
-
-                own_sim = sims.gather(1, labels.unsqueeze(1)).squeeze(1)
-                sims_masked = sims.clone()
-                sims_masked.scatter_(1, labels.unsqueeze(1), float("-inf"))
-                best_other_sim = sims_masked.max(dim=1).values
-                own_cos_sum += float(own_sim.sum().item())
-                other_cos_sum += float(best_other_sim.sum().item())
-        acc_pct = 100.0 * n_correct / n_total if n_total > 0 else float("nan")
-        mean_own = own_cos_sum / n_total if n_total > 0 else float("nan")
-        mean_other = other_cos_sum / n_total if n_total > 0 else float("nan")
-        return acc_pct, n_total, mean_own, mean_other
-
-    for step_idx in range(NUM_STEPS):
-        step_id = step_idx + 1
-        acc_pct, n, mean_own, mean_other = _run(make_eval_dataset(classes_for_step(step_idx)))
-        ncm_per_step_accuracy_rows.append({
-            "method": method_name,
-            "step_id": step_id,
-            "accuracy_open_ncm": acc_pct,
-            "n_images": n,
-        })
-        ncm_staleness_diagnostic_rows.append({
-            "method": method_name,
-            "step_id": step_id,
-            "prototype_age_steps": int(NUM_STEPS - step_id),
-            "mean_cos_own_prototype": mean_own,
-            "mean_cos_best_other_prototype": mean_other,
-            "own_minus_other_cos_gap": mean_own - mean_other,
-        })
-
-    baseline_acc_pct = {
-        row["eval_set"]: 100.0 * float(row["accuracy"])
-        for row in eval_rows
-        if row.get("method") == method_name
-    }
-    for eval_set_name, eval_ds in (("first_step", eval_first), ("later_steps", eval_later), ("all_seen", eval_all_seen)):
-        acc_pct, n, _, _ = _run(eval_ds)
-        base_pct = baseline_acc_pct.get(eval_set_name, float("nan"))
-        ncm_vs_baseline_summary_rows.append({
-            "method": method_name,
-            "eval_set": eval_set_name,
-            "accuracy_baseline_pct": base_pct,
-            "accuracy_ncm_pct": acc_pct,
-            "delta_pp": acc_pct - base_pct,
-            "n_images": n,
-        })
-
-    if was_training:
-        final_rank_model.train()
-
-
 def cleanup():
     gc.collect()
     if torch.cuda.is_available():
@@ -5547,6 +5362,88 @@ def collect_rank_block_grad_norms(model, train_ds):
     }
 
 
+# OLD-CLASS SEMANTIC-SUBSPACE PROJECTED FEATURE CONSOLIDATION (R6 follow-up,
+# 2026-08-21): see RANKEXT_PROJECTED_PROTECT_METHODS above for the mechanism
+# writeup. The two helpers below are used only by DeltaOrthRankExtensionTrainer
+# below, gated to KD RankExt methods via the trainer's protect_weight kwarg.
+
+def resolve_post_layernorm(vision_wrapper_model):
+    """Locate the CLIPVisionTransformer's post_layernorm module starting from
+    a CLIPVisionForCIFAR100-wrapped model's OWN `.vision_model` attribute
+    (i.e. pass `some_model.vision_model`, not `some_model`).
+    `CLIPVisionForCIFAR100.vision_model` is a `CLIPVisionModel`, and
+    `CLIPVisionModel` itself has an internal attribute ALSO named
+    `vision_model` (the actual `CLIPVisionTransformer`) -- real HF nesting,
+    not a typo -- so `post_layernorm` can sit at either
+    `vision_wrapper_model.post_layernorm` (if a bare CLIPVisionTransformer/
+    CLIPVisionModel-with-flattened-attrs was passed) or one level deeper at
+    `vision_wrapper_model.vision_model.post_layernorm` (the actual case for
+    this file's models). Resolved defensively (checked both ways) rather than
+    hardcoding the double-`.vision_model` path blindly, since it is easy to
+    get this one wrong. Applying the returned module to a CLS token pulled
+    from an ALREADY-COMPUTED hidden_states[-1] (same forward pass, same
+    dropout draw) reproduces `.pooler_output` exactly (verified empirically:
+    bit-identical to the CLIPVisionModel-returned pooler_output on the same
+    input) -- this lets the projected-feature-consolidation loss below read
+    the STUDENT's pooler_output without a second, independently-stochastic
+    forward pass through the backbone."""
+    if hasattr(vision_wrapper_model, "post_layernorm"):
+        return vision_wrapper_model.post_layernorm
+    if hasattr(vision_wrapper_model, "vision_model") and hasattr(vision_wrapper_model.vision_model, "post_layernorm"):
+        return vision_wrapper_model.vision_model.post_layernorm
+    raise AttributeError(
+        "resolve_post_layernorm: could not locate post_layernorm on the given "
+        "vision backbone at either nesting depth -- CLIP model structure may "
+        "have changed; refusing to guess."
+    )
+
+
+def compute_old_semantic_subspace(teacher_model, old_class_ids, eps=1e-8):
+    """Build an orthonormal basis P_old [hidden_size, k] of the CLASS-
+    DISCRIMINATIVE span of the frozen previous-step teacher's classifier rows
+    for `old_class_ids` (Part 1 of the R6 projected-feature-consolidation
+    design):
+      1. W_old = teacher.classifier.weight[old_class_ids]  (frozen, detached)
+      2. L2-normalize each row individually -> W_hat.
+      3. Remove the rows' common mean direction -> W_tilde (protects
+         class-DISCRIMINATIVE directions, not whatever shared/common
+         component the rows happen to share).
+      4. SVD of W_tilde; P_old's columns are the right singular vectors
+         (row-space basis) whose singular values clear the SAME default
+         numerical-rank tolerance torch.linalg.matrix_rank uses
+         (S.max() * max(rows, cols) * finfo(dtype).eps) -- k is therefore
+         the ACTUAL supported rank of this specific (mean-removed) row
+         matrix, not assumed to equal len(old_class_ids) (mean-removal alone
+         guarantees rank <= len(old_class_ids) - 1).
+
+    Returns None if old_class_ids is empty (step 1: no old subspace exists
+    yet -- caller must treat this as "protection inactive", never as an
+    error) or if the resulting rank is 0. Otherwise returns a CPU float32
+    tensor, fully detached (no grad history whatsoever: computed entirely
+    inside torch.no_grad() from an already-detached, requires_grad=False
+    teacher weight). Computed ONCE by the caller (Trainer.__init__, before
+    any batch is seen) -- this function does no caching itself, callers must
+    not invoke it per-batch.
+    """
+    old_class_ids = sorted(int(c) for c in old_class_ids)
+    if len(old_class_ids) == 0:
+        return None
+    with torch.no_grad():
+        idx = torch.tensor(old_class_ids, dtype=torch.long)
+        W = teacher_model.classifier.weight.detach().to("cpu", dtype=torch.float32)[idx]  # [C_old, H]
+        W_hat = W / W.norm(dim=1, keepdim=True).clamp_min(eps)                             # L2-normalize rows
+        W_tilde = W_hat - W_hat.mean(dim=0, keepdim=True)                                   # remove common mean
+        _, S, Vh = torch.linalg.svd(W_tilde, full_matrices=False)                           # Vh: [r, H]
+        if S.numel() == 0:
+            return None
+        tol = float(S.max().item()) * max(W_tilde.shape) * torch.finfo(W_tilde.dtype).eps
+        rank_k = int((S > tol).sum().item())
+        if rank_k == 0:
+            return None
+        P_old = Vh[:rank_k].t().contiguous().detach()  # [H, k], orthonormal columns
+    return P_old
+
+
 class DeltaOrthRankExtensionTrainer(RankExtensionTrainer):
     def __init__(
         self,
@@ -5561,6 +5458,7 @@ class DeltaOrthRankExtensionTrainer(RankExtensionTrainer):
         kd_weight=0.0,
         kd_temperature=2.0,
         pretrained_anchor_weight=0.0,
+        protect_weight=0.0,
         **kwargs,
     ):
         super().__init__(*args, **kwargs)
@@ -5592,6 +5490,38 @@ class DeltaOrthRankExtensionTrainer(RankExtensionTrainer):
             for p in self.teacher_model.parameters():
                 p.requires_grad = False
 
+        # OLD-CLASS SEMANTIC-SUBSPACE PROJECTED FEATURE CONSOLIDATION (R6
+        # follow-up, 2026-08-21): see RANKEXT_PROJECTED_PROTECT_METHODS above
+        # for the mechanism writeup. protect_weight is 0.0 for every method
+        # except the two KD RankExt methods (set by run_rank_extension_variant()
+        # below) -- self.P_old stays None whenever protect_weight is 0.0, no
+        # matter what teacher_model/step_idx are, so this block is a true
+        # no-op (zero extra compute, zero extra state) for every other
+        # method, INCLUDING the non-KD rank_extension / rank_extension_orth_
+        # factor_lam_50 methods (whose teacher_model here is the pretrained-
+        # anchor model, not a real classifier checkpoint -- deliberately never
+        # touched). Computed ONCE per step, here in __init__, from the frozen
+        # teacher's classifier rows for classes seen strictly before this
+        # step (classes_for_step(0..step_idx-1)) -- empty at step_idx==0
+        # (step 1), so P_old is None and protection is exactly zero there, no
+        # separate step-1 special case needed anywhere else. self.P_old is
+        # moved to the training device lazily in compute_loss() (mirrors
+        # self._teacher_ready below -- the teacher itself is not yet on
+        # device at this point in __init__ either), never recomputed there.
+        self.protect_weight = float(protect_weight)
+        self.old_class_ids = (
+            sorted(int(c) for s in range(self.step_idx) for c in classes_for_step(s))
+            if (self.protect_weight > 0.0 and self.teacher_model is not None and self.step_idx > 0)
+            else []
+        )
+        self.P_old = (
+            compute_old_semantic_subspace(self.teacher_model, self.old_class_ids)
+            if (self.protect_weight > 0.0 and self.teacher_model is not None and len(self.old_class_ids) > 0)
+            else None
+        )
+        self.protect_k = int(self.P_old.shape[1]) if self.P_old is not None else 0
+        self._protect_ready = False
+
     def compute_loss(self, model, inputs, return_outputs=False, num_items_in_batch=None):
         # RANK_EXT FIRST_STEP FIX: only request hidden_states (mild extra
         # memory/compute in the encoder) when this trainer instance actually
@@ -5605,8 +5535,17 @@ class DeltaOrthRankExtensionTrainer(RankExtensionTrainer):
         # either (features are a training-loss-only concept here; see
         # RankExtensionTrainer.preprocess_logits_for_metrics() /
         # compute_metrics() for the defensive backstop that still applies if
-        # that ever changes).
-        need_hidden = self.pretrained_anchor_weight > 0.0 and model.training
+        # that ever changes). OLD-CLASS SEMANTIC-SUBSPACE PROJECTED FEATURE
+        # CONSOLIDATION (R6 follow-up, 2026-08-21): also requested whenever
+        # protect_weight > 0.0 (KD RankExt methods, steps 2-5 only -- see
+        # __init__ above) -- reuses this SAME hidden_states[-1] CLS token
+        # (post_layernorm'd below) for the student side of the protection
+        # loss instead of a second, independently-stochastic forward pass.
+        # self.protect_weight is 0.0 for every other method/step, so this
+        # `or` is a true no-op there -- need_hidden's value is bit-for-bit
+        # unchanged from before for non-KD methods and for KD methods at
+        # step 1.
+        need_hidden = (self.pretrained_anchor_weight > 0.0 or self.protect_weight > 0.0) and model.training
         outputs = model(**inputs, output_hidden_states=need_hidden)
         ce_loss = outputs.loss
 
@@ -5681,17 +5620,50 @@ class DeltaOrthRankExtensionTrainer(RankExtensionTrainer):
         # CE(+orth) only, same as every other rank_extension variant.
         pretrained_anchor_active = self.teacher_model is not None and self.pretrained_anchor_weight > 0.0 and model.training
 
-        if teacher_active:
+        # OLD-CLASS SEMANTIC-SUBSPACE PROJECTED FEATURE CONSOLIDATION (R6
+        # follow-up, 2026-08-21): protect_active is defined here (ahead of
+        # its own diagnostic-block below) purely so the teacher_active branch
+        # immediately below can decide, in ONE place, whether this same
+        # forward call also needs hidden_states -- see the merged-forward
+        # comment there. protect_loss/diagnostics themselves are still
+        # computed in the protect_active block further down; nothing here
+        # changes what that block computes, only what teacher call it reuses.
+        protect_active = self.protect_weight > 0.0 and self.P_old is not None and model.training
+
+        if teacher_active or protect_active:
             if not self._teacher_ready:
                 self.teacher_model.to(device=ce_loss.device)
                 self.teacher_model.eval()
                 self._teacher_ready = True
+            # SHARED TEACHER FORWARD (R6 follow-up, 2026-08-21): protect_active
+            # is only ever True together with teacher_active for the two KD
+            # RankExt methods this mechanism targets (protect_weight and
+            # kd_weight are both gated on the identical `use_kd and
+            # teacher_model is not None` condition in run_rank_extension_
+            # variant() below), so ONE forward through self.teacher_model
+            # serves both existing KD (logits) and the projected-protection
+            # loss (pooled CLS features) -- output_hidden_states is requested
+            # on this SAME call, rather than issuing a second, independent
+            # teacher forward. output_hidden_states does not change the
+            # computed logits at all (same forward graph, same numbers, only
+            # what gets additionally collected/returned) -- teacher_logits/
+            # kd_loss below are therefore numerically IDENTICAL to before this
+            # refactor. Written defensively with `teacher_active or
+            # protect_active` (rather than assuming they always co-occur) so
+            # this stays correct even if a future config sets kd_weight=0
+            # while protect_weight>0 for some method.
             with torch.no_grad():
-                teacher_outputs = self.teacher_model(**inputs)
-                teacher_logits = teacher_outputs.logits.detach()
-            student_log_probs = F.log_softmax(outputs.logits / self.kd_temperature, dim=-1)
-            teacher_probs = F.softmax(teacher_logits / self.kd_temperature, dim=-1)
-            kd_loss = F.kl_div(student_log_probs, teacher_probs, reduction="batchmean") * (self.kd_temperature ** 2)
+                teacher_outputs = self.teacher_model(**inputs, output_hidden_states=protect_active)
+                if protect_active:
+                    teacher_post_ln = resolve_post_layernorm(self.teacher_model.vision_model)
+                    teacher_pooled_for_protect = teacher_post_ln(teacher_outputs.hidden_states[-1][:, 0, :])
+                if teacher_active:
+                    teacher_logits = teacher_outputs.logits.detach()
+
+            if teacher_active:
+                student_log_probs = F.log_softmax(outputs.logits / self.kd_temperature, dim=-1)
+                teacher_probs = F.softmax(teacher_logits / self.kd_temperature, dim=-1)
+                kd_loss = F.kl_div(student_log_probs, teacher_probs, reduction="batchmean") * (self.kd_temperature ** 2)
 
         if pretrained_anchor_active:
             if not self._teacher_ready:
@@ -5703,9 +5675,65 @@ class DeltaOrthRankExtensionTrainer(RankExtensionTrainer):
             student_hidden = outputs.hidden_states[-1][:, 0, :]
             pretrained_anchor_loss = (1.0 - F.cosine_similarity(student_hidden, teacher_hidden, dim=-1)).mean()
 
+        # OLD-CLASS SEMANTIC-SUBSPACE PROJECTED FEATURE CONSOLIDATION (R6
+        # follow-up, 2026-08-21): see RANKEXT_PROJECTED_PROTECT_METHODS above
+        # for the mechanism writeup and __init__ above for P_old's
+        # construction (frozen, computed once per step from the teacher's
+        # OLD-class classifier rows only -- never the live student, never an
+        # old image). protect_active itself was already computed above (ahead
+        # of the shared teacher-forward block) -- not redefined here, just
+        # reused. protect_active is False whenever P_old is None (step 1, or
+        # protect_weight==0.0 for every non-KD-RankExt / non-selected
+        # method), so this block never runs there -- non-selected methods are
+        # bit-for-bit unaffected. eval-time gated off by model.training, same
+        # reasoning as pretrained_anchor_active above.
+        protect_loss = torch.tensor(0.0, device=ce_loss.device, dtype=ce_loss.dtype)
+        protect_mean_cos = float("nan")
+        protect_mean_full_drift_sq = float("nan")
+        protect_mean_projected_drift_sq = float("nan")
+        protect_mean_projected_drift_fraction = float("nan")
+
+        if protect_active:
+            if not self._protect_ready:
+                self.P_old = self.P_old.to(device=ce_loss.device, dtype=torch.float32)
+                self._protect_ready = True
+            # Teacher: teacher_pooled_for_protect was already computed above,
+            # inside the SAME no_grad forward that also produced teacher_logits
+            # for the existing KD loss -- no separate teacher forward here.
+            teacher_pooled = teacher_pooled_for_protect
+            # Student: reuse the CLS token already computed by the ONE
+            # `outputs = model(...)` call above (need_hidden guarantees
+            # output_hidden_states=True whenever protect_active can be True)
+            # and apply the model's own post_layernorm -- exactly reproduces
+            # pooler_output (verified empirically bit-identical) WITHOUT a
+            # second, independently-stochastic (dropout) forward pass through
+            # the student backbone.
+            post_ln = resolve_post_layernorm(model.vision_model)
+            student_pooled = post_ln(outputs.hidden_states[-1][:, 0, :])
+
+            z_s = F.normalize(student_pooled.to(torch.float32), p=2, dim=1, eps=1e-8)
+            z_t = F.normalize(teacher_pooled.to(torch.float32), p=2, dim=1, eps=1e-8)
+            delta_z = z_s - z_t                                    # [B, H], grad flows via z_s only
+            proj = delta_z @ self.P_old                            # [B, k]
+            # L_protect = (1/(B*k)) * ||Delta Z @ P_old||_F^2 == mean over all
+            # B*k projected entries -- equivalent formulation, avoids an
+            # explicit (and error-prone) manual B*k division.
+            protect_loss = proj.pow(2).mean().to(dtype=ce_loss.dtype)
+
+            with torch.no_grad():
+                full_drift_sq = delta_z.pow(2).sum(dim=1)          # [B]
+                proj_drift_sq = proj.pow(2).sum(dim=1)              # [B]
+                protect_mean_cos = float((z_s * z_t).sum(dim=1).mean().item())
+                protect_mean_full_drift_sq = float(full_drift_sq.mean().item())
+                protect_mean_projected_drift_sq = float(proj_drift_sq.mean().item())
+                protect_mean_projected_drift_fraction = float(
+                    (proj_drift_sq / full_drift_sq.clamp_min(1e-8)).mean().item()
+                )
+
         weighted_kd = float(self.kd_weight) * kd_loss
         weighted_pretrained_anchor = float(self.pretrained_anchor_weight) * pretrained_anchor_loss
-        loss = ce_loss + weighted + weighted_kd + weighted_pretrained_anchor
+        weighted_protect = float(self.protect_weight) * protect_loss
+        loss = ce_loss + weighted + weighted_kd + weighted_pretrained_anchor + weighted_protect
 
         ce_v = float(ce_loss.detach().cpu().item())
         raw_inner_v = float(raw_inner.detach().cpu().item())
@@ -5715,6 +5743,8 @@ class DeltaOrthRankExtensionTrainer(RankExtensionTrainer):
         weighted_v = float(weighted.detach().cpu().item())
         kd_loss_v = float(kd_loss.detach().cpu().item())
         weighted_kd_v = float(weighted_kd.detach().cpu().item())
+        protect_loss_v = float(protect_loss.detach().cpu().item())
+        weighted_protect_v = float(weighted_protect.detach().cpu().item())
         total_loss_v = float(loss.detach().cpu().item())
         ratio_v = abs(weighted_v) / (ce_v + float(self.orth_eps))
         factor_a_v = float(comps["factor_A_mean"].detach().cpu().item())
@@ -5769,6 +5799,22 @@ class DeltaOrthRankExtensionTrainer(RankExtensionTrainer):
             "pretrained_anchor_over_CE": float(weighted_pretrained_anchor.detach().cpu().item()) / (ce_v + float(self.orth_eps)),
             "pretrained_anchor_weight": float(self.pretrained_anchor_weight),
             "pretrained_anchor_active": bool(pretrained_anchor_active),
+            # OLD-CLASS SEMANTIC-SUBSPACE PROJECTED FEATURE CONSOLIDATION (R6
+            # follow-up, 2026-08-21): stays 0.0/False/0/NaN for every method
+            # except the two KD RankExt methods at steps 2-5 (protect_weight
+            # is 0.0 everywhere else, and P_old is None at step 1 even for
+            # those two methods -- see __init__ above).
+            "protect_loss": protect_loss_v,
+            "weighted_protect_loss": weighted_protect_v,
+            "protect_over_CE": weighted_protect_v / (ce_v + float(self.orth_eps)),
+            "protect_weight": float(self.protect_weight),
+            "protect_active": bool(protect_active),
+            "protect_k": int(self.protect_k),
+            "protect_n_old_classes": int(len(self.old_class_ids)),
+            "protect_mean_student_teacher_cos": protect_mean_cos,
+            "protect_mean_full_drift_sq": protect_mean_full_drift_sq,
+            "protect_mean_projected_drift_sq": protect_mean_projected_drift_sq,
+            "protect_mean_projected_drift_fraction": protect_mean_projected_drift_fraction,
             "total_loss": total_loss_v,
             "effective_lambda": float(effective_lambda_orth),
         }
@@ -5779,9 +5825,12 @@ class DeltaOrthRankExtensionTrainer(RankExtensionTrainer):
                 f"[orth train] method={self.method_name} | step={row['step']} | epoch={row['epoch']:.4f} | "
                 f"ce={row['ce_loss']:.6f} | orth={row['orth_loss_used']:.6f} | "
                 f"kd={row['kd_loss']:.6f} | anchor={row['pretrained_anchor_loss']:.6f} | "
+                f"protect={row['protect_loss']:.6f} (k={row['protect_k']}, "
+                f"n_old={row['protect_n_old_classes']}, r={row['protect_mean_projected_drift_fraction']:.4f}) | "
                 f"total={row['total_loss']:.6f} | "
                 f"lambda={row['lambda_orth']:.6g} (warmup x{row['lambda_orth_warmup_multiplier']:.3g}) | "
                 f"kd_weight={row['kd_weight']:.6g} | anchor_weight={row['pretrained_anchor_weight']:.6g} | "
+                f"protect_weight={row['protect_weight']:.6g} | "
                 f"ratio={row['orth_ratio_abs_weighted_over_ce']:.6f}"
             )
 
@@ -6080,6 +6129,22 @@ def run_rank_extension_variant(
             "kd_weight": active_kd_weight if (use_kd and teacher_model is not None) else 0.0,
             "kd_temperature": active_kd_temperature,
             "pretrained_anchor_weight": RANKEXT_PRETRAINED_ANCHOR_WEIGHT if (not use_kd and teacher_model is not None) else 0.0,
+            # OLD-CLASS SEMANTIC-SUBSPACE PROJECTED FEATURE CONSOLIDATION (R6
+            # follow-up, 2026-08-21): nonzero ONLY for the two methods in
+            # RANKEXT_PROJECTED_PROTECT_METHODS, and only when this is a real
+            # KD step with a real previous-step teacher checkpoint (use_kd
+            # and teacher_model is not None -- same condition kd_weight above
+            # already uses; step_idx==0 has teacher_model is None already, so
+            # no separate step-1 check is needed here either). 0.0 for every
+            # other method, INCLUDING the two non-KD rank_extension methods
+            # (whose teacher_model is the pretrained-anchor model, never a
+            # real classifier checkpoint) -- existing KD activation logic
+            # above (kd_weight, teacher_model construction) is untouched.
+            "protect_weight": (
+                RANKEXT_PROJECTED_FEATURE_PROTECT_WEIGHT
+                if (method_name in RANKEXT_PROJECTED_PROTECT_METHODS and use_kd and teacher_model is not None)
+                else 0.0
+            ),
         }
 
         total_rank, frozen_rank, new_rank = get_rank_extension_rank_triplet(step_idx)
@@ -6156,13 +6221,6 @@ def run_rank_extension_variant(
         for h in hooks:
             h.remove()
 
-        # STRICT NCM PROTOTYPE MEMORY (R6 follow-up, 2026-08-21): additive,
-        # no-op unless method_name in NCM_METHODS. Runs on the SAME `model`
-        # object this step's training + best-epoch restoration just produced,
-        # using ONLY this step's own current-step training images. See
-        # extract_step_prototypes()'s docstring.
-        extract_step_prototypes(model, method_name, step_idx)
-
         previous_rank_state = extract_rank_extension_state(model)
         if teacher_model is not None:
             del teacher_model
@@ -6221,15 +6279,6 @@ def run_rank_extension_variant(
     # diagonal a_i,i already collected in stepwise_task_accuracies during
     # training, plus forward_transfer from the zero-shot probes collected above.
     final_per_step_accuracy = evaluate_per_step_accuracy(final_rank_model, method_name)
-
-    # STRICT NCM PROTOTYPE MEMORY (R6 follow-up, 2026-08-21): strictly
-    # additive side-by-side diagnostic/eval path, no-op for any method_name
-    # not in NCM_METHODS. Runs on the exact same final_rank_model the
-    # baseline eval_rows above were just computed on (post-training, post-
-    # calibration) -- never retrains, never touches final_rank_model's
-    # weights. See run_ncm_evaluation()'s docstring.
-    run_ncm_evaluation(final_rank_model, method_name, eval_rows)
-
     diagonal_accuracy = {
         step_idx: stepwise_task_accuracies[step_idx].get(step_idx, np.nan)
         for step_idx in stepwise_task_accuracies
@@ -6562,6 +6611,51 @@ if len(train_diag_df) > 0:
     train_diag_df["train_factor_orth_weighted_over_ce"] = safe_ratio(train_diag_df["train_factor_orth_loss_weighted"], train_diag_df["train_ce_loss"])
     train_diag_df = train_diag_df.sort_values(["method", "step_id", "epoch", "epoch_id"]).reset_index(drop=True)
 
+    # OLD-CLASS SEMANTIC-SUBSPACE PROJECTED FEATURE CONSOLIDATION (R6
+    # follow-up, 2026-08-21): dedicated per-(method, step) diagnostic table,
+    # built directly from train_diag_df (already filtered to REQ methods)
+    # rather than by adding columns to the existing hardcoded
+    # loss_component_cols / train_epoch_df groupby list above (which does not
+    # currently carry the analogous pretrained_anchor_* columns either --
+    # kept consistent with that precedent, and lower-risk than touching a
+    # shared, hardcoded schema). Aggregated ONLY over rows where
+    # protect_active is True, so a method/step with the mechanism inactive
+    # (every non-KD-RankExt method; step 1 for the two KD RankExt methods)
+    # is simply ABSENT from this table rather than diluting the mean with
+    # placeholder 0.0/NaN batch rows.
+    protect_active_rows = train_diag_df[train_diag_df.get("protect_active", False) == True].copy() if "protect_active" in train_diag_df else pd.DataFrame()
+    if len(protect_active_rows) > 0:
+        protect_diag_df = (
+            protect_active_rows.groupby(["method", "step_id"], as_index=False)
+            .agg(
+                protect_weight=("protect_weight", "first"),
+                protect_k=("protect_k", "first"),
+                protect_n_old_classes=("protect_n_old_classes", "first"),
+                n_batches=("protect_loss", "size"),
+                mean_protect_loss_raw=("protect_loss", "mean"),
+                final_protect_loss_raw=("protect_loss", "last"),
+                mean_protect_loss_weighted=("weighted_protect_loss", "mean"),
+                final_protect_loss_weighted=("weighted_protect_loss", "last"),
+                mean_student_teacher_cos=("protect_mean_student_teacher_cos", "mean"),
+                mean_full_drift_sq=("protect_mean_full_drift_sq", "mean"),
+                mean_projected_drift_sq=("protect_mean_projected_drift_sq", "mean"),
+                mean_projected_drift_fraction=("protect_mean_projected_drift_fraction", "mean"),
+            )
+            .sort_values(["method", "step_id"])
+            .reset_index(drop=True)
+        )
+    else:
+        protect_diag_df = pd.DataFrame(columns=[
+            "method", "step_id", "protect_weight", "protect_k", "protect_n_old_classes", "n_batches",
+            "mean_protect_loss_raw", "final_protect_loss_raw",
+            "mean_protect_loss_weighted", "final_protect_loss_weighted",
+            "mean_student_teacher_cos", "mean_full_drift_sq", "mean_projected_drift_sq",
+            "mean_projected_drift_fraction",
+        ])
+    protect_diag_path = os.path.join(TABLES_DIR, "rankext_projected_protection_diagnostics_by_method_step.csv")
+    protect_diag_df.to_csv(protect_diag_path, index=False)
+    print("Saved old-class semantic-subspace protection diagnostics:", protect_diag_path)
+
     train_epoch_df = (
         train_diag_df.groupby(
             [
@@ -6611,6 +6705,20 @@ else:
         "rank_schedule",
         "target_modules",
     ] + loss_component_cols)
+    # OLD-CLASS SEMANTIC-SUBSPACE PROJECTED FEATURE CONSOLIDATION (R6
+    # follow-up, 2026-08-21): empty-columns fallback so this file always
+    # exists even in the (already-fatal-elsewhere) case where
+    # train_diagnostic_rows was completely empty for every method.
+    protect_diag_df = pd.DataFrame(columns=[
+        "method", "step_id", "protect_weight", "protect_k", "protect_n_old_classes", "n_batches",
+        "mean_protect_loss_raw", "final_protect_loss_raw",
+        "mean_protect_loss_weighted", "final_protect_loss_weighted",
+        "mean_student_teacher_cos", "mean_full_drift_sq", "mean_projected_drift_sq",
+        "mean_projected_drift_fraction",
+    ])
+    protect_diag_path = os.path.join(TABLES_DIR, "rankext_projected_protection_diagnostics_by_method_step.csv")
+    protect_diag_df.to_csv(protect_diag_path, index=False)
+    print("Saved old-class semantic-subspace protection diagnostics (empty fallback):", protect_diag_path)
 
 if len(epoch_val_df) > 0:
     epoch_val_df = epoch_val_df.copy()
@@ -7698,53 +7806,6 @@ else:
 rankext_feature_alignment_diag_path = Path(TABLES_DIR) / "feature_alignment_diagnostics_by_method_step.csv"
 rankext_feature_alignment_diag_df.to_csv(rankext_feature_alignment_diag_path, index=False)
 print("Saved feature-alignment diagnostics:", rankext_feature_alignment_diag_path)
-
-# STRICT NCM PROTOTYPE MEMORY (R6 follow-up, 2026-08-21): side-by-side-only
-# classifier eval -- scope limited to NCM_METHODS (rank_extension_kd_only_T2,
-# rank_extension_orth_factor_lam_50_kd_T2). Never feeds back into, and is
-# never read by, the existing linear-classifier eval_rows/
-# per_step_accuracy_rows/method_summary_rows results above; same
-# empty-DataFrame-with-explicit-columns convention as every other diagnostic
-# table in this file.
-ncm_prototype_memory_df = pd.DataFrame(ncm_prototype_memory_rows)
-if len(ncm_prototype_memory_df) > 0:
-    ncm_prototype_memory_df = ncm_prototype_memory_df[ncm_prototype_memory_df["method"].isin(REQ)].copy()
-    ncm_prototype_memory_df = ncm_prototype_memory_df.sort_values(["method", "step_id"]).reset_index(drop=True)
-else:
-    ncm_prototype_memory_df = pd.DataFrame(columns=["method", "step_id", "num_prototypes", "hidden_size", "memory_bytes_fp32"])
-ncm_prototype_memory_path = Path(TABLES_DIR) / "ncm_prototype_memory_by_method_step.csv"
-ncm_prototype_memory_df.to_csv(ncm_prototype_memory_path, index=False)
-print("Saved NCM prototype memory diagnostics:", ncm_prototype_memory_path)
-
-ncm_per_step_accuracy_df = pd.DataFrame(ncm_per_step_accuracy_rows)
-if len(ncm_per_step_accuracy_df) > 0:
-    ncm_per_step_accuracy_df = ncm_per_step_accuracy_df[ncm_per_step_accuracy_df["method"].isin(REQ)].copy()
-    ncm_per_step_accuracy_df = ncm_per_step_accuracy_df.sort_values(["method", "step_id"]).reset_index(drop=True)
-else:
-    ncm_per_step_accuracy_df = pd.DataFrame(columns=["method", "step_id", "accuracy_open_ncm", "n_images"])
-ncm_per_step_accuracy_path = Path(TABLES_DIR) / "ncm_per_step_accuracy_by_method.csv"
-ncm_per_step_accuracy_df.to_csv(ncm_per_step_accuracy_path, index=False)
-print("Saved NCM per-step accuracy:", ncm_per_step_accuracy_path)
-
-ncm_vs_baseline_summary_df = pd.DataFrame(ncm_vs_baseline_summary_rows)
-if len(ncm_vs_baseline_summary_df) > 0:
-    ncm_vs_baseline_summary_df = ncm_vs_baseline_summary_df[ncm_vs_baseline_summary_df["method"].isin(REQ)].copy()
-    ncm_vs_baseline_summary_df = ncm_vs_baseline_summary_df.sort_values(["method", "eval_set"]).reset_index(drop=True)
-else:
-    ncm_vs_baseline_summary_df = pd.DataFrame(columns=["method", "eval_set", "accuracy_baseline_pct", "accuracy_ncm_pct", "delta_pp", "n_images"])
-ncm_vs_baseline_summary_path = Path(TABLES_DIR) / "ncm_vs_baseline_summary.csv"
-ncm_vs_baseline_summary_df.to_csv(ncm_vs_baseline_summary_path, index=False)
-print("Saved NCM vs baseline summary:", ncm_vs_baseline_summary_path)
-
-ncm_staleness_diag_df = pd.DataFrame(ncm_staleness_diagnostic_rows)
-if len(ncm_staleness_diag_df) > 0:
-    ncm_staleness_diag_df = ncm_staleness_diag_df[ncm_staleness_diag_df["method"].isin(REQ)].copy()
-    ncm_staleness_diag_df = ncm_staleness_diag_df.sort_values(["method", "step_id"]).reset_index(drop=True)
-else:
-    ncm_staleness_diag_df = pd.DataFrame(columns=["method", "step_id", "prototype_age_steps", "mean_cos_own_prototype", "mean_cos_best_other_prototype", "own_minus_other_cos_gap"])
-ncm_staleness_diag_path = Path(TABLES_DIR) / "ncm_staleness_diagnostics_by_method_step.csv"
-ncm_staleness_diag_df.to_csv(ncm_staleness_diag_path, index=False)
-print("Saved NCM staleness diagnostics:", ncm_staleness_diag_path)
 
 
 def per_step_accuracy_json(method_name):

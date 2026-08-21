@@ -1380,18 +1380,28 @@ classifier_row_norm_diagnostic_rows = []
 # applied, not just the resulting row norms (which classifier_row_norm_
 # diagnostic_rows above already covers).
 classifier_confidence_calibration_diagnostic_rows = []
-# COSINE-NORMALIZED CLASSIFIER (R6 gamma=0.65 follow-up, 2026-08-21): ADDITIVE
-# diagnostic/eval path only -- see fit_cosine_classifier_group_scales() /
-# evaluate_cosine_classifier_per_step() below for what populates these. Never
-# read by, and never feeds back into, the existing linear-classifier
-# evaluate_model() / evaluate_per_step_accuracy() results above; scoped to
-# COSINE_CLASSIFIER_METHODS only (the two KD RankExt methods), all other
-# methods leave these four lists empty, same empty-DataFrame-with-explicit-
-# columns convention as every other diagnostic table in this file.
-cosine_classifier_scale_diagnostic_rows = []
-cosine_classifier_scale_grid_search_rows = []
-cosine_classifier_per_step_accuracy_rows = []
-cosine_classifier_vs_baseline_summary_rows = []
+# STRICT NCM PROTOTYPE MEMORY (R6 follow-up, 2026-08-21): ADDITIVE side-by-
+# side evaluation path only -- see extract_step_prototypes() /
+# run_ncm_evaluation() below for what populates these. Never read by, and
+# never feeds back into, the existing linear-classifier eval_rows /
+# per_step_accuracy_rows / method_summary_rows results above; scoped to
+# NCM_METHODS only (the two KD RankExt methods), all other methods leave
+# these accumulators/store empty, same empty-DataFrame-with-explicit-columns
+# convention as every other diagnostic table in this file.
+NCM_METHODS = {"rank_extension_kd_only_T2", "rank_extension_orth_factor_lam_50_kd_T2"}
+# {method_name: {class_id: L2-normalized mean-feature prototype tensor}}.
+# Populated once per class, immediately after that class's own step finishes
+# training (current-step TRAINING images only -- never validation, never a
+# later step's images); NEVER recomputed afterwards. Only the resulting
+# [hidden_size] vector is kept -- no raw images, no per-image features.
+ncm_prototype_store = {m: {} for m in NCM_METHODS}
+# {method_name: {class_id: step_id (1-indexed) the prototype was learned at}}
+# -- staleness/age bookkeeping only, never used in the prediction rule.
+ncm_prototype_step_learned = {m: {} for m in NCM_METHODS}
+ncm_prototype_memory_rows = []      # method, step_id, num_prototypes, hidden_size, memory_bytes_fp32
+ncm_per_step_accuracy_rows = []     # method, step_id, accuracy_open_ncm, n_images
+ncm_vs_baseline_summary_rows = []   # method, eval_set, accuracy_baseline_pct, accuracy_ncm_pct, delta_pp, n_images
+ncm_staleness_diagnostic_rows = []  # method, step_id, prototype_age_steps, mean_cos_own_prototype, mean_cos_best_other_prototype, own_minus_other_cos_gap
 # PRE-THESIS FIX 2: {method_name: {step_idx: {task_step: accuracy_fraction}}} --
 # only populated for rank_extension family (the only family with a genuinely
 # evolving model to checkpoint mid-training); used to draw a true forgetting
@@ -1703,13 +1713,6 @@ all_classes = [c for split in class_splits for c in split]
 
 def classes_for_step(step_idx):
     return class_splits[step_idx]
-
-# COSINE-NORMALIZED CLASSIFIER (R6 gamma=0.65 follow-up, 2026-08-21): inverse
-# of classes_for_step() -- class id -> the CL step_idx it belongs to. Used by
-# the cosine-classifier group-scale mechanism below (see
-# cosine_classifier_group_for_step_idx()) to build a per-class group-id vector
-# once instead of re-deriving it from classes_for_step() on every call.
-CLASS_TO_STEP_IDX = {c: s for s in range(NUM_STEPS) for c in classes_for_step(s)}
 
 def filter_by_classes(ds, class_ids):
     class_ids = set(class_ids)
@@ -3550,310 +3553,191 @@ def log_rankext_drift_diagnostics(model, method_name, eps=1e-8):
 
 
 # =============================================================================
-# COSINE-NORMALIZED CLASSIFIER (R6 gamma=0.65 follow-up, 2026-08-21)
+# STRICT NCM PROTOTYPE MEMORY (R6 follow-up, 2026-08-21)
 # =============================================================================
-# Motivation (see the R6 analysis this implements): row-norm-only confidence-
-# weighted calibration (calibrate_classifier_row_norms_confidence_weighted()
-# above) has a provably small ceiling for the two KD RankExt methods -- their
-# pre-calibration classifier row norms differ by only ~7-11% across steps,
-# while the open-vs-restricted accuracy gap is 25-33pp, so no purely
-# multiplicative row-norm rescale bounded to a narrow band can close it.
-# feature_alignment_diagnostics (log_rankext_drift_diagnostics() above) shows
-# the opposite: own_minus_recent_cos_gap is POSITIVE at every measured old
-# step for both KD methods (own-class cosine alignment already beats the best
-# competing recent-step class on average) -- i.e. angular geometry already
-# favors the correct answer; it is classifier-row MAGNITUDE that currently
-# fights that favorable geometry in the open-100-way argmax. This mechanism
-# removes the magnitude degree of freedom entirely (L2-normalizes both
-# classifier rows and pooled features so every class competes on cosine
-# similarity alone) and reintroduces a SINGLE, deliberately low-dimensional
-# scale per calibration group (mirroring the existing step1-singleton /
-# steps2-5 grouping) fit directly against held-out VALIDATION cross-entropy,
-# rather than a hand-derived val_ce-ratio formula.
-#
-# Strictly ADDITIVE: does not replace, mutate, or depend on the outcome of
-# evaluate_model() / evaluate_per_step_accuracy() / calibrate_classifier_row_
-# norms_confidence_weighted() above. Reads model.classifier.weight for
-# DIRECTIONS only (via F.normalize -- norm is discarded, never refit, never
-# written back to the model). No LoRA/backbone parameter is ever touched.
-# Scoped to COSINE_CLASSIFIER_METHODS only; every other method's outputs are
-# byte-for-byte unaffected by this block's existence.
-
-COSINE_CLASSIFIER_METHODS = {
-    "rank_extension_kd_only_T2",
-    "rank_extension_orth_factor_lam_50_kd_T2",
-}
-# Same grouping as calibrate_classifier_row_norms_confidence_weighted():
-# group "step1" = step 1 alone (singleton, teacher-less); group "steps2_5" =
-# every later step. Two free scalars total, never one-per-class.
-def cosine_classifier_group_for_step_idx(step_idx):
-    return "step1" if step_idx == 0 else "steps2_5"
-
-def cosine_classifier_group_ids_by_class(eps=1e-8):
-    """[NUM_CLASSES] int ndarray, 0 for classes in the step1 group, 1 for
-    classes in the steps2_5 group, in class-id order (0..NUM_CLASSES-1)."""
-    return np.array([
-        0 if cosine_classifier_group_for_step_idx(CLASS_TO_STEP_IDX[c]) == "step1" else 1
-        for c in range(NUM_CLASSES)
-    ])
-
-# Grid search bounds. Cosine similarities are O(0.1-0.4) (see feature_
-# alignment_diagnostics), a very different regime from the row-norm
-# calibration's near-1.0 multiplicative boosts, so the search is centered
-# on the model's OWN current mean_row_norm * mean validation feature norm
-# (computed inside fit_cosine_classifier_group_scales() below) -- i.e. the
-# scale that reproduces the EXISTING linear classifier's typical logit
-# magnitude -- spanning +/- 3 octaves around that point. COSINE_SCALE_HARD_MIN
-# / _MAX are an outer safety clip applied regardless of that adaptive center,
-# so a degenerate center (e.g. near-zero feature norm) still cannot push the
-# fitted scale to a pathological value.
-COSINE_SCALE_HARD_MIN = 1.0
-COSINE_SCALE_HARD_MAX = 512.0
-COSINE_SCALE_SEARCH_OCTAVES = 3.0
-COSINE_SCALE_GRID_POINTS = 15
+# Additional side-by-side classifier decision rule for the two KD RankExt
+# methods (NCM_METHODS), evaluated ALONGSIDE the existing linear-classifier
+# results -- never in place of them. See the R6 NCM protocol review for the
+# design rationale: one frozen, L2-normalized mean-feature prototype per
+# class, computed exactly once (right after that class's own step finishes
+# training) from that class's CURRENT-STEP TRAINING images only, then never
+# touched again. No task ID at inference, no old-image replay, no cumulative
+# old-validation reuse, no learned scale/temperature/bias, no row-norm
+# calibration, no prototype gradient training.
 
 
-def collect_pooled_features_and_labels(model, ds, batch_size=32):
-    """Manual forward pass over `ds`, returning (pooled_features [N,H] float32
-    cpu tensor, labels [N] int64 cpu tensor). Same pattern already used by
-    log_rankext_drift_diagnostics() above (plain DataLoader + model.
-    vision_model(...).pooler_output) -- no Trainer, no forward hooks, no
-    dependence on Trainer.predict()'s internal batch ordering/padding.
-    Never calls model.classifier; the cosine mechanism below reads
-    model.classifier.weight directly and separately for row DIRECTIONS."""
+def extract_step_prototypes(model, method_name, step_idx, eps=1e-8):
+    """Compute one L2-normalized mean-feature prototype per class introduced
+    at `step_idx`, using ONLY that class's current-step TRAINING images (never
+    validation, never replay, never a later step's images), through `model`
+    exactly as it stands right after this step's own training + best-epoch
+    restoration (the same object run_rank_extension_variant()'s per-step loop
+    already has in hand -- no separate checkpoint reload, no extra training).
+
+    Deterministic preprocessing (val_transform: resize + normalize only, no
+    random-crop/flip/color-jitter) is used for this extra forward pass so the
+    prototype is a stable class mean rather than an artifact of one random
+    augmentation draw -- this does not touch how the model was actually
+    trained, only how this diagnostic embeds the (same) images afterward.
+
+    Stores only the resulting [hidden_size] vector per class into the
+    module-global ncm_prototype_store (moved to CPU); the per-image features
+    and the DataLoader are discarded when this function returns -- no raw
+    images and no per-image features persist past this call. No-op if
+    method_name is not in NCM_METHODS.
+    """
+    if method_name not in NCM_METHODS:
+        return
+
+    current_classes = classes_for_step(step_idx)
+    proto_ds = filter_by_classes(train_source, current_classes).with_transform(preprocess_val)
+    loader = torch.utils.data.DataLoader(proto_ds, batch_size=32, shuffle=False, collate_fn=collate_fn)
+
     device = next(model.parameters()).device
     was_training = model.training
     model.eval()
-    loader = torch.utils.data.DataLoader(ds, batch_size=batch_size, shuffle=False, collate_fn=collate_fn)
-    feats_all, labels_all = [], []
+
+    feat_sum = {int(c): None for c in current_classes}
+    feat_count = {int(c): 0 for c in current_classes}
+
     with torch.no_grad():
         for batch in loader:
             pixel_values = batch["pixel_values"].to(device)
             labels = batch["labels"].to(device)
             feats = model.vision_model(pixel_values=pixel_values, return_dict=True).pooler_output
-            feats_all.append(feats.detach().to("cpu", dtype=torch.float32))
-            labels_all.append(labels.detach().to("cpu"))
+            for c in current_classes:
+                mask = labels == int(c)
+                if not bool(mask.any()):
+                    continue
+                cls_sum = feats[mask].sum(dim=0)
+                feat_sum[int(c)] = cls_sum if feat_sum[int(c)] is None else feat_sum[int(c)] + cls_sum
+                feat_count[int(c)] += int(mask.sum().item())
+
     if was_training:
         model.train()
-    if len(feats_all) == 0:
-        return (
-            torch.empty(0, model.classifier.weight.shape[1]),
-            torch.empty(0, dtype=torch.long),
-        )
-    return torch.cat(feats_all, dim=0), torch.cat(labels_all, dim=0)
 
+    for c in current_classes:
+        c = int(c)
+        if feat_count[c] == 0:
+            raise ValueError(f"NCM prototype: no training images found for class {c} at step {step_idx} (method={method_name})")
+        mean_feat = feat_sum[c] / feat_count[c]
+        norm = mean_feat.norm().clamp_min(eps)
+        ncm_prototype_store[method_name][c] = (mean_feat / norm).detach().to("cpu")
+        ncm_prototype_step_learned[method_name][c] = step_idx + 1
 
-def compute_cosine_similarity_matrix(pooled_feats, classifier_weight, eps=1e-8):
-    """pooled_feats: [N,H] cpu float32 tensor. classifier_weight: model.
-    classifier.weight (read-only -- never mutated here). Returns cos_sim
-    [N,C] float64 ndarray BEFORE any group scale is applied, so the grid
-    search below reuses this one matrix for every (s1, s2) candidate instead
-    of recomputing normalized dot products per grid point."""
-    W = classifier_weight.detach().to("cpu", dtype=torch.float32)
-    x_n = F.normalize(pooled_feats, p=2, dim=1, eps=eps)
-    w_n = F.normalize(W, p=2, dim=1, eps=eps)
-    return (x_n @ w_n.t()).numpy().astype(np.float64)
-
-
-def apply_cosine_group_scale(cos_sim, group_ids_by_class, s_step1, s_steps2_5):
-    scale_vec = np.where(group_ids_by_class == 0, float(s_step1), float(s_steps2_5))
-    return cos_sim * scale_vec[None, :]
-
-
-def cross_entropy_from_logits(logits, labels, eps=1e-12):
-    z = logits - logits.max(axis=1, keepdims=True)
-    exp = np.exp(z)
-    probs = exp / exp.sum(axis=1, keepdims=True)
-    correct_probs = probs[np.arange(len(labels)), np.asarray(labels)]
-    return float(-np.mean(np.log(np.clip(correct_probs, eps, None))))
-
-
-def fit_cosine_classifier_group_scales(model, method_name, upto_step_idx, eps=1e-8):
-    """
-    Deterministic, 2-parameter (s_step1, s_steps2_5) grid search, fit ONLY on
-    held-out VALIDATION data (make_val_dataset() -- the class-wise slice
-    carved out of the TRAIN split; dataset["test"] / make_eval_dataset() /
-    eval_first / eval_later / eval_all_seen are never read by this function),
-    restricted to classes_for_step(0..upto_step_idx) -- i.e. only steps this
-    method has actually been trained on by the time it is called, same
-    cumulative-steps-seen convention as evaluate_seen_step_accuracies() and
-    calibrate_classifier_row_norms_confidence_weighted(). Minimizes open
-    (20*(upto_step_idx+1))-way validation cross-entropy. No test label is
-    read anywhere in this function.
-
-    Returns (best: dict, grid_rows: list[dict], meta: dict). Does not mutate
-    model weights -- model.classifier.weight is read for directions only.
-    """
-    seen_step_indices = list(range(upto_step_idx + 1))
-    seen_classes = [c for s in seen_step_indices for c in classes_for_step(s)]
-    val_ds = make_val_dataset(seen_classes)
-
-    pooled, labels = collect_pooled_features_and_labels(model, val_ds)
-    labels_np = labels.numpy()
-    assert pooled.shape[0] == labels_np.shape[0], (
-        f"cosine-classifier fit: pooled feature count ({pooled.shape[0]}) != "
-        f"label count ({labels_np.shape[0]}) for method={method_name} -- "
-        f"aborting fit rather than risk a silently misaligned result"
-    )
-    assert pooled.shape[0] > 0, (
-        f"cosine-classifier fit: empty validation set for method={method_name}, "
-        f"upto_step_idx={upto_step_idx} -- cannot fit scales"
-    )
-
-    group_ids = cosine_classifier_group_ids_by_class()
-    cos_sim = compute_cosine_similarity_matrix(pooled, model.classifier.weight, eps=eps)
-
-    mean_row_norm = float(model.classifier.weight.detach().norm(dim=1).mean().item())
-    mean_feature_norm = float(pooled.norm(dim=1).mean().item())
-    s_center = max(mean_row_norm * mean_feature_norm, eps)
-    raw_grid = np.geomspace(
-        s_center / (2.0 ** COSINE_SCALE_SEARCH_OCTAVES),
-        s_center * (2.0 ** COSINE_SCALE_SEARCH_OCTAVES),
-        num=COSINE_SCALE_GRID_POINTS,
-    )
-    grid = np.clip(raw_grid, COSINE_SCALE_HARD_MIN, COSINE_SCALE_HARD_MAX)
-    grid = np.unique(grid)  # dedupe values collapsed together by the hard clip
-
-    best = None
-    grid_rows = []
-    for s1 in grid:
-        for s2 in grid:
-            scaled = apply_cosine_group_scale(cos_sim, group_ids, s1, s2)
-            ce = cross_entropy_from_logits(scaled, labels_np)
-            acc = float((scaled.argmax(axis=1) == labels_np).mean())
-            grid_rows.append({
-                "method": method_name,
-                "s_step1": float(s1),
-                "s_steps2_5": float(s2),
-                "val_ce": ce,
-                "val_acc_open": acc * 100.0,
-            })
-            if best is None or ce < best["val_ce"]:
-                best = {"s_step1": float(s1), "s_steps2_5": float(s2), "val_ce": ce, "val_acc_open": acc * 100.0}
-
-    meta = {
+    n_protos = len(ncm_prototype_store[method_name])
+    hidden_size = int(model.vision_model.config.hidden_size)
+    ncm_prototype_memory_rows.append({
         "method": method_name,
-        "upto_step_idx": int(upto_step_idx),
-        "n_val_images": int(pooled.shape[0]),
-        "mean_row_norm": mean_row_norm,
-        "mean_feature_norm": mean_feature_norm,
-        "s_center": s_center,
-        "grid_min": float(grid.min()),
-        "grid_max": float(grid.max()),
-        "grid_points": int(len(grid)),
-        "hard_min": COSINE_SCALE_HARD_MIN,
-        "hard_max": COSINE_SCALE_HARD_MAX,
-    }
-    return best, grid_rows, meta
+        "step_id": step_idx + 1,
+        "num_prototypes": n_protos,
+        "hidden_size": hidden_size,
+        "memory_bytes_fp32": int(n_protos * hidden_size * 4),
+    })
 
 
-def evaluate_cosine_classifier_per_step(model, method_name, s_step1, s_steps2_5, eps=1e-8):
-    """TEST-set (dataset["test"], via make_eval_dataset() -- NEVER validation)
-    evaluation of the cosine-normalized classifier at the given already-fitted
-    group scales. Mirrors evaluate_per_step_accuracy()'s open/restricted
-    structure exactly (restricted_argmax_accuracy() is reused unchanged) so
-    the two mechanisms' numbers are directly, row-for-row comparable. Returns
-    (per_step_rows: list[dict], summary: dict with first_step_cosine /
-    later_steps_cosine / all_seen_cosine, all in percent)."""
-    group_ids = cosine_classifier_group_ids_by_class()
-    per_step_rows = []
-    correct_open_by_step = {}
-    total_by_step = {}
+def run_ncm_evaluation(final_rank_model, method_name, eval_rows):
+    """Side-by-side-only evaluation of the frozen prototype store built during
+    training (see extract_step_prototypes()) against `final_rank_model`'s
+    TEST-set accuracy -- the exact same `dataset["test"]`-derived eval_ds
+    objects (eval_first/eval_later/eval_all_seen/make_eval_dataset(...)) the
+    existing baseline linear-classifier evaluation already uses, so the two
+    decision rules are compared on identical query sets. Strictly additive
+    and read-only: never mutates final_rank_model or any weight (pure
+    torch.no_grad() forward passes), never touches eval_rows/
+    per_step_accuracy_rows/method_summary_rows or any other existing
+    accumulator. No-op if method_name is not in NCM_METHODS.
+
+    Query features are L2-normalized; prediction is argmax cosine similarity
+    against the full frozen prototype store (open, no task ID). All accuracy
+    values recorded here are PERCENT (0-100) -- `eval_rows`'s in-memory
+    "accuracy" field is a FRACTION (0-1), so it is explicitly multiplied by
+    100 below before being placed alongside the NCM percent column, to avoid
+    the unit mismatch the now-reverted cosine-classifier report had.
+    """
+    if method_name not in NCM_METHODS:
+        return
+
+    proto_dict = ncm_prototype_store[method_name]
+    assert len(proto_dict) == NUM_CLASSES, (
+        f"NCM prototype store incomplete for {method_name}: "
+        f"{len(proto_dict)}/{NUM_CLASSES} classes present"
+    )
+    assert sorted(proto_dict.keys()) == list(range(NUM_CLASSES)), (
+        f"NCM prototype store class ids for {method_name} are not a dense "
+        f"0..{NUM_CLASSES - 1} range -- class-id-as-row-index shortcut below is unsafe"
+    )
+    proto_matrix = torch.stack([proto_dict[c] for c in range(NUM_CLASSES)], dim=0)
+
+    device = next(final_rank_model.parameters()).device
+    proto_matrix = proto_matrix.to(device)
+
+    was_training = final_rank_model.training
+    final_rank_model.eval()
+
+    def _run(eval_ds, eps=1e-8):
+        loader = torch.utils.data.DataLoader(eval_ds, batch_size=32, shuffle=False, collate_fn=collate_fn)
+        n_correct, n_total = 0, 0
+        own_cos_sum, other_cos_sum = 0.0, 0.0
+        with torch.no_grad():
+            for batch in loader:
+                pixel_values = batch["pixel_values"].to(device)
+                labels = batch["labels"].to(device)
+                feats = final_rank_model.vision_model(pixel_values=pixel_values, return_dict=True).pooler_output
+                feats = feats / feats.norm(dim=1, keepdim=True).clamp_min(eps)
+                sims = feats @ proto_matrix.T
+                pred = sims.argmax(dim=1)
+                n_correct += int((pred == labels).sum().item())
+                n_total += int(labels.shape[0])
+
+                own_sim = sims.gather(1, labels.unsqueeze(1)).squeeze(1)
+                sims_masked = sims.clone()
+                sims_masked.scatter_(1, labels.unsqueeze(1), float("-inf"))
+                best_other_sim = sims_masked.max(dim=1).values
+                own_cos_sum += float(own_sim.sum().item())
+                other_cos_sum += float(best_other_sim.sum().item())
+        acc_pct = 100.0 * n_correct / n_total if n_total > 0 else float("nan")
+        mean_own = own_cos_sum / n_total if n_total > 0 else float("nan")
+        mean_other = other_cos_sum / n_total if n_total > 0 else float("nan")
+        return acc_pct, n_total, mean_own, mean_other
 
     for step_idx in range(NUM_STEPS):
-        current_classes = classes_for_step(step_idx)
-        eval_ds = make_eval_dataset(current_classes)
-        pooled, labels = collect_pooled_features_and_labels(model, eval_ds)
-        labels_np = labels.numpy()
-        assert pooled.shape[0] == labels_np.shape[0], (
-            f"cosine-classifier eval: pooled feature count ({pooled.shape[0]}) != "
-            f"label count ({labels_np.shape[0]}) for method={method_name}, "
-            f"step_id={step_idx + 1} -- aborting eval rather than risk a "
-            f"silently misaligned result"
-        )
-        cos_sim = compute_cosine_similarity_matrix(pooled, model.classifier.weight, eps=eps)
-        scaled = apply_cosine_group_scale(cos_sim, group_ids, s_step1, s_steps2_5)
-        preds_open = scaled.argmax(axis=1)
-        open_acc = float((preds_open == labels_np).mean())
-        restricted_acc = restricted_argmax_accuracy(scaled, labels_np, current_classes)
-
-        per_step_rows.append({
+        step_id = step_idx + 1
+        acc_pct, n, mean_own, mean_other = _run(make_eval_dataset(classes_for_step(step_idx)))
+        ncm_per_step_accuracy_rows.append({
             "method": method_name,
-            "step_id": int(step_idx + 1),
-            "accuracy_open_cosine": open_acc * 100.0,
-            "accuracy_restricted_cosine": restricted_acc * 100.0,
-            "recency_bias_gap_cosine": (open_acc - restricted_acc) * 100.0,
+            "step_id": step_id,
+            "accuracy_open_ncm": acc_pct,
+            "n_images": n,
         })
-        correct_open_by_step[step_idx] = int((preds_open == labels_np).sum())
-        total_by_step[step_idx] = int(len(labels_np))
+        ncm_staleness_diagnostic_rows.append({
+            "method": method_name,
+            "step_id": step_id,
+            "prototype_age_steps": int(NUM_STEPS - step_id),
+            "mean_cos_own_prototype": mean_own,
+            "mean_cos_best_other_prototype": mean_other,
+            "own_minus_other_cos_gap": mean_own - mean_other,
+        })
 
-    first_correct, first_total = correct_open_by_step[0], total_by_step[0]
-    later_correct = sum(correct_open_by_step[s] for s in range(1, NUM_STEPS))
-    later_total = sum(total_by_step[s] for s in range(1, NUM_STEPS))
-    all_correct = sum(correct_open_by_step.values())
-    all_total = sum(total_by_step.values())
-
-    summary = {
-        "method": method_name,
-        "first_step_cosine": 100.0 * first_correct / first_total,
-        "later_steps_cosine": 100.0 * later_correct / later_total,
-        "all_seen_cosine": 100.0 * all_correct / all_total,
+    baseline_acc_pct = {
+        row["eval_set"]: 100.0 * float(row["accuracy"])
+        for row in eval_rows
+        if row.get("method") == method_name
     }
-    return per_step_rows, summary
-
-
-def run_cosine_classifier_diagnostic(model, method_name, eval_rows):
-    """Top-level entry point called from run_rank_extension_variant() once
-    the method's FINAL model is fully trained and calibrated. Fits the two
-    group scales on cumulative validation data (steps 0..NUM_STEPS-1, i.e.
-    every step this final model has been trained on), evaluates the
-    resulting cosine classifier on the SAME test sets the baseline linear
-    classifier was evaluated on, and appends rows to the four module-global
-    cosine_classifier_* accumulators, including a baseline-vs-cosine
-    side-by-side summary built from `eval_rows` (evaluate_model()'s already-
-    computed first_step/later_steps/all_seen baseline numbers for this exact
-    method_name -- not recomputed here). No-op (returns None) for any
-    method_name not in COSINE_CLASSIFIER_METHODS."""
-    if method_name not in COSINE_CLASSIFIER_METHODS:
-        return None
-
-    best, grid_rows, meta = fit_cosine_classifier_group_scales(
-        model, method_name, upto_step_idx=NUM_STEPS - 1,
-    )
-    cosine_classifier_scale_diagnostic_rows.append({**meta, **best})
-    cosine_classifier_scale_grid_search_rows.extend(grid_rows)
-
-    per_step_rows, cosine_summary = evaluate_cosine_classifier_per_step(
-        model, method_name, s_step1=best["s_step1"], s_steps2_5=best["s_steps2_5"],
-    )
-    cosine_classifier_per_step_accuracy_rows.extend(per_step_rows)
-
-    baseline_by_eval_set = {r["eval_set"]: float(r["accuracy"]) for r in eval_rows if r["method"] == method_name}
-    for eval_set, cosine_key in (
-        ("first_step", "first_step_cosine"),
-        ("later_steps", "later_steps_cosine"),
-        ("all_seen", "all_seen_cosine"),
-    ):
-        baseline_acc = baseline_by_eval_set.get(eval_set, np.nan)
-        cosine_acc = cosine_summary[cosine_key]
-        cosine_classifier_vs_baseline_summary_rows.append({
+    for eval_set_name, eval_ds in (("first_step", eval_first), ("later_steps", eval_later), ("all_seen", eval_all_seen)):
+        acc_pct, n, _, _ = _run(eval_ds)
+        base_pct = baseline_acc_pct.get(eval_set_name, float("nan"))
+        ncm_vs_baseline_summary_rows.append({
             "method": method_name,
-            "eval_set": eval_set,
-            "accuracy_baseline": baseline_acc,
-            "accuracy_cosine": cosine_acc,
-            "delta_pp": (cosine_acc - baseline_acc) if not np.isnan(baseline_acc) else np.nan,
-            "fitted_s_step1": best["s_step1"],
-            "fitted_s_steps2_5": best["s_steps2_5"],
+            "eval_set": eval_set_name,
+            "accuracy_baseline_pct": base_pct,
+            "accuracy_ncm_pct": acc_pct,
+            "delta_pp": acc_pct - base_pct,
+            "n_images": n,
         })
 
-    print(
-        f"[cosine_classifier] method={method_name} | "
-        f"s_step1={best['s_step1']:.3f} | s_steps2_5={best['s_steps2_5']:.3f} | "
-        f"val_ce={best['val_ce']:.4f} | val_acc_open={best['val_acc_open']:.2f} | "
-        f"all_seen_baseline={baseline_by_eval_set.get('all_seen', float('nan')):.2f} | "
-        f"all_seen_cosine={cosine_summary['all_seen_cosine']:.2f}"
-    )
-    return cosine_summary
+    if was_training:
+        final_rank_model.train()
 
 
 def cleanup():
@@ -6272,6 +6156,13 @@ def run_rank_extension_variant(
         for h in hooks:
             h.remove()
 
+        # STRICT NCM PROTOTYPE MEMORY (R6 follow-up, 2026-08-21): additive,
+        # no-op unless method_name in NCM_METHODS. Runs on the SAME `model`
+        # object this step's training + best-epoch restoration just produced,
+        # using ONLY this step's own current-step training images. See
+        # extract_step_prototypes()'s docstring.
+        extract_step_prototypes(model, method_name, step_idx)
+
         previous_rank_state = extract_rank_extension_state(model)
         if teacher_model is not None:
             del teacher_model
@@ -6331,13 +6222,13 @@ def run_rank_extension_variant(
     # training, plus forward_transfer from the zero-shot probes collected above.
     final_per_step_accuracy = evaluate_per_step_accuracy(final_rank_model, method_name)
 
-    # COSINE-NORMALIZED CLASSIFIER (R6 gamma=0.65 follow-up, 2026-08-21):
-    # strictly additive diagnostic/eval path, no-op for any method_name not in
-    # COSINE_CLASSIFIER_METHODS. Runs on the exact same final_rank_model the
+    # STRICT NCM PROTOTYPE MEMORY (R6 follow-up, 2026-08-21): strictly
+    # additive side-by-side diagnostic/eval path, no-op for any method_name
+    # not in NCM_METHODS. Runs on the exact same final_rank_model the
     # baseline eval_rows above were just computed on (post-training, post-
     # calibration) -- never retrains, never touches final_rank_model's
-    # weights. See run_cosine_classifier_diagnostic()'s docstring.
-    run_cosine_classifier_diagnostic(final_rank_model, method_name, eval_rows)
+    # weights. See run_ncm_evaluation()'s docstring.
+    run_ncm_evaluation(final_rank_model, method_name, eval_rows)
 
     diagonal_accuracy = {
         step_idx: stepwise_task_accuracies[step_idx].get(step_idx, np.nan)
@@ -7808,70 +7699,52 @@ rankext_feature_alignment_diag_path = Path(TABLES_DIR) / "feature_alignment_diag
 rankext_feature_alignment_diag_df.to_csv(rankext_feature_alignment_diag_path, index=False)
 print("Saved feature-alignment diagnostics:", rankext_feature_alignment_diag_path)
 
-# COSINE-NORMALIZED CLASSIFIER (R6 gamma=0.65 follow-up, 2026-08-21): four new
-# tables, populated only for COSINE_CLASSIFIER_METHODS (the two KD RankExt
-# methods) -- empty-DataFrame-with-explicit-columns for every other method,
-# same convention as every diagnostic table above. Purely additive: does not
-# alter or remove any existing table, plot, or report produced by this cell.
-cosine_scale_diag_df = pd.DataFrame(cosine_classifier_scale_diagnostic_rows)
-if len(cosine_scale_diag_df) > 0:
-    cosine_scale_diag_df = cosine_scale_diag_df[cosine_scale_diag_df["method"].isin(REQ)].copy()
-    cosine_scale_diag_df = cosine_scale_diag_df.sort_values(["method"]).reset_index(drop=True)
+# STRICT NCM PROTOTYPE MEMORY (R6 follow-up, 2026-08-21): side-by-side-only
+# classifier eval -- scope limited to NCM_METHODS (rank_extension_kd_only_T2,
+# rank_extension_orth_factor_lam_50_kd_T2). Never feeds back into, and is
+# never read by, the existing linear-classifier eval_rows/
+# per_step_accuracy_rows/method_summary_rows results above; same
+# empty-DataFrame-with-explicit-columns convention as every other diagnostic
+# table in this file.
+ncm_prototype_memory_df = pd.DataFrame(ncm_prototype_memory_rows)
+if len(ncm_prototype_memory_df) > 0:
+    ncm_prototype_memory_df = ncm_prototype_memory_df[ncm_prototype_memory_df["method"].isin(REQ)].copy()
+    ncm_prototype_memory_df = ncm_prototype_memory_df.sort_values(["method", "step_id"]).reset_index(drop=True)
 else:
-    cosine_scale_diag_df = pd.DataFrame(columns=[
-        "method", "upto_step_idx", "n_val_images", "mean_row_norm", "mean_feature_norm",
-        "s_center", "grid_min", "grid_max", "grid_points", "hard_min", "hard_max",
-        "s_step1", "s_steps2_5", "val_ce", "val_acc_open",
-    ])
-cosine_scale_diag_path = Path(TABLES_DIR) / "cosine_classifier_scale_diagnostics_by_method.csv"
-cosine_scale_diag_df.to_csv(cosine_scale_diag_path, index=False)
-print("Saved cosine-classifier scale diagnostics:", cosine_scale_diag_path)
+    ncm_prototype_memory_df = pd.DataFrame(columns=["method", "step_id", "num_prototypes", "hidden_size", "memory_bytes_fp32"])
+ncm_prototype_memory_path = Path(TABLES_DIR) / "ncm_prototype_memory_by_method_step.csv"
+ncm_prototype_memory_df.to_csv(ncm_prototype_memory_path, index=False)
+print("Saved NCM prototype memory diagnostics:", ncm_prototype_memory_path)
 
-# Also persist the fitted scales (+ fit metadata) as JSON, per method, as a
-# compact standalone artifact independent of the CSV above.
-cosine_scale_json_path = Path(TABLES_DIR) / "cosine_classifier_fitted_scales.json"
-js(cosine_scale_json_path, {
-    row["method"]: {k: v for k, v in row.items() if k != "method"}
-    for row in cosine_classifier_scale_diagnostic_rows
-})
-print("Saved cosine-classifier fitted scales JSON:", cosine_scale_json_path)
-
-cosine_grid_df = pd.DataFrame(cosine_classifier_scale_grid_search_rows)
-if len(cosine_grid_df) > 0:
-    cosine_grid_df = cosine_grid_df[cosine_grid_df["method"].isin(REQ)].copy()
-    cosine_grid_df = cosine_grid_df.sort_values(["method", "val_ce"]).reset_index(drop=True)
+ncm_per_step_accuracy_df = pd.DataFrame(ncm_per_step_accuracy_rows)
+if len(ncm_per_step_accuracy_df) > 0:
+    ncm_per_step_accuracy_df = ncm_per_step_accuracy_df[ncm_per_step_accuracy_df["method"].isin(REQ)].copy()
+    ncm_per_step_accuracy_df = ncm_per_step_accuracy_df.sort_values(["method", "step_id"]).reset_index(drop=True)
 else:
-    cosine_grid_df = pd.DataFrame(columns=["method", "s_step1", "s_steps2_5", "val_ce", "val_acc_open"])
-cosine_grid_path = Path(TABLES_DIR) / "cosine_classifier_scale_grid_search_by_method.csv"
-cosine_grid_df.to_csv(cosine_grid_path, index=False)
-print("Saved cosine-classifier grid-search log:", cosine_grid_path)
+    ncm_per_step_accuracy_df = pd.DataFrame(columns=["method", "step_id", "accuracy_open_ncm", "n_images"])
+ncm_per_step_accuracy_path = Path(TABLES_DIR) / "ncm_per_step_accuracy_by_method.csv"
+ncm_per_step_accuracy_df.to_csv(ncm_per_step_accuracy_path, index=False)
+print("Saved NCM per-step accuracy:", ncm_per_step_accuracy_path)
 
-cosine_per_step_df = pd.DataFrame(cosine_classifier_per_step_accuracy_rows)
-if len(cosine_per_step_df) > 0:
-    cosine_per_step_df = cosine_per_step_df[cosine_per_step_df["method"].isin(REQ)].copy()
-    cosine_per_step_df = cosine_per_step_df.sort_values(["method", "step_id"]).reset_index(drop=True)
+ncm_vs_baseline_summary_df = pd.DataFrame(ncm_vs_baseline_summary_rows)
+if len(ncm_vs_baseline_summary_df) > 0:
+    ncm_vs_baseline_summary_df = ncm_vs_baseline_summary_df[ncm_vs_baseline_summary_df["method"].isin(REQ)].copy()
+    ncm_vs_baseline_summary_df = ncm_vs_baseline_summary_df.sort_values(["method", "eval_set"]).reset_index(drop=True)
 else:
-    cosine_per_step_df = pd.DataFrame(columns=[
-        "method", "step_id", "accuracy_open_cosine", "accuracy_restricted_cosine", "recency_bias_gap_cosine",
-    ])
-cosine_per_step_path = Path(TABLES_DIR) / "cosine_classifier_per_step_accuracy_by_method.csv"
-cosine_per_step_df.to_csv(cosine_per_step_path, index=False)
-print("Saved cosine-classifier per-step accuracy:", cosine_per_step_path)
+    ncm_vs_baseline_summary_df = pd.DataFrame(columns=["method", "eval_set", "accuracy_baseline_pct", "accuracy_ncm_pct", "delta_pp", "n_images"])
+ncm_vs_baseline_summary_path = Path(TABLES_DIR) / "ncm_vs_baseline_summary.csv"
+ncm_vs_baseline_summary_df.to_csv(ncm_vs_baseline_summary_path, index=False)
+print("Saved NCM vs baseline summary:", ncm_vs_baseline_summary_path)
 
-cosine_vs_baseline_df = pd.DataFrame(cosine_classifier_vs_baseline_summary_rows)
-if len(cosine_vs_baseline_df) > 0:
-    cosine_vs_baseline_df = cosine_vs_baseline_df[cosine_vs_baseline_df["method"].isin(REQ)].copy()
-    eval_set_order = {"first_step": 0, "later_steps": 1, "all_seen": 2}
-    cosine_vs_baseline_df["_eval_set_order"] = cosine_vs_baseline_df["eval_set"].map(eval_set_order)
-    cosine_vs_baseline_df = cosine_vs_baseline_df.sort_values(["method", "_eval_set_order"]).drop(columns="_eval_set_order").reset_index(drop=True)
+ncm_staleness_diag_df = pd.DataFrame(ncm_staleness_diagnostic_rows)
+if len(ncm_staleness_diag_df) > 0:
+    ncm_staleness_diag_df = ncm_staleness_diag_df[ncm_staleness_diag_df["method"].isin(REQ)].copy()
+    ncm_staleness_diag_df = ncm_staleness_diag_df.sort_values(["method", "step_id"]).reset_index(drop=True)
 else:
-    cosine_vs_baseline_df = pd.DataFrame(columns=[
-        "method", "eval_set", "accuracy_baseline", "accuracy_cosine", "delta_pp",
-        "fitted_s_step1", "fitted_s_steps2_5",
-    ])
-cosine_vs_baseline_path = Path(TABLES_DIR) / "cosine_classifier_vs_baseline_summary.csv"
-cosine_vs_baseline_df.to_csv(cosine_vs_baseline_path, index=False)
-print("Saved cosine-classifier vs. baseline summary:", cosine_vs_baseline_path)
+    ncm_staleness_diag_df = pd.DataFrame(columns=["method", "step_id", "prototype_age_steps", "mean_cos_own_prototype", "mean_cos_best_other_prototype", "own_minus_other_cos_gap"])
+ncm_staleness_diag_path = Path(TABLES_DIR) / "ncm_staleness_diagnostics_by_method_step.csv"
+ncm_staleness_diag_df.to_csv(ncm_staleness_diag_path, index=False)
+print("Saved NCM staleness diagnostics:", ncm_staleness_diag_path)
 
 
 def per_step_accuracy_json(method_name):

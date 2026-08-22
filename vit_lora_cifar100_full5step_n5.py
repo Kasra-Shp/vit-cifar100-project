@@ -458,6 +458,16 @@ RANKEXT_PRETRAINED_ANCHOR_WEIGHT = 1.0
 RANKEXT_PROJECTED_PROTECT_METHODS = {
     "rank_extension_kd_only_T2",
     "rank_extension_orth_factor_lam_50_kd_T2",
+    # ORTH-LAMBDA INTERACTION ABLATION (2026-08-22, job 4914807 follow-up):
+    # new lam_25 sibling of the lam_50 flagship, added specifically to test
+    # whether lambda_factor_orth=50 was partially over-constraining/
+    # overlapping with projected feature protection once the latter was
+    # finally given real numerical weight (lambda_protect=30). Gets the SAME
+    # protect_weight as the other two methods here (global
+    # RANKEXT_PROJECTED_FEATURE_PROTECT_WEIGHT below, not method-specific) --
+    # the only intended difference from rank_extension_orth_factor_lam_50_kd_T2
+    # is lambda_orth (25 vs 50, via lambda_orth_scale=0.5 in add_method() below).
+    "rank_extension_orth_factor_lam_25_kd_T2",
 }
 RANKEXT_PROJECTED_FEATURE_PROTECT_WEIGHT = 30.0
 
@@ -671,6 +681,10 @@ METHOD_DISPLAY_NAME_MAP = {
     "rank_extension_orth_factor_lam_50": "RankExt + FactorOrth",
     "rank_extension_orth_factor_lam_50_kd_T1": "RankExt + FactorOrth + KD T1",
     "rank_extension_orth_factor_lam_50_kd_T2": "RankExt + FactorOrth + KD T2",
+    # ORTH-LAMBDA INTERACTION ABLATION (2026-08-22): distinct display name so
+    # this never gets visually confused with the lam_50 flagship in any plot
+    # legend/table.
+    "rank_extension_orth_factor_lam_25_kd_T2": "RankExt + FactorOrth(lam25) + KD T2",
 }
 
 METHOD_ALIAS_NAME_MAP = {
@@ -682,6 +696,7 @@ METHOD_ALIAS_NAME_MAP = {
     "rank_extension_kd_only_T2": "rank_extension_kd_only_T2",
     "rank_extension_orth_factor_lam_50": "rank_extension_orth_factor_lam_50",
     "rank_extension_orth_factor_lam_50_kd_T2": "rank_extension_orth_factor_lam_50_kd_T2",
+    "rank_extension_orth_factor_lam_25_kd_T2": "rank_extension_orth_factor_lam_25_kd_T2",
 }
 
 SUPERVISOR_SELECTED_METHOD_SPECS = [
@@ -754,6 +769,23 @@ SUPERVISOR_SELECTED_METHOD_SPECS = [
         "display_name": "RankExt + FactorOrth + KD T2",
         "family": "rank_extension",
         "factor_lambda": 50.0,
+        "kd_temperature": 2.0,
+        "kd_weight": float(KD_WEIGHT),
+    },
+    # ORTH-LAMBDA INTERACTION ABLATION (2026-08-22, job 4914807 follow-up):
+    # added as a NEW spec entry, NOT a replacement of the lam_50 spec above --
+    # the lam_50 flagship row above is untouched byte-for-byte. Only present
+    # in ACTIVE_SUPERVISOR_SELECTED_METHOD_SPECS (and therefore in
+    # supervisor_selected_accuracy_comparison.csv / configs/
+    # supervisor_selected_methods.json) once its base_method flag is also
+    # True in METHODS_TO_RUN and it is registered via add_method() in
+    # build_active_method_configs() -- see both above.
+    {
+        "internal_method_name": "rank_extension_orth_factor_lam_25_kd_T2",
+        "supervisor_requested_name": "rank_extension_orth_factor_lam_25_kd_T2",
+        "display_name": "RankExt + FactorOrth(lam25) + KD T2",
+        "family": "rank_extension",
+        "factor_lambda": 25.0,
         "kd_temperature": 2.0,
         "kd_weight": float(KD_WEIGHT),
     },
@@ -1004,6 +1036,10 @@ def family_uses_new_block_warmup(family):
 RANKEXT_NEW_BLOCK_WARMUP_DISABLED_METHODS = {
     "rank_extension_kd_only_T2",
     "rank_extension_orth_factor_lam_50_kd_T2",
+    # ORTH-LAMBDA INTERACTION ABLATION (2026-08-22): same KD-RankExt warmup
+    # exemption as its lam_50 sibling -- see RANKEXT_PROJECTED_PROTECT_METHODS
+    # above for why this method exists.
+    "rank_extension_orth_factor_lam_25_kd_T2",
 }
 
 
@@ -1127,6 +1163,14 @@ METHODS_TO_RUN = {
     "rank_extension_orth_delta_trace_lam_50_kd": False,
     "rank_extension_orth_factor_lam_50": True,
     "rank_extension_orth_factor_lam_50_kd": True,
+    # ORTH-LAMBDA INTERACTION ABLATION (2026-08-22, job 4914807 follow-up):
+    # fifth method, added alongside the existing four -- NOT a replacement.
+    # KD-only variant of rank_extension_orth_factor_lam_25 (no non-KD
+    # lam_25 sibling is defined/trained; see build_active_method_configs()
+    # below, which calls add_method() for this base_method exactly once,
+    # directly with uses_kd=True, unlike the lam_50 pattern's separate
+    # non-KD + KD-loop pair).
+    "rank_extension_orth_factor_lam_25_kd": True,
     # RANK_EXT FIRST_STEP FIX (task 2 decision doc, 2026-08-17): the
     # feature-anchor lever's 4 opt-in method flags (rank_extension_featanchor,
     # rank_extension_orth_factor_featanchor, and their DEFAULT-OFF
@@ -1256,6 +1300,23 @@ def build_active_method_configs():
         kd_tag = kd_temperature_tag(kd_temp)
         add_method(f"rank_extension_orth_factor_lam_50_kd_{kd_tag}", "rank_extension", "rank_extension_orth_factor_lam_50_kd", uses_kd=True, kd_temperature=kd_temp, uses_factor_orth=True)
 
+    # ORTH-LAMBDA INTERACTION ABLATION (2026-08-22, job 4914807 follow-up):
+    # KD-only variant of the lam_50 pair above, with lambda_orth_scale=0.5 so
+    # its lambda_orth resolves to LAMBDA_ORTH * 0.5 == 25.0 (LAMBDA_ORTH stays
+    # 50.0 globally -- unaffected, see the LAMBDA_ORTH==50.0 assert below --
+    # this is the SAME per-call scaling mechanism COMBINED_LAMBDA_ORTH_SCALE
+    # already uses for simple_avg_factor_orth_kd above, just applied here to a
+    # single explicit method rather than a family-wide scale). Deliberately
+    # no non-KD "rank_extension_orth_factor_lam_25" sibling is added -- the
+    # ablation this exists to run only needs the KD+protect combination (see
+    # RANKEXT_PROJECTED_PROTECT_METHODS above), and training an unused non-KD
+    # variant would add GPU time with no diagnostic value. kd_weight is left
+    # at its default (no kd_weight_scale override) so it exactly matches
+    # rank_extension_orth_factor_lam_50_kd_T2's kd_weight=1.0.
+    for kd_temp in KD_TEMPERATURES:
+        kd_tag = kd_temperature_tag(kd_temp)
+        add_method(f"rank_extension_orth_factor_lam_25_kd_{kd_tag}", "rank_extension", "rank_extension_orth_factor_lam_25_kd", uses_kd=True, kd_temperature=kd_temp, uses_factor_orth=True, lambda_orth_scale=0.5)
+
     return configs
 
 
@@ -1286,6 +1347,9 @@ EXPECTED_ENABLED_METHOD_FAMILIES = {
     "rank_extension_kd_only",
     "rank_extension_orth_factor_lam_50",
     "rank_extension_orth_factor_lam_50_kd",
+    # ORTH-LAMBDA INTERACTION ABLATION (2026-08-22): fifth active method, see
+    # METHODS_TO_RUN above.
+    "rank_extension_orth_factor_lam_25_kd",
 }
 
 assert KD_WEIGHT == 1.0

@@ -459,7 +459,7 @@ RANKEXT_PROJECTED_PROTECT_METHODS = {
     "rank_extension_kd_only_T2",
     "rank_extension_orth_factor_lam_50_kd_T2",
 }
-RANKEXT_PROJECTED_FEATURE_PROTECT_WEIGHT = 1.0
+RANKEXT_PROJECTED_FEATURE_PROTECT_WEIGHT = 30.0
 
 # Master switch above still gates calibration overall (False disables it for
 # every method, same as before). When True, CALIBRATION_ENABLED_FAMILIES

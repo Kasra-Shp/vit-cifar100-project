@@ -458,18 +458,181 @@ RANKEXT_PRETRAINED_ANCHOR_WEIGHT = 1.0
 RANKEXT_PROJECTED_PROTECT_METHODS = {
     "rank_extension_kd_only_T2",
     "rank_extension_orth_factor_lam_50_kd_T2",
-    # ORTH-LAMBDA INTERACTION ABLATION (2026-08-22, job 4914807 follow-up):
-    # new lam_25 sibling of the lam_50 flagship, added specifically to test
-    # whether lambda_factor_orth=50 was partially over-constraining/
-    # overlapping with projected feature protection once the latter was
-    # finally given real numerical weight (lambda_protect=30). Gets the SAME
-    # protect_weight as the other two methods here (global
-    # RANKEXT_PROJECTED_FEATURE_PROTECT_WEIGHT below, not method-specific) --
-    # the only intended difference from rank_extension_orth_factor_lam_50_kd_T2
-    # is lambda_orth (25 vs 50, via lambda_orth_scale=0.5 in add_method() below).
-    "rank_extension_orth_factor_lam_25_kd_T2",
+    # ORTH-LAMBDA INTERACTION ABLATION (2026-08-22, job 4914807 follow-up)
+    # REMOVED 2026-08-23: rank_extension_orth_factor_lam_25_kd_T2 tested
+    # whether lambda_factor_orth=50 was over-constraining/overlapping with
+    # projected feature protection (lambda_protect=30). Result (job 4915286):
+    # all_seen 70.58 vs the lam_50 flagship's 70.62 -- a -0.04pp difference,
+    # inside noise, with drift/cosine diagnostics equal-to-slightly-worse than
+    # lam_50. Hypothesis NOT supported; variant removed from the active set.
+    #
+    # STRUCTURAL NULL-SPACE RANKEXT v2 (2026-08-23, DESIGN CORRECTION): the
+    # two KD nullspace methods are added HERE, matching their non-nullspace
+    # siblings exactly (protect_weight=30, unchanged) -- REVERSING the v1
+    # decision to exclude them. See RANKEXT_NULLSPACE_METHODS below for the
+    # full reasoning (in short: v1 disabled soft protection to isolate the
+    # hard constraint cleanly; v1's hard constraint was then found to be
+    # applied in a semantically invalid vector space and has been replaced
+    # entirely -- keeping the experimental-control decision from a discarded
+    # mechanism would not have been meaningful. v2 instead holds the ENTIRE
+    # historical baseline fixed and adds only the corrected v_proj-only
+    # structural constraint, so protect30 belongs here again).
+    "rank_extension_nullspace_kd_only_T2",
+    "rank_extension_nullspace_orth_factor_lam_50_kd_T2",
 }
 RANKEXT_PROJECTED_FEATURE_PROTECT_WEIGHT = 30.0
+
+# STRUCTURAL NULL-SPACE RANKEXT v2 (R6 roadmap Stage 2, DESIGN CORRECTED
+# 2026-08-23): the soft mechanism above penalizes old-semantic-subspace
+# feature drift AFTER it happens (a weighted loss competing against
+# CE/KD/factor-orth). This mechanism instead constrains the UPDATE ITSELF,
+# structurally, so new RankExt capacity cannot write into old-class-
+# discriminative directions in the first place.
+#
+# ============================================================================
+# v1 DESIGN WAS INVALID AND HAS BEEN COMPLETELY REPLACED -- READ THIS FIRST
+# ============================================================================
+# The original implementation (2026-08-23, same day, superseded before any
+# GPU run) applied the FINAL-CLASSIFIER-SPACE basis P_old DIRECTLY to
+# B_new of BOTH q_proj AND v_proj, reasoning only that both are 768-dim.
+# Tracing the actual HF CLIPAttention/CLIPEncoderLayer forward pass proved
+# this reasoning insufficient:
+#   - q_proj's output ([768, per-head-split]) is used ONLY inside
+#     softmax(QK^T/sqrt(d)) -- it NEVER enters the residual stream through
+#     any fixed linear map. A perturbation's effect on the residual stream
+#     is input-dependent and nonlinear (the softmax Jacobian depends on the
+#     CURRENT Q, K values). No fixed subspace projection on q_proj's B_new
+#     has any rigorous semantic meaning -- classifier-row directions are not
+#     expressible as directions in q_proj's own output space.
+#   - v_proj's output does reach the residual stream, but NOT directly:
+#     attn_out = out_proj(attention_weighted_sum(V)), i.e. Delta_residual
+#     approx W_o @ (attention-weighted Delta_V) for FIXED attention weights
+#     (attention mixes ACROSS TOKENS, not across feature channels, so it does
+#     not itself change which channel directions matter; W_o DOES, being an
+#     arbitrary LEARNED 768x768 rotation/shear, frozen/not LoRA-adapted here).
+#     v1 projected B_new directly against P_old (residual/pooled-feature-
+#     space coordinates) WITHOUT pulling P_old back through W_o^T first --
+#     i.e. it compared vectors expressed in two DIFFERENT bases (v-space vs
+#     residual-space) as if they were the same. Dimensional coincidence
+#     (both happen to be 768) was mistaken for basis identity.
+#   - The v1 synthetic leakage test only proved the (I-PP^T) operator itself
+#     was implemented correctly (matrix algebra, gradient confinement) --
+#     it said nothing about whether P was the semantically correct basis at
+#     that point in the network, which is a completely separate question.
+# Verdict: v1 was TECHNICALLY VALID BUT SEMANTICALLY MISALIGNED (dimensional
+# equality mistaken for shared coordinate system) -- never run. See the
+# corrected v2 design below.
+# ============================================================================
+#
+# v2 DESIGN: v_proj ONLY, with a per-layer pulled-back basis; q_proj is
+# LEFT COMPLETELY UNCONSTRAINED (structurally, by construction -- see below).
+#
+# DIMENSIONAL SETUP. For each targeted layer l (CLIP ViT-B/16,
+# hidden_size=768; q_proj/v_proj both square 768->768 before head-splitting):
+#   A_new^(l): [new_rank, in_features]  = [16, 768]
+#   B_new^(l): [out_features, new_rank] = [768, 16]   (v_proj only, below)
+#   W_o^(l): [768, 768] -- that SAME layer's out_proj.weight (frozen, NOT
+#     LoRA-adapted: target_modules for rank_extension is ["q_proj","v_proj"]
+#     only -- verified directly: build_rank_extension_model() freezes
+#     model.vision_model's parameters UNCONDITIONALLY for every parameter
+#     before any GrowingRankLoRALinear wrapping happens, and out_proj is
+#     never among the wrapped target_names, so it is a plain, permanently
+#     frozen nn.Linear for the lifetime of this experiment.)
+# P_old (compute_old_semantic_subspace(), UNCHANGED -- same frozen-teacher-
+# classifier-rows / L2-normalize / subtract-common-mean / SVD / numerical-
+# rank construction as the soft mechanism) is [768, k]: an orthonormal basis
+# of the FINAL POOLED-CLS/CLASSIFIER-ROW space.
+#
+# CORRECTED PROJECTION (v_proj only). Delta_residual^(l) approx
+# W_o^(l) @ (attention-weighted Delta_V^(l)), and Delta_V^(l) = B_new^(l) @
+# A_new^(l) @ x for the new block -- so the old-class-relevant component of
+# this layer's residual contribution is P_old^T @ W_o^(l) @ Delta_V^(l).
+# Pull P_old BACK through W_o^(l)T into v_proj's own output/value-channel
+# space, THEN re-orthonormalize (W_o^T does not preserve orthonormality of
+# an arbitrary basis in general):
+#   P_v^(l) = orth(W_o^(l)T @ P_old)   -- [768, k'], k' <= k (numerical rank
+#                                         of the pulled-back, possibly
+#                                         W_o-rank-deficient, image)
+# Then, exactly as v1's associativity argument (which remains valid -- only
+# the BASIS being projected against was wrong, not the mechanics):
+#   B_new_eff^(l) = (I - P_v^(l) P_v^(l)T) @ B_new^(l)
+#   Delta_W_v_eff^(l) = B_new_eff^(l) @ A_new^(l)      (A_new UNTOUCHED)
+#
+# WHAT THIS GUARANTEES: since attention mixes ACROSS TOKENS (linear, for
+# fixed attention weights) while out_proj mixes ACROSS CHANNELS, if
+# P_old^T @ W_o^(l) @ B_new_eff^(l) approx 0 (by construction of P_v^(l)),
+# then ANY token-weighted linear combination of the new value contribution
+# remains orthogonal to P_old at this attention block's IMMEDIATE residual-
+# addition output. This is a real, structural, LOCAL guarantee -- not merely
+# a restatement of the v1 error at one more remove.
+#
+# WHAT THIS DOES NOT GUARANTEE: zero drift at the FINAL pooled feature.
+# Between this layer's residual addition and the final post_layernorm(CLS)
+# classifier input sit (12-l) more residual additions, each involving
+# LayerNorm (input-dependent normalization) and MLP (GELU) nonlinearities,
+# none of which are guaranteed to preserve orthogonality to P_old exactly.
+# This is the SAME honest tradeoff v1 already flagged for its own (invalid)
+# mechanism, now applied to a mechanism that is at least locally valid where
+# v1 was not valid anywhere. The residual-space semantic-leakage diagnostic
+# below (P_old^T W_o B_eff) measures exactly this LOCAL guarantee directly;
+# the existing downstream drift/cosine diagnostics (unchanged, still
+# computed from real forward passes) answer the end-to-end question
+# empirically, exactly as before.
+#
+# WHY q_proj IS LEFT UNCONSTRAINED, NOT GIVEN A DIFFERENT FIX: q_proj's
+# output only ever affects anything through softmax(QK^T/sqrt(d)) -- there
+# is no analog of the out_proj pullback because there is no FIXED linear map
+# from q-space to the residual stream at all (the softmax's local Jacobian
+# depends on the current Q,K values, i.e. on the input). A rigorous
+# constraint here would require an input-dependent, per-batch Jacobian-
+# vector-product (Part 6, Option 4) -- which is no longer a fixed,
+# precomputed, "hard structural" parameter constraint in the sense this
+# experiment is testing (it would need re-evaluating every batch against
+# the current input, functionally converging on what the EXISTING soft
+# protect30 mechanism already measures via real forward passes). Rather than
+# silently degrade the experiment's central claim, q_proj's RankExt LoRA
+# update is left completely unconstrained -- intentional, not incomplete.
+# GrowingRankLoRALinear instances default their nullspace_basis_v attribute
+# to None; ONLY v_proj-named target modules of RANKEXT_NULLSPACE_METHODS
+# ever have it set (see run_rank_extension_variant() below) -- q_proj
+# modules never receive this attribute under any code path, so
+# effective_B_new() is a true no-op for them by construction, not by a
+# runtime check that could silently be wrong.
+#
+# BASIS SOURCE (P_old): unchanged from v1 -- computed at the
+# run_rank_extension_variant() call site directly from `model` itself
+# (compute_old_semantic_subspace(model, ...)), NOT from `teacher_model`,
+# which is invalid as a classifier source for the non-KD nullspace method
+# (it is the pretrained-CLIP-only anchor there, never trained on CIFAR-100).
+# P_v^(l) (the per-layer pullback) is then derived from this SAME P_old,
+# freshly, once per (method, step), for every v_proj target module --
+# EACH LAYER GETS ITS OWN W_o^(l) AND THEREFORE ITS OWN P_v^(l); one pulled-
+# back basis is never reused across layers (their out_proj matrices differ).
+#
+# INTERACTION WITH SOFT PROTECTION (Part 5 decision, REVERSED from v1):
+# protect_weight=30 is now RETAINED, unchanged, for both KD nullspace
+# methods (see RANKEXT_PROJECTED_PROTECT_METHODS above). v1 disabled it for
+# causal cleanliness against an untested hard mechanism; that hard mechanism
+# has since been found invalid and replaced entirely, so preserving v1's
+# experimental-control choice would not have been meaningful. v2 instead
+# holds the ENTIRE historical baseline configuration fixed (protect30, KD
+# T=2/weight=1/warmup=0, orth=50, calibration, pretrained anchor) and adds
+# ONLY the corrected v_proj null-space constraint as the single new
+# intervention relative to each method's existing R6 result -- the cleanest
+# possible causal comparison against results we already have.
+#
+# INTERACTION WITH THE PRETRAINED-BACKBONE ANCHOR (non-KD method only):
+# RANKEXT_PRETRAINED_ANCHOR_WEIGHT is PRESERVED, unchanged, for
+# rank_extension_nullspace -- same reasoning as v1 (different quantity:
+# whole-feature-space distance-to-pretrained vs. a specific old-class
+# write-direction constraint; no redundancy/conflict; removing it would
+# reintroduce non-KD RankExt's already-solved catastrophic first-step
+# collapse, confounding this experiment with an unrelated regression).
+RANKEXT_NULLSPACE_METHODS = {
+    "rank_extension_nullspace",
+    "rank_extension_nullspace_kd_only_T2",
+    "rank_extension_nullspace_orth_factor_lam_50_kd_T2",
+}
 
 # Master switch above still gates calibration overall (False disables it for
 # every method, same as before). When True, CALIBRATION_ENABLED_FAMILIES
@@ -681,10 +844,13 @@ METHOD_DISPLAY_NAME_MAP = {
     "rank_extension_orth_factor_lam_50": "RankExt + FactorOrth",
     "rank_extension_orth_factor_lam_50_kd_T1": "RankExt + FactorOrth + KD T1",
     "rank_extension_orth_factor_lam_50_kd_T2": "RankExt + FactorOrth + KD T2",
-    # ORTH-LAMBDA INTERACTION ABLATION (2026-08-22): distinct display name so
-    # this never gets visually confused with the lam_50 flagship in any plot
-    # legend/table.
-    "rank_extension_orth_factor_lam_25_kd_T2": "RankExt + FactorOrth(lam25) + KD T2",
+    # STRUCTURAL NULL-SPACE RANKEXT (R6 roadmap Stage 2, 2026-08-23): distinct
+    # display names throughout so these are never visually confused with
+    # their non-nullspace counterparts in any plot legend/table -- see
+    # RANKEXT_NULLSPACE_METHODS above for the full mechanism writeup.
+    "rank_extension_nullspace": "RankExt + NullSpace",
+    "rank_extension_nullspace_kd_only_T2": "RankExt + NullSpace + KD T2",
+    "rank_extension_nullspace_orth_factor_lam_50_kd_T2": "RankExt + NullSpace + FactorOrth + KD T2",
 }
 
 METHOD_ALIAS_NAME_MAP = {
@@ -696,7 +862,9 @@ METHOD_ALIAS_NAME_MAP = {
     "rank_extension_kd_only_T2": "rank_extension_kd_only_T2",
     "rank_extension_orth_factor_lam_50": "rank_extension_orth_factor_lam_50",
     "rank_extension_orth_factor_lam_50_kd_T2": "rank_extension_orth_factor_lam_50_kd_T2",
-    "rank_extension_orth_factor_lam_25_kd_T2": "rank_extension_orth_factor_lam_25_kd_T2",
+    "rank_extension_nullspace": "rank_extension_nullspace",
+    "rank_extension_nullspace_kd_only_T2": "rank_extension_nullspace_kd_only_T2",
+    "rank_extension_nullspace_orth_factor_lam_50_kd_T2": "rank_extension_nullspace_orth_factor_lam_50_kd_T2",
 }
 
 SUPERVISOR_SELECTED_METHOD_SPECS = [
@@ -772,20 +940,40 @@ SUPERVISOR_SELECTED_METHOD_SPECS = [
         "kd_temperature": 2.0,
         "kd_weight": float(KD_WEIGHT),
     },
-    # ORTH-LAMBDA INTERACTION ABLATION (2026-08-22, job 4914807 follow-up):
-    # added as a NEW spec entry, NOT a replacement of the lam_50 spec above --
-    # the lam_50 flagship row above is untouched byte-for-byte. Only present
-    # in ACTIVE_SUPERVISOR_SELECTED_METHOD_SPECS (and therefore in
-    # supervisor_selected_accuracy_comparison.csv / configs/
-    # supervisor_selected_methods.json) once its base_method flag is also
-    # True in METHODS_TO_RUN and it is registered via add_method() in
-    # build_active_method_configs() -- see both above.
+    # ORTH-LAMBDA INTERACTION ABLATION (2026-08-22, job 4914807 follow-up)
+    # REMOVED 2026-08-23: rank_extension_orth_factor_lam_25_kd_T2 spec entry
+    # deleted -- job 4915286 showed all_seen 70.58 vs the lam_50 flagship's
+    # 70.62 (-0.04pp, noise). See RANKEXT_PROJECTED_PROTECT_METHODS above.
+    #
+    # STRUCTURAL NULL-SPACE RANKEXT (R6 roadmap Stage 2, 2026-08-23): 3 new
+    # spec entries, NOT replacements of the 3 rows above (which stay
+    # untouched, byte-for-byte, as the historical R6 reference this
+    # experiment is compared against). See RANKEXT_NULLSPACE_METHODS above
+    # for the full mechanism writeup.
     {
-        "internal_method_name": "rank_extension_orth_factor_lam_25_kd_T2",
-        "supervisor_requested_name": "rank_extension_orth_factor_lam_25_kd_T2",
-        "display_name": "RankExt + FactorOrth(lam25) + KD T2",
+        "internal_method_name": "rank_extension_nullspace",
+        "supervisor_requested_name": "rank_extension_nullspace",
+        "display_name": "RankExt + NullSpace",
         "family": "rank_extension",
-        "factor_lambda": 25.0,
+        "factor_lambda": 0.0,
+        "kd_temperature": 0.0,
+        "kd_weight": 0.0,
+    },
+    {
+        "internal_method_name": "rank_extension_nullspace_kd_only_T2",
+        "supervisor_requested_name": "rank_extension_nullspace_kd_only_T2",
+        "display_name": "RankExt + NullSpace + KD T2",
+        "family": "rank_extension",
+        "factor_lambda": 0.0,
+        "kd_temperature": 2.0,
+        "kd_weight": float(KD_WEIGHT),
+    },
+    {
+        "internal_method_name": "rank_extension_nullspace_orth_factor_lam_50_kd_T2",
+        "supervisor_requested_name": "rank_extension_nullspace_orth_factor_lam_50_kd_T2",
+        "display_name": "RankExt + NullSpace + FactorOrth + KD T2",
+        "family": "rank_extension",
+        "factor_lambda": 50.0,
         "kd_temperature": 2.0,
         "kd_weight": float(KD_WEIGHT),
     },
@@ -1026,6 +1214,22 @@ def get_rankext_new_block_warmup_multiplier():
     return float(_rankext_new_block_warmup_state["multiplier"])
 
 
+# STRUCTURAL NULL-SPACE RANKEXT v2 (design corrected 2026-08-23): unlike the
+# warmup multiplier above, the null-space basis is NOT a single value shared
+# by every module -- v2 uses a DIFFERENT, LAYER-SPECIFIC pulled-back basis
+# P_v^(l) per v_proj module (each layer's own out_proj differs), and NO
+# basis at all for q_proj (see RANKEXT_NULLSPACE_METHODS below). A single
+# shared module-level value (the v1 design used here) cannot express that.
+# v2 instead sets a PER-INSTANCE attribute (GrowingRankLoRALinear.
+# nullspace_basis_v, default None) directly on each qualifying v_proj
+# module object from run_rank_extension_variant() -- safe without any
+# reset/bridge machinery, because build_rank_extension_model() constructs
+# entirely fresh module instances every CL step (see that function), so a
+# stale attribute from a previous step's module simply cannot exist on this
+# step's (new) objects. See GrowingRankLoRALinear.set_nullspace_basis_v() /
+# effective_B_new() and RANKEXT_NULLSPACE_METHODS below.
+
+
 def family_uses_new_block_warmup(family):
     """rank_extension only -- see RANKEXT_NEW_BLOCK_WARMUP_ENABLED comment
     above for why simple_avg is excluded (GrowingRankLoRALinear, the only
@@ -1036,10 +1240,13 @@ def family_uses_new_block_warmup(family):
 RANKEXT_NEW_BLOCK_WARMUP_DISABLED_METHODS = {
     "rank_extension_kd_only_T2",
     "rank_extension_orth_factor_lam_50_kd_T2",
-    # ORTH-LAMBDA INTERACTION ABLATION (2026-08-22): same KD-RankExt warmup
-    # exemption as its lam_50 sibling -- see RANKEXT_PROJECTED_PROTECT_METHODS
-    # above for why this method exists.
-    "rank_extension_orth_factor_lam_25_kd_T2",
+    # STRUCTURAL NULL-SPACE RANKEXT (2026-08-23): same KD-RankExt warmup
+    # exemption as their non-nullspace siblings -- KD warmup stays 0,
+    # unchanged, per the roadmap's explicit "do not change KD" instruction.
+    # rank_extension_nullspace (non-KD) is deliberately NOT added here --
+    # keeps the existing 1-epoch warmup, matching plain rank_extension.
+    "rank_extension_nullspace_kd_only_T2",
+    "rank_extension_nullspace_orth_factor_lam_50_kd_T2",
 }
 
 
@@ -1060,6 +1267,14 @@ def method_rankext_new_block_warmup_epochs(method_name, family):
 # see RankExtNewBlockWarmupCallback below and its CSV write near the other
 # diagnostic tables (best_epoch_selection_rows / growing_overfitting_rows).
 rankext_new_block_warmup_diagnostic_rows = []
+
+# STRUCTURAL NULL-SPACE RANKEXT v2: one row per (method, step_id, v_proj
+# module/layer) -- q_proj is never constrained and never appears here -- see
+# compute_nullspace_leakage_diagnostics() and RANKEXT_NULLSPACE_METHODS
+# above. Populated only for the 3 nullspace methods at steps with an old-
+# class basis (steps 2-5); CSV written near the other per-method-step
+# diagnostic tables.
+rankext_nullspace_diagnostic_rows = []
 
 
 def orth_lambda_warmup_multiplier(epoch_val, warmup_epochs, enabled):
@@ -1147,9 +1362,20 @@ def orth_lambda_warmup_multiplier(epoch_val, warmup_epochs, enabled):
 #    to this crash -- A1 (color_map fix) + A2 (these CSVs now write before
 #    any plot, each plot try/excepted) fix that independently of point 2.
 #
-# TEMP R6 runtime reduction: simple_avg-family methods are disabled here only
-# through run-selection flags. Their implementations/config construction remain
-# intact below and can be re-enabled by flipping these booleans back.
+# STRUCTURAL EXPERIMENT (R6 roadmap Stage 2, 2026-08-23): the 3 UNCHANGED
+# RankExt baselines (rank_extension, rank_extension_kd_only,
+# rank_extension_orth_factor_lam_50_kd) are DEACTIVATED here -- their R6
+# results are already repeated, validated, and bit-identically reproduced
+# (job 4914807/4915286 flagship: first=63.80, later=72.325, all_seen=70.62);
+# retraining them again has ~zero marginal scientific value and this run's
+# GPU time is spent only on their 3 new structural null-space counterparts
+# (rank_extension_nullspace / _kd_only_T2 / _orth_factor_lam_50_kd_T2 --
+# see RANKEXT_NULLSPACE_METHODS above). Historical numbers are taken from R6,
+# not reproduced in this job. simple_avg (all 4 variants) stays deactivated,
+# unrelated to this change (see the prior NARROWED note this replaces).
+# Execution-selection only in every case -- every implementation/config-
+# construction path below is untouched and can be reactivated by flipping
+# these booleans back, same as every prior disable in this dict.
 METHODS_TO_RUN = {
     "simple_avg": False,
     "simple_avg_kd": False,
@@ -1157,20 +1383,24 @@ METHODS_TO_RUN = {
     "simple_avg_delta_orth_kd": False,
     "simple_avg_factor_orth": False,
     "simple_avg_factor_orth_kd": False,
-    "rank_extension": True,
-    "rank_extension_kd_only": True,
+    "rank_extension": False,
+    "rank_extension_kd_only": False,
     "rank_extension_orth_delta_trace_lam_50": False,  # disabled for FIX 2 -- was True; delta-trace excluded from the 8-method set
     "rank_extension_orth_delta_trace_lam_50_kd": False,
-    "rank_extension_orth_factor_lam_50": True,
-    "rank_extension_orth_factor_lam_50_kd": True,
-    # ORTH-LAMBDA INTERACTION ABLATION (2026-08-22, job 4914807 follow-up):
-    # fifth method, added alongside the existing four -- NOT a replacement.
-    # KD-only variant of rank_extension_orth_factor_lam_25 (no non-KD
-    # lam_25 sibling is defined/trained; see build_active_method_configs()
-    # below, which calls add_method() for this base_method exactly once,
-    # directly with uses_kd=True, unlike the lam_50 pattern's separate
-    # non-KD + KD-loop pair).
-    "rank_extension_orth_factor_lam_25_kd": True,
+    # Non-KD FactorOrth: stays deactivated (never competitive; unrelated to
+    # this structural experiment, which does not include a nullspace
+    # counterpart for this specific base method -- see RANKEXT_NULLSPACE_
+    # METHODS above, only 3 structural regimes were requested).
+    "rank_extension_orth_factor_lam_50": False,
+    "rank_extension_orth_factor_lam_50_kd": False,
+    # STRUCTURAL NULL-SPACE RANKEXT (2026-08-23): the 3 new active methods
+    # for this experiment -- raw RankExt, RankExt+KD, and the FactorOrth+KD
+    # flagship, each with the hard null-space constraint in place of (not
+    # stacked with) the soft projected-protection loss. See
+    # RANKEXT_NULLSPACE_METHODS above for the full design.
+    "rank_extension_nullspace": True,
+    "rank_extension_nullspace_kd_only": True,
+    "rank_extension_nullspace_orth_factor_lam_50_kd": True,
     # RANK_EXT FIRST_STEP FIX (task 2 decision doc, 2026-08-17): the
     # feature-anchor lever's 4 opt-in method flags (rank_extension_featanchor,
     # rank_extension_orth_factor_featanchor, and their DEFAULT-OFF
@@ -1300,22 +1530,25 @@ def build_active_method_configs():
         kd_tag = kd_temperature_tag(kd_temp)
         add_method(f"rank_extension_orth_factor_lam_50_kd_{kd_tag}", "rank_extension", "rank_extension_orth_factor_lam_50_kd", uses_kd=True, kd_temperature=kd_temp, uses_factor_orth=True)
 
-    # ORTH-LAMBDA INTERACTION ABLATION (2026-08-22, job 4914807 follow-up):
-    # KD-only variant of the lam_50 pair above, with lambda_orth_scale=0.5 so
-    # its lambda_orth resolves to LAMBDA_ORTH * 0.5 == 25.0 (LAMBDA_ORTH stays
-    # 50.0 globally -- unaffected, see the LAMBDA_ORTH==50.0 assert below --
-    # this is the SAME per-call scaling mechanism COMBINED_LAMBDA_ORTH_SCALE
-    # already uses for simple_avg_factor_orth_kd above, just applied here to a
-    # single explicit method rather than a family-wide scale). Deliberately
-    # no non-KD "rank_extension_orth_factor_lam_25" sibling is added -- the
-    # ablation this exists to run only needs the KD+protect combination (see
-    # RANKEXT_PROJECTED_PROTECT_METHODS above), and training an unused non-KD
-    # variant would add GPU time with no diagnostic value. kd_weight is left
-    # at its default (no kd_weight_scale override) so it exactly matches
-    # rank_extension_orth_factor_lam_50_kd_T2's kd_weight=1.0.
+    # STRUCTURAL NULL-SPACE RANKEXT (R6 roadmap Stage 2, 2026-08-23): mirrors
+    # the 3 add_method() call patterns immediately above exactly (same
+    # family, same uses_kd/uses_factor_orth/lambda_orth_scale/kd_weight_scale
+    # -- i.e. orth=50 unchanged, KD T=2/weight=1.0 unchanged, no scalar
+    # retuning of any kind), differing only in method_name/base_method so
+    # these resolve as fully independent methods. The hard null-space
+    # constraint itself is NOT a config-table field here (it is gated purely
+    # by method-name membership in RANKEXT_NULLSPACE_METHODS at the
+    # run_rank_extension_variant() call site, exactly like
+    # RANKEXT_PROJECTED_PROTECT_METHODS already is) -- see that set above for
+    # the full design, including why protect_weight resolves to 0.0 for all
+    # 3 of these (deliberately excluded from RANKEXT_PROJECTED_PROTECT_METHODS).
+    add_method("rank_extension_nullspace", "rank_extension", "rank_extension_nullspace")
     for kd_temp in KD_TEMPERATURES:
         kd_tag = kd_temperature_tag(kd_temp)
-        add_method(f"rank_extension_orth_factor_lam_25_kd_{kd_tag}", "rank_extension", "rank_extension_orth_factor_lam_25_kd", uses_kd=True, kd_temperature=kd_temp, uses_factor_orth=True, lambda_orth_scale=0.5)
+        add_method(f"rank_extension_nullspace_kd_only_{kd_tag}", "rank_extension", "rank_extension_nullspace_kd_only", uses_kd=True, kd_temperature=kd_temp)
+    for kd_temp in KD_TEMPERATURES:
+        kd_tag = kd_temperature_tag(kd_temp)
+        add_method(f"rank_extension_nullspace_orth_factor_lam_50_kd_{kd_tag}", "rank_extension", "rank_extension_nullspace_orth_factor_lam_50_kd", uses_kd=True, kd_temperature=kd_temp, uses_factor_orth=True)
 
     return configs
 
@@ -1342,14 +1575,13 @@ ENABLED_METHOD_FAMILIES = [name for name, enabled in METHODS_TO_RUN.items() if e
 # removed from the expected set to match the two flags flipped to False above --
 # otherwise `assert set(ENABLED_METHOD_FAMILIES) == EXPECTED_ENABLED_METHOD_FAMILIES`
 # below would fail as soon as those two were disabled.
+# STRUCTURAL EXPERIMENT (2026-08-23): the 3 unchanged baselines' base_method
+# names replaced with their 3 nullspace counterparts, matching METHODS_TO_RUN
+# above -- simple_avg (all 4 variants) stays out, unrelated to this change.
 EXPECTED_ENABLED_METHOD_FAMILIES = {
-    "rank_extension",
-    "rank_extension_kd_only",
-    "rank_extension_orth_factor_lam_50",
-    "rank_extension_orth_factor_lam_50_kd",
-    # ORTH-LAMBDA INTERACTION ABLATION (2026-08-22): fifth active method, see
-    # METHODS_TO_RUN above.
-    "rank_extension_orth_factor_lam_25_kd",
+    "rank_extension_nullspace",
+    "rank_extension_nullspace_kd_only",
+    "rank_extension_nullspace_orth_factor_lam_50_kd",
 }
 
 assert KD_WEIGHT == 1.0
@@ -2569,6 +2801,14 @@ def train_with_trainer(
         )
         trainer.add_callback(warmup_callback)
 
+    # STRUCTURAL NULL-SPACE RANKEXT v2: unlike v1, no module-level state bridge
+    # is needed here at all -- run_rank_extension_variant() sets each
+    # qualifying v_proj module's `nullspace_basis_v` attribute DIRECTLY on
+    # `model`'s own submodules, before this function is even called, and
+    # `model` is passed straight into `trainer_cls(model=model, ...)` above,
+    # so every forward pass during trainer.train() already sees the correct
+    # per-layer basis with no extra plumbing.
+
     trainer.train()
 
     # Unconditional reset back to the neutral 1.0 -- every eval call in this
@@ -2612,6 +2852,40 @@ def train_with_trainer(
             if epoch_callback is not None and len(epoch_callback.epoch_rows) > 0
             else np.nan
         )
+
+    # STRUCTURAL NULL-SPACE RANKEXT v2: `model` now holds its FINAL state for
+    # this step (best-epoch-reloaded above, or the last-epoch state if
+    # best-epoch selection is off) -- forward() has used effective_B_new()
+    # (the projected view) for every training/eval forward pass so far, but
+    # the RAW self.B_new parameter itself can still carry a small, harmless,
+    # functionally-inert P_v-aligned component (AdamW's per-scalar-entry
+    # adaptive scaling does not preserve subspace membership exactly -- see
+    # RANKEXT_NULLSPACE_METHODS' derivation above). COMMIT the projection
+    # into the raw parameter now, ONCE, before this block can ever be frozen:
+    # extract_rank_extension_state() -> GrowingRankLoRALinear.full_A_B()
+    # reads self.B_new directly with NO projection applied, and once a block
+    # is frozen (A_frozen/B_frozen at the next CL step) it is never
+    # reprojected again -- so this is the single point after which the
+    # null-space guarantee must already be permanently, exactly true in the
+    # stored weights. Mathematically a true no-op relative to every forward
+    # pass already computed this step (self.B_new.data is overwritten with
+    # the SAME value effective_B_new() was already returning). Fully
+    # GENERIC -- checks each module's OWN nullspace_basis_v attribute
+    # directly (set only on v_proj-named target modules of
+    # RANKEXT_NULLSPACE_METHODS by run_rank_extension_variant(), never on
+    # q_proj modules or any non-nullspace method/step), so this needs no
+    # knowledge of which method/trainer_cls is running and applies correctly
+    # to simple_avg (IndependentLoraOrthTrainer, no GrowingRankLoRALinear
+    # modules at all -- loop body never executes) with zero special-casing.
+    # Reset to None immediately after each module's own commit, matching the
+    # defensive reset-after pattern used throughout this file, even though
+    # (per build_rank_extension_model()'s fresh-module-per-step construction)
+    # no correctness issue would arise from leaving it set.
+    with torch.no_grad():
+        for _module in model.modules():
+            if isinstance(_module, GrowingRankLoRALinear) and _module.new_rank > 0 and getattr(_module, "nullspace_basis_v", None) is not None:
+                _module.B_new.data = _module.effective_B_new().detach().clone()
+                _module.nullspace_basis_v = None
 
     if epoch_callback is not None and best_epoch_selection_records is not None:
         final_epoch_val_ce = (
@@ -4758,6 +5032,19 @@ class GrowingRankLoRALinear(nn.Module):
             self.A_new = None
             self.B_new = None
 
+        # STRUCTURAL NULL-SPACE RANKEXT v2 (design corrected 2026-08-23): per-
+        # INSTANCE (not module-level-shared -- v1's design error) basis. None
+        # by default for every module of every method -- q_proj-wrapped
+        # instances NEVER have this set under any code path (see
+        # RANKEXT_NULLSPACE_METHODS above), so effective_B_new() is a true
+        # structural no-op for q_proj, by construction, not a runtime check.
+        # Only set (via set_nullspace_basis_v() below) on v_proj-named target
+        # modules of RANKEXT_NULLSPACE_METHODS by run_rank_extension_variant(),
+        # to that LAYER's own pulled-back basis P_v^(l) = orth(W_o^(l)T P_old)
+        # -- each layer's out_proj differs, so each v_proj instance gets its
+        # own value; never a single value shared across layers.
+        self.nullspace_basis_v = None
+
     def full_A_B(self):
         A_parts = []
         B_parts = []
@@ -4783,6 +5070,41 @@ class GrowingRankLoRALinear(nn.Module):
             return None
         return (self.B_frozen @ self.A_frozen) * float(self.scaling)
 
+    def set_nullspace_basis_v(self, P_v):
+        """STRUCTURAL NULL-SPACE RANKEXT v2: sets this instance's own
+        layer-specific pulled-back basis (see __init__'s nullspace_basis_v
+        docstring). Called only on v_proj-named target modules by
+        run_rank_extension_variant(); q_proj modules are never touched by
+        any caller of this method."""
+        self.nullspace_basis_v = P_v
+
+    def effective_B_new(self, P_v=None):
+        """STRUCTURAL NULL-SPACE RANKEXT v2 (see RANKEXT_NULLSPACE_METHODS
+        above for the full derivation, including WHY this basis must be
+        pulled back through this layer's own out_proj rather than using raw
+        classifier-space P_old directly -- v1's error): returns B_new
+        projected onto the orthogonal complement of P_v's column space,
+        B_new - P_v @ (P_v.T @ B_new) -- exactly equivalent to
+        (I - P_v P_v^T) @ (B_new @ A_new) left-projecting the full
+        Delta_W_new (v_proj only), per the same associativity argument v1
+        already established (only the BASIS changed, not the mechanics).
+        Differentiable, recomputed fresh every call -- never mutates
+        self.B_new in place. Returns self.B_new unchanged (a true no-op)
+        when P_v is None -- which is EVERY q_proj instance under every code
+        path (never has a basis set), every non-nullspace method, and step 1
+        of nullspace methods (no old-class basis exists yet). `P_v` defaults
+        to this instance's OWN nullspace_basis_v attribute (set once, per
+        instance, per step, by run_rank_extension_variant() -- see
+        set_nullspace_basis_v()) when not passed explicitly; an explicit
+        argument is accepted so diagnostics can probe a specific basis
+        without depending on/mutating live instance state."""
+        if P_v is None:
+            P_v = self.nullspace_basis_v
+        if P_v is None or self.B_new is None:
+            return self.B_new
+        P = P_v.to(device=self.B_new.device, dtype=self.B_new.dtype)
+        return self.B_new - P @ (P.t() @ self.B_new)
+
     def forward(self, x):
         base_out = self.base_layer(x)
         x_dropped = self.dropout(x)
@@ -4795,7 +5117,15 @@ class GrowingRankLoRALinear(nn.Module):
 
         if self.new_rank > 0:
             hidden_new = torch.matmul(x_dropped, self.A_new.T)
-            lora_new = torch.matmul(hidden_new, self.B_new.T)
+            # STRUCTURAL NULL-SPACE RANKEXT v2: B_new_eff == self.B_new
+            # (identity, zero extra compute beyond a None-check) for every
+            # module except v_proj-named target modules of
+            # RANKEXT_NULLSPACE_METHODS at steps where an old-class basis
+            # exists -- see effective_B_new()/set_nullspace_basis_v() and
+            # RANKEXT_NULLSPACE_METHODS above. q_proj is ALWAYS a no-op here,
+            # by construction (nullspace_basis_v is never set on it).
+            B_new_eff = self.effective_B_new()
+            lora_new = torch.matmul(hidden_new, B_new_eff.T)
             # RANKEXT_NEW_BLOCK_WARMUP_ENABLED (analysis_rankext_plain/): scales
             # only the NEW block's contribution, never the base/frozen-old
             # term above. Always exactly 1.0 (a true no-op, not just close to
@@ -5508,6 +5838,156 @@ def compute_old_semantic_subspace(teacher_model, old_class_ids, eps=1e-8):
     return P_old
 
 
+def compute_v_proj_pullback_basis(P_old, W_o, eps=1e-8):
+    """STRUCTURAL NULL-SPACE RANKEXT v2: pulls the final-classifier-space
+    basis P_old ([hidden_size, k], orthonormal columns) BACK through ONE
+    layer's frozen out_proj weight W_o ([hidden_size, hidden_size], nn.Linear
+    convention -- out_proj(x) = W_o @ x for a column vector x, so
+    Delta_residual = W_o @ Delta_value) into that layer's OWN v_proj
+    output/value-channel coordinate system. See RANKEXT_NULLSPACE_METHODS
+    above for the full derivation of why this pullback (not raw P_old) is
+    the semantically correct basis to project v_proj's B_new against.
+
+    P_v = orth(W_o^T @ P_old): W_o^T does not preserve orthonormality of an
+    arbitrary basis in general, so the pulled-back columns are
+    re-orthonormalized via SVD, with the same numerical-rank tolerance
+    compute_old_semantic_subspace() uses. `pulled_back = W_o^T @ P_old` is
+    [hidden_size, k] (tall, k << hidden_size) -- its COLUMN SPACE (spanned
+    by the k pulled-back old-class directions, now expressed in v-space) is
+    what U's columns give via SVD (NOT Vh's rows, which was the correct
+    choice for compute_old_semantic_subspace()'s [C_old, hidden_size] WIDE
+    input -- the two functions solve genuinely different shaped problems, do
+    not copy one's U/Vh choice into the other without checking the shape).
+
+    Returns None if the pulled-back rank is 0 (not expected in practice
+    given P_old is already non-None when this is called, but checked
+    defensively, matching compute_old_semantic_subspace()'s own style)."""
+    with torch.no_grad():
+        P_old_cpu = P_old.detach().to("cpu", dtype=torch.float32)
+        W_o_cpu = W_o.detach().to("cpu", dtype=torch.float32)
+        pulled_back = W_o_cpu.t() @ P_old_cpu                 # [H, k]
+        U, S, _ = torch.linalg.svd(pulled_back, full_matrices=False)  # U: [H, k]
+        if S.numel() == 0:
+            return None
+        tol = float(S.max().item()) * max(pulled_back.shape) * torch.finfo(pulled_back.dtype).eps
+        rank_k = int((S > tol).sum().item())
+        if rank_k == 0:
+            return None
+        P_v = U[:, :rank_k].contiguous().detach()             # [H, k'], orthonormal columns
+    return P_v
+
+
+def find_v_proj_out_proj_pairs(model):
+    """STRUCTURAL NULL-SPACE RANKEXT v2: returns [(v_proj_module_name,
+    v_proj_GrowingRankLoRALinear_instance, out_proj_weight_tensor,
+    layer_index), ...] for every v_proj target module in `model`
+    (model._rank_extension_target_names, set by build_rank_extension_model()
+    -- reused rather than re-deriving target names independently). out_proj
+    is the v_proj module's OWN parent's .out_proj attribute -- verified
+    directly against the actual HF CLIPAttention layout (self.q_proj,
+    self.k_proj, self.v_proj, self.out_proj are ALL direct attributes of the
+    SAME CLIPAttention instance, so get_parent_module_and_child_name() on a
+    "...self_attn.v_proj" name returns exactly that CLIPAttention instance
+    as `parent`, and parent.out_proj is its co-located, un-wrapped (out_proj
+    is never in rank_extension's target_modules), frozen nn.Linear).
+    layer_index is parsed from the module name for readability in
+    diagnostics only -- module_name remains the unambiguous identity field
+    regardless of whether parsing succeeds (falls back to -1)."""
+    import re
+    pairs = []
+    target_names = list(getattr(model, "_rank_extension_target_names", []))
+    for name in target_names:
+        if not name.endswith("v_proj"):
+            continue
+        parent, child_name = get_parent_module_and_child_name(model, name)
+        v_module = getattr(parent, child_name)
+        if not hasattr(parent, "out_proj"):
+            raise AttributeError(
+                f"find_v_proj_out_proj_pairs: {name}'s parent has no out_proj attribute -- "
+                "CLIPAttention layout assumption violated, do not proceed silently."
+            )
+        out_proj = parent.out_proj
+        m = re.search(r"layers\.(\d+)\.", name)
+        layer_index = int(m.group(1)) if m else -1
+        pairs.append((name, v_module, out_proj.weight, layer_index))
+    return pairs
+
+
+def compute_nullspace_leakage_diagnostics(model, P_old, method_name, step_id, old_class_ids, eps=1e-12):
+    """STRUCTURAL NULL-SPACE RANKEXT v2 diagnostic (Part 9): for every
+    v_proj target module (q_proj is NEVER included -- it is never
+    constrained, see RANKEXT_NULLSPACE_METHODS above), reports BOTH:
+      - pulled-back-space leakage r_v = ||P_v^T B||_F^2 / ||B||_F^2 -- the
+        mechanism's OWN guarantee, at the point it actually operates (v-space).
+      - residual-space leakage r_res = ||P_old^T W_o B||_F^2 / ||W_o B||_F^2
+        -- the SEMANTICALLY MEANINGFUL quantity: does the new v_proj
+        contribution's actual RESIDUAL-STREAM write (after out_proj) avoid
+        old-class directions, in the SAME coordinates classifier rows live
+        in. This is the decisive proof the mechanism constrains the
+        quantity actually intended, not just an internal book-keeping
+        subspace -- see RANKEXT_NULLSPACE_METHODS' "WHAT THIS GUARANTEES"
+        derivation.
+    Both reported pre- and post-projection. Must be called AFTER
+    train_with_trainer() has already committed the projection into
+    self.B_new.data (that function's "COMMIT the projection" block) so
+    "pre-projection"/raw readings reflect the ACTUAL final trained-and-
+    committed parameter (raw leakage should already read ~0 too, by
+    construction of that commit). Recomputes P_v fresh per module (does not
+    rely on module.nullspace_basis_v, which the commit step already reset to
+    None) -- cheap (one small SVD per module) and keeps this function fully
+    independent of training-loop internal state timing.
+
+    Returns a list of per-module dicts (one row per v_proj layer), or []
+    if P_old is None (step 1 / non-nullspace method -- no meaningful basis
+    to measure against)."""
+    if P_old is None:
+        return []
+    rows = []
+    hidden_dim = int(P_old.shape[0])
+    k = int(P_old.shape[1])
+    with torch.no_grad():
+        for module_name, module, W_o, layer_index in find_v_proj_out_proj_pairs(model):
+            if not (isinstance(module, GrowingRankLoRALinear) and module.new_rank > 0):
+                continue
+            P_v = compute_v_proj_pullback_basis(P_old, W_o)
+            if P_v is None:
+                continue
+            B = module.B_new.detach()
+            P_v_dev = P_v.to(device=B.device, dtype=B.dtype)
+            P_old_dev = P_old.to(device=B.device, dtype=B.dtype)
+            W_o_dev = W_o.detach().to(device=B.device, dtype=B.dtype)
+
+            def _leak(mat, basis):
+                overlap = basis.t() @ mat
+                return float((overlap ** 2).sum().item() / max(float((mat ** 2).sum().item()), eps))
+
+            B_eff = module.effective_B_new(P_v_dev)   # explicit P_v -- independent of live nullspace_basis_v state
+            WoB_raw = W_o_dev @ B
+            WoB_eff = W_o_dev @ B_eff
+
+            rows.append({
+                "method": str(method_name),
+                "step_id": int(step_id),
+                "module_name": module_name,
+                "layer_index": layer_index,
+                "basis_k": k,
+                "pullback_rank_k_prime": int(P_v.shape[1]),
+                "n_old_classes": int(len(old_class_ids)),
+                "hidden_dim": hidden_dim,
+                "orth_complement_dim": hidden_dim - int(P_v.shape[1]),
+                "orth_complement_fraction": (hidden_dim - int(P_v.shape[1])) / float(hidden_dim),
+                "removed_subspace_fraction": int(P_v.shape[1]) / float(hidden_dim),
+                "pre_pullback_leakage_ratio": _leak(B, P_v_dev),
+                "post_pullback_leakage_ratio": _leak(B_eff, P_v_dev),
+                "pre_residual_leakage_ratio": _leak(WoB_raw, P_old_dev),
+                "post_residual_leakage_ratio": _leak(WoB_eff, P_old_dev),
+                "raw_B_new_norm": float(B.norm().item()),
+                "post_projection_B_new_norm": float(B_eff.norm().item()),
+                "fraction_norm_removed": 1.0 - float(B_eff.norm().item()) / max(float(B.norm().item()), eps),
+            })
+    return rows
+
+
 class DeltaOrthRankExtensionTrainer(RankExtensionTrainer):
     def __init__(
         self,
@@ -5585,6 +6065,19 @@ class DeltaOrthRankExtensionTrainer(RankExtensionTrainer):
         )
         self.protect_k = int(self.P_old.shape[1]) if self.P_old is not None else 0
         self._protect_ready = False
+
+        # STRUCTURAL NULL-SPACE RANKEXT v2 (see RANKEXT_NULLSPACE_METHODS
+        # above for the full mechanism writeup): unlike self.P_old above,
+        # this trainer does NOT itself carry any null-space state --
+        # run_rank_extension_variant() sets each qualifying v_proj module's
+        # `nullspace_basis_v` attribute DIRECTLY on `model`'s own submodules
+        # (per-layer, via the out_proj pullback) BEFORE this trainer/
+        # train_with_trainer() is even constructed/called, so `model` already
+        # carries everything needed for every forward pass with no bridging
+        # through this class at all. This is a deliberate simplification from
+        # v1 (which needed a trainer-attribute + module-level-global-state
+        # bridge because it used a single value shared by every module; v2's
+        # per-layer values are set directly where they are used).
 
     def compute_loss(self, model, inputs, return_outputs=False, num_items_in_batch=None):
         # RANK_EXT FIRST_STEP FIX: only request hidden_states (mild extra
@@ -6180,6 +6673,41 @@ def run_rank_extension_variant(
         eval_ds = make_val_dataset(current_classes)
         out_dir = os.path.join(MODELS_DIR, f"{method_name}_step_{step_idx + 1}")
 
+        # STRUCTURAL NULL-SPACE RANKEXT v2 (see RANKEXT_NULLSPACE_METHODS
+        # above for the full mechanism/basis-source writeup): P_old computed
+        # from `model` itself, HERE, BEFORE this step's training starts --
+        # `model` at this point has been rebuilt from `previous_rank_state`
+        # (or is the fresh pretrained model at step 1) but has not yet
+        # trained on step_idx's data, so its classifier rows for classes seen
+        # strictly before this step are bit-identical to "the frozen
+        # previous-step classifier", uniformly for KD and non-KD methods
+        # alike (unlike `teacher_model`, which is invalid as a classifier
+        # source for the non-KD method -- see that comment). Empty/None at
+        # step 1 (no old classes exist yet), exactly like the soft
+        # mechanism's self.old_class_ids/self.P_old.
+        nullspace_old_class_ids = (
+            sorted(int(c) for s in range(step_idx) for c in classes_for_step(s))
+            if (method_name in RANKEXT_NULLSPACE_METHODS and step_idx > 0)
+            else []
+        )
+        nullspace_P_old = (
+            compute_old_semantic_subspace(model, nullspace_old_class_ids)
+            if (method_name in RANKEXT_NULLSPACE_METHODS and len(nullspace_old_class_ids) > 0)
+            else None
+        )
+        # v2 CORRECTION: for EVERY v_proj target module (never q_proj -- see
+        # RANKEXT_NULLSPACE_METHODS above for why), derive THAT layer's own
+        # pulled-back basis P_v^(l) = orth(W_o^(l)T @ P_old) and set it
+        # DIRECTLY on the v_proj module instance. Setting this on `model`'s
+        # submodules directly -- BEFORE train_with_trainer()/the Trainer is
+        # even constructed -- means every forward pass during training AND
+        # eval already sees the correct per-layer basis with no further
+        # plumbing (see train_with_trainer()'s comment on this same point).
+        if nullspace_P_old is not None:
+            for _v_name, _v_module, _out_proj_weight, _layer_idx in find_v_proj_out_proj_pairs(model):
+                _P_v = compute_v_proj_pullback_basis(nullspace_P_old, _out_proj_weight)
+                _v_module.set_nullspace_basis_v(_P_v)
+
         trainer_cls = DeltaOrthRankExtensionTrainer
         trainer_kwargs = {
             "classifier_snapshot": classifier_snapshot,
@@ -6249,6 +6777,23 @@ def run_rank_extension_variant(
             loss_rows_df = trainer.consume_logged_losses()
             if loss_rows_df is not None and orth_train_records is not None and len(loss_rows_df) > 0:
                 orth_train_records.extend(loss_rows_df.to_dict("records"))
+
+        # STRUCTURAL NULL-SPACE RANKEXT v2 diagnostic (Part 9): `model`'s
+        # v_proj B_new parameters have already been committed to their
+        # projected form by train_with_trainer() (see its "COMMIT the
+        # projection" block) by the time control returns here, so this reads
+        # the ACTUAL final trained-and-committed weights, not a live/
+        # transient view. Recomputes each layer's P_v fresh from
+        # nullspace_P_old (cheap -- see compute_nullspace_leakage_
+        # diagnostics()'s docstring for why). Returns [] (true no-op) for
+        # every non-nullspace method/step.
+        rankext_nullspace_diagnostic_rows.extend(compute_nullspace_leakage_diagnostics(
+            model=model,
+            P_old=nullspace_P_old,
+            method_name=method_name,
+            step_id=step_idx + 1,
+            old_class_ids=nullspace_old_class_ids,
+        ))
 
         # Task 2: refresh this method's live convergence plot/tables now that
         # step_idx + 1 has finished.
@@ -6993,6 +7538,33 @@ rankext_new_block_warmup_path = os.path.join(TABLES_DIR, "rankext_new_block_warm
 rankext_new_block_warmup_df.to_csv(rankext_new_block_warmup_path, index=False)
 print("Saved rank_extension new-block warmup diagnostics:", rankext_new_block_warmup_path)
 
+# STRUCTURAL NULL-SPACE RANKEXT v2 diagnostics (Part 9): one row per
+# (method, step_id, v_proj module/layer) -- q_proj never appears here (it is
+# never constrained, see RANKEXT_NULLSPACE_METHODS above), and this is
+# GRANULAR (per-layer), not aggregated, unlike v1's mean-across-modules
+# design -- lets per-layer leakage/depth patterns be inspected directly.
+# Empty for any run with no active RANKEXT_NULLSPACE_METHODS method (file
+# still always written, matching every other diagnostic table's empty-
+# fallback pattern).
+rankext_nullspace_df = pd.DataFrame(rankext_nullspace_diagnostic_rows)
+if len(rankext_nullspace_df) > 0:
+    rankext_nullspace_df = rankext_nullspace_df[
+        rankext_nullspace_df["method"].isin(active_method_order)
+    ].sort_values(["method", "step_id", "layer_index"]).reset_index(drop=True)
+else:
+    rankext_nullspace_df = pd.DataFrame(columns=[
+        "method", "step_id", "module_name", "layer_index", "basis_k",
+        "pullback_rank_k_prime", "n_old_classes", "hidden_dim",
+        "orth_complement_dim", "orth_complement_fraction",
+        "removed_subspace_fraction", "pre_pullback_leakage_ratio",
+        "post_pullback_leakage_ratio", "pre_residual_leakage_ratio",
+        "post_residual_leakage_ratio", "raw_B_new_norm",
+        "post_projection_B_new_norm", "fraction_norm_removed",
+    ])
+rankext_nullspace_path = os.path.join(TABLES_DIR, "rankext_nullspace_diagnostics_by_method_step.csv")
+rankext_nullspace_df.to_csv(rankext_nullspace_path, index=False)
+print("Saved rank_extension null-space (v_proj-only) projection diagnostics:", rankext_nullspace_path)
+
 loss_summary_rows = []
 for method_name in active_method_order:
     method_cfg = ACTIVE_METHOD_MAP[method_name]
@@ -7640,7 +8212,14 @@ from matplotlib.lines import Line2D
 DPI = 220
 REQ = list(ACTIVE_SUPERVISOR_SELECTED_INTERNAL_METHODS)
 SUPERVISOR_VARIANT_ORDER = ["Base", "KD (T=2)", "Factor-Orth", "KD + Factor-Orth"]
-VARIANT = {"simple_avg":"Base","rank_extension":"Base","simple_avg_factor_orth":"Factor-Orth","rank_extension_orth_factor_lam_50":"Factor-Orth","simple_avg_kd_T2":"KD (T=2)","rank_extension_kd_only_T2":"KD (T=2)","simple_avg_factor_orth_kd_T2":"KD + Factor-Orth","rank_extension_orth_factor_lam_50_kd_T2":"KD + Factor-Orth"}
+VARIANT = {"simple_avg":"Base","rank_extension":"Base","simple_avg_factor_orth":"Factor-Orth","rank_extension_orth_factor_lam_50":"Factor-Orth","simple_avg_kd_T2":"KD (T=2)","rank_extension_kd_only_T2":"KD (T=2)","simple_avg_factor_orth_kd_T2":"KD + Factor-Orth","rank_extension_orth_factor_lam_50_kd_T2":"KD + Factor-Orth",
+    # STRUCTURAL NULL-SPACE RANKEXT (2026-08-23): mapped onto the SAME 4
+    # existing categories as their non-nullspace counterparts (reusing this
+    # grid infrastructure as-is, per standing instruction, rather than adding
+    # a 5th category/new plotting logic) -- these grid plots compare rough
+    # loss-dynamics categories, not exact method identity (which is preserved
+    # everywhere else: supervisor tables, per-method CSVs, display names).
+    "rank_extension_nullspace":"Base","rank_extension_nullspace_kd_only_T2":"KD (T=2)","rank_extension_nullspace_orth_factor_lam_50_kd_T2":"KD + Factor-Orth"}
 VCOL = {"Base":"#1f77b4","KD (T=2)":"#ff7f0e","Factor-Orth":"#d62728","KD + Factor-Orth":"#2ca02c"}
 VSTYLE = {"Base":"-","KD (T=2)":"--","Factor-Orth":":","KD + Factor-Orth":"-."}
 FAMS = ["simple_avg","rank_extension"]

@@ -159,7 +159,16 @@ FAST_RUN = False
 # segment is unrelated legacy notebook-version naming, NOT a classes-per-
 # step marker, and is deliberately left untouched (renaming it would touch
 # unrelated infrastructure this task did not ask for).
-RUN_NAME_BASE = "clip_vit_lora_cifar100_4x25_full_comparison_with_orth_rankext"
+#
+# FINAL KD-WEIGHT EXPERIMENT (R6 roadmap, closing run): single-lever test of
+# KD_WEIGHT 1.0 -> 0.75 on the 4x25 flagship only (rank_extension and
+# rank_extension_kd_only_T2 disabled below via METHODS_TO_RUN -- their
+# results already exist from job 4918131 and are not being reproduced here).
+# "kdw075" in the run name distinguishes this treatment's output directory
+# from the KD-weight=1.0 baseline (job 4918131,
+# .../clip_vit_lora_cifar100_4x25_full_comparison_with_orth_rankext_EPOCH3_MAIN_20260824_160602),
+# which this run does not touch or overwrite.
+RUN_NAME_BASE = "clip_vit_lora_cifar100_4x25_kdw075_flagship_with_orth_rankext"
 RUN_NAME = f"{RUN_NAME_BASE}_{'FAST_RUN_DEBUG' if FAST_RUN else 'EPOCH3_MAIN'}"
 
 MODEL_CHECKPOINT = "openai/clip-vit-base-patch16"
@@ -636,7 +645,18 @@ RANKEXT_REPLAY_PER_CLASS = REPLAY_PER_CLASS
 LAMBDA_ORTH = 50.0
 LAMBDA_ORTH_DELTA_TRACE = LAMBDA_ORTH
 LAMBDA_ORTH_FACTOR = LAMBDA_ORTH
-KD_WEIGHT = 1.0
+# FINAL KD-WEIGHT EXPERIMENT (R6 roadmap, closing run, one-off single-point
+# test, no sweep): KD_WEIGHT changed 1.0 -> 0.75 for this run only, to test
+# whether the flagship's KD term (measured at ~1.49-1.59x CE in the settled
+# 4x25 baseline, job 4918131) is mildly over-constraining new-class
+# plasticity. This is a single global constant, so it also changes the
+# nominal kd_weight recorded for every OTHER kd-active method's config
+# metadata (rank_extension_kd_only_T2, simple_avg_kd_T2, etc.) -- harmless
+# here because every one of those methods is inactive this run (see
+# METHODS_TO_RUN below: only rank_extension_orth_factor_lam_50_kd is True),
+# so none of them trains or reports a result under this value. T (2.0),
+# LAMBDA_ORTH (50.0), and every other hyperparameter below are untouched.
+KD_WEIGHT = 0.75
 KD_TEMPERATURES = [2.0]
 KD_TEMPERATURE = KD_TEMPERATURES[-1]
 
@@ -1258,8 +1278,13 @@ METHODS_TO_RUN = {
     "simple_avg_delta_orth_kd": False,
     "simple_avg_factor_orth": False,
     "simple_avg_factor_orth_kd": False,
-    "rank_extension": True,
-    "rank_extension_kd_only": True,
+    # FINAL KD-WEIGHT EXPERIMENT: rank_extension and rank_extension_kd_only
+    # disabled for this run -- their KD_WEIGHT=1.0 results already exist
+    # (job 4918131) and are not being reproduced; only the flagship
+    # (rank_extension_orth_factor_lam_50_kd) trains this run, at the new
+    # KD_WEIGHT=0.75, to isolate the single-lever treatment.
+    "rank_extension": False,
+    "rank_extension_kd_only": False,
     "rank_extension_orth_delta_trace_lam_50": False,  # disabled for FIX 2 -- was True; delta-trace excluded from the 8-method set
     "rank_extension_orth_delta_trace_lam_50_kd": False,
     # Non-KD FactorOrth: stays deactivated -- never competitive vs the KD
@@ -1423,13 +1448,16 @@ ENABLED_METHOD_FAMILIES = [name for name, enabled in METHODS_TO_RUN.items() if e
 # below would fail as soon as those two were disabled.
 # BASELINE RESTORED (2026-08-24): back to the settled 3-method RankExt set,
 # matching METHODS_TO_RUN above -- simple_avg (all 4 variants) stays out.
+# FINAL KD-WEIGHT EXPERIMENT: narrowed from the settled 3-method
+# {rank_extension, rank_extension_kd_only, rank_extension_orth_factor_lam_50_kd}
+# set to the flagship alone, matching METHODS_TO_RUN above.
 EXPECTED_ENABLED_METHOD_FAMILIES = {
-    "rank_extension",
-    "rank_extension_kd_only",
     "rank_extension_orth_factor_lam_50_kd",
 }
 
-assert KD_WEIGHT == 1.0
+# FINAL KD-WEIGHT EXPERIMENT: intentionally 0.75 this run, not the usual 1.0
+# -- see KD_WEIGHT definition above for the single-lever rationale.
+assert KD_WEIGHT == 0.75
 assert KD_TEMPERATURES == [2.0]
 assert LAMBDA_ORTH == 50.0
 assert LORA_R == 80

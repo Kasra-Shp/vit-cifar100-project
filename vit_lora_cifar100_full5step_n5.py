@@ -123,27 +123,68 @@ FAST_RUN = False
 # PROTOCOL-DEPTH VALIDATION (R6 roadmap Stage 3, 2026-08-24): CIFAR-100
 # 5x20 -> 20x5, controlled protocol-only change to test the age-dependent-
 # drift hypothesis directly (does deepening cumulative block count amplify
-# forgetting at matched classes-seen/cumulative-rank checkpoints?). Explicit
-# "20x5" marker in the run name -- the .py filename's own "n5" segment is
-# unrelated legacy notebook-version naming, NOT a classes-per-step marker,
-# and is deliberately left untouched (renaming it would touch unrelated
-# infrastructure this task did not ask for).
-RUN_NAME_BASE = "clip_vit_lora_cifar100_20x5_full_comparison_with_orth_rankext"
+# forgetting at matched classes-seen/cumulative-rank checkpoints?). Result
+# (job 20260824_020825): STRONGLY SUPPORTED -- see the 20x5 analysis report.
+#
+# PROTOCOL-DEPTH VALIDATION, INVERSE-DEPTH LEG (R6 roadmap Stage 4,
+# 2026-08-24): 20x5 -> 4x25. Same controlled protocol-only manipulation, now
+# testing the INVERSE direction: if repeated incremental update/freeze
+# events are a major forgetting driver, making the protocol SHALLOWER than
+# the settled 5x20 baseline should improve retention. This is the second,
+# opposite-direction leg of the same single-variable (incremental depth)
+# manipulation: 20 steps -> 5 steps -> 4 steps, final classes/rank/backbone/
+# class order/learning mechanisms all held fixed (see NUM_STEPS/
+# CLASSES_PER_STEP and RANKEXT_RANK_SCHEDULE below for the companion
+# changes that keep total classes=100 and final cumulative rank=80).
+#
+# PRE-REGISTERED FALSIFIABLE PREDICTION (written before this run; do not
+# revise after seeing results): if repeated incremental update/freeze
+# events are a major contributor to forgetting, then relative to 5x20,
+# 4x25 should show (a) less forgetting / higher BWT, (b) earlier groups
+# (G1-G3) retaining higher final open accuracy than their 5x20 counterparts,
+# (c) smaller restricted-vs-open gaps, (d) weaker age-dependent degradation
+# (flatter age slope / weaker age-alignment correlation), (e) final all_seen
+# improved or at minimum competitive with 5x20. Fresh/current-step learning
+# may become slightly harder since each step now covers 25 classes instead
+# of 20 -- that is an expected, not disqualifying, side effect. A result
+# similar to 5x20 indicates saturation around 4-5 steps; a result WORSE than
+# 5x20 indicates a non-monotonic depth/task-size trade-off where an
+# individual task becoming too large begins to dominate. A failure of 4x25
+# to improve over 5x20 would weaken the simple monotonic "fewer incremental
+# events = better retention" interpretation, not confirm the age-drift
+# hypothesis' absence outright (see the inverse-depth report's alternative-
+# explanation section for how the two are told apart).
+#
+# Explicit "4x25" marker in the run name -- the .py filename's own "n5"
+# segment is unrelated legacy notebook-version naming, NOT a classes-per-
+# step marker, and is deliberately left untouched (renaming it would touch
+# unrelated infrastructure this task did not ask for).
+RUN_NAME_BASE = "clip_vit_lora_cifar100_4x25_full_comparison_with_orth_rankext"
 RUN_NAME = f"{RUN_NAME_BASE}_{'FAST_RUN_DEBUG' if FAST_RUN else 'EPOCH3_MAIN'}"
 
 MODEL_CHECKPOINT = "openai/clip-vit-base-patch16"
 
 NUM_CLASSES = 100
-# PROTOCOL-DEPTH VALIDATION: 5x20 -> 20x5. Total classes (100) and class
-# ORDER are unchanged (see class_splits below, now derived generically from
-# these two constants instead of a hardcoded 5-entry literal) -- new fine-
-# steps 1-4 are exactly old step 1's 20 classes split into four 5-class
-# blocks, fine-steps 5-8 = old step 2, etc. (verified programmatically in
-# the pre-flight synthetic test). No other scientific setting changes as a
-# result of this edit alone -- see RANKEXT_RANK_SCHEDULE below for the
-# companion change needed to keep final cumulative rank at 80 (not 320).
-NUM_STEPS = 20
-CLASSES_PER_STEP = 5
+# PROTOCOL-DEPTH VALIDATION: 5x20 -> 20x5 -> 4x25. Total classes (100) and
+# class ORDER are unchanged (see class_splits below, derived generically
+# from these two constants, not a hardcoded literal) -- classes are simply
+# chunked contiguously off native CIFAR-100 label order 0..99, never
+# shuffled, so this generalizes by construction: under 4x25, step1 = classes
+# 0-24 (bit-identical to 5x20 step1's class SET plus 5 more classes from
+# 5x20 step2), step2 = 25-49, step3 = 50-74, step4 = 75-99 (verified
+# programmatically in the pre-flight synthetic test). Unlike 20x5, 4x25's
+# per-step class blocks do NOT align to the historical 20-class step
+# boundaries at every step (25 does not evenly divide 20) -- only the FINAL
+# checkpoint (100 classes) is an exact class-count/rank match to a 5x20
+# checkpoint; see protocol_depth_macro_checkpoint_comparison.csv's
+# corresponding_5x20_step column (computed from an explicit classes-seen +
+# cumulative-rank match, not a step-index coincidence) for how this is
+# reported without overclaiming intermediate equivalence. No other
+# scientific setting changes as a result of this edit alone -- see
+# RANKEXT_RANK_SCHEDULE below for the companion change needed to keep final
+# cumulative rank at 80 (not 320).
+NUM_STEPS = 4
+CLASSES_PER_STEP = 25
 
 
 
@@ -842,19 +883,25 @@ RANKEXT_DIAGNOSTICS = True
 
 # PROTOCOL-DEPTH VALIDATION (2026-08-24): 5x20's schedule was
 # [16,32,48,64,80] -- +16 rank per +20-class step, i.e. 0.8 rank units per
-# class. 20x5 uses +4 rank per +5-class step -- the SAME 0.8 rank-units-per-
-# class ratio, deliberately preserved so the experiment manipulates
-# incremental DEPTH (block count / block age) only, not final adapter
-# capacity: this schedule ends at total_rank=80, identical to 5x20's final
-# rank (verified by the LORA_R==RANKEXT_RANK_SCHEDULE[-1] assert below,
-# unchanged). At fine-steps 4/8/12/16/20 the cumulative rank is exactly
-# 16/32/48/64/80 -- bit-identical to 5x20's steps 1-5 -- giving matched
-# classes-seen AND matched cumulative-rank checkpoints for direct
-# apples-to-apples comparison (see protocol_depth_macro_checkpoint_
-# comparison.csv). Do NOT extend this to a 320-final-rank schedule (that
-# would confound protocol depth with a 4x capacity increase) and do NOT
-# retune the 0.8 ratio -- this is a controlled protocol-only change.
-RANKEXT_RANK_SCHEDULE = [4, 8, 12, 16, 20, 24, 28, 32, 36, 40, 44, 48, 52, 56, 60, 64, 68, 72, 76, 80]
+# class. 20x5 used +4 rank per +5-class step (SAME 0.8 ratio); this is the
+# INVERSE-DEPTH leg, 4x25, using +20 rank per +25-class step -- again the
+# SAME 0.8 rank-units-per-class ratio, deliberately preserved across all
+# three protocols so the experiment manipulates incremental DEPTH (block
+# count / block age) only, not final adapter capacity: this schedule ends
+# at total_rank=80, identical to 5x20's and 20x5's final rank (verified by
+# the LORA_R==RANKEXT_RANK_SCHEDULE[-1] assert below, unchanged). At
+# fine-step 4 (the FINAL step) the cumulative rank is exactly 80 and
+# classes-seen is exactly 100 -- bit-identical to 5x20's step5 and 20x5's
+# step20 -- giving the one exact classes-seen AND cumulative-rank match
+# across all three protocols (see protocol_depth_macro_checkpoint_
+# comparison.csv). Fine-steps 1-3 (25/50/75 classes, rank 20/40/60) do NOT
+# match any 5x20 checkpoint exactly (20/40/60/80 classes do not divide
+# evenly by 25) -- do not treat them as equivalent to 5x20 steps 1-3; see
+# the corresponding_5x20_step column, which is left NaN for those rows on
+# purpose. Do NOT extend this to a 320-final-rank schedule (that would
+# confound protocol depth with a 4x capacity increase) and do NOT retune
+# the 0.8 ratio -- this is a controlled protocol-only change.
+RANKEXT_RANK_SCHEDULE = [20, 40, 60, 80]
 RANKEXT_ALPHA_PER_RANK = 2.0
 
 # ACCURACY-PUSH CANDIDATE (flag; now ON -- see "CAPACITY TEST" note below):
@@ -917,15 +964,16 @@ RANKEXT_ALPHA_PER_RANK = 2.0
 # PROTOCOL-DEPTH VALIDATION (2026-08-24): USE_RANKEXT_RANK_SCHEDULE_WIDE is
 # False and has been for every R6 job since the revert noted above -- this
 # schedule is DEAD CODE for training purposes, never selected by
-# active_rankext_rank_schedule(). It is extended to NUM_STEPS=20 entries
-# here ONLY to satisfy this file's own length/monotonicity asserts just
-# below (they run unconditionally at import time regardless of the flag);
-# extended by the exact same "2x the active default schedule, elementwise"
-# relationship the original 5-entry version had (compare [16,32,48,64,80]
-# to [32,64,96,128,160] above -- exactly 2x per entry), applied to the new
-# 20-entry default RANKEXT_RANK_SCHEDULE. Not a new scientific setting --
-# still never used while the flag stays False.
-RANKEXT_RANK_SCHEDULE_WIDE = [8, 16, 24, 32, 40, 48, 56, 64, 72, 80, 88, 96, 104, 112, 120, 128, 136, 144, 152, 160]
+# active_rankext_rank_schedule(). It is resized to NUM_STEPS=4 entries here
+# (was 20, for the 20x5 job) ONLY to satisfy this file's own length/
+# monotonicity asserts just below (they run unconditionally at import time
+# regardless of the flag); resized by the exact same "2x the active default
+# schedule, elementwise" relationship the original 5-entry version had
+# (compare [16,32,48,64,80] to [32,64,96,128,160] above -- exactly 2x per
+# entry), applied to the new 4-entry default RANKEXT_RANK_SCHEDULE
+# ([20,40,60,80] -> [40,80,120,160]). Not a new scientific setting -- still
+# never used while the flag stays False.
+RANKEXT_RANK_SCHEDULE_WIDE = [40, 80, 120, 160]
 USE_RANKEXT_RANK_SCHEDULE_WIDE = False
 assert len(RANKEXT_RANK_SCHEDULE_WIDE) == NUM_STEPS
 assert all(RANKEXT_RANK_SCHEDULE_WIDE[i] > RANKEXT_RANK_SCHEDULE_WIDE[i - 1] for i in range(1, NUM_STEPS))
@@ -7878,8 +7926,25 @@ print("Saved per-step accuracy (open vs. closed-set):", per_step_acc_restricted_
 # 5x20 flagship's per-step numbers ([63.80, 69.40, 63.10, 73.50, 83.30]) --
 # see protocol_depth_macro_checkpoint_comparison.csv below for the
 # complementary MID-TRAINING (diagonal) view of the same 5 groups.
+#
+# INVERSE-DEPTH LEG (4x25, 2026-08-24): CLASSES_PER_STEP=25 is now LARGER
+# than HISTORICAL_MACRO_GROUP_CLASSES=20, so the floor-division below would
+# be 0 (ZeroDivisionError / degenerate range() downstream) and, even if
+# guarded, 25 does not evenly divide 20 -- a fixed-size fine-step of 4x25
+# cannot be re-chunked into historical 20-class groups at all (classes
+# 0-24 span all of historical group1 plus 5 classes of group2). There is
+# therefore no meaningful "N fine-steps per 20-class group" for 4x25:
+# max(1, ...) below makes each 4x25 fine-step its OWN macro group (the
+# natural reporting unit here, since CLASSES_PER_STEP already exceeds the
+# historical group size) -- this is exactly the four 25-class groups
+# G1..G4 = classes 0-24/25-49/50-74/75-99 the inverse-depth report asks
+# for, produced by generalizing this existing export rather than adding a
+# parallel protocol_depth_4x25_group_comparison.csv. Readers should use the
+# classes_in_group column (25, not 20) to see this is the native 4x25
+# grouping, not a reconstructed historical group. Still exact and trivial
+# for 5x20 (FINE_STEPS_PER_MACRO_GROUP=1) and for 20x5 (=4), unchanged.
 HISTORICAL_MACRO_GROUP_CLASSES = 20
-FINE_STEPS_PER_MACRO_GROUP = HISTORICAL_MACRO_GROUP_CLASSES // CLASSES_PER_STEP
+FINE_STEPS_PER_MACRO_GROUP = max(1, HISTORICAL_MACRO_GROUP_CLASSES // CLASSES_PER_STEP)
 if len(per_step_acc_restricted_df) > 0:
     macro_df = per_step_acc_restricted_df.copy()
     macro_df["macro_group"] = ((macro_df["step_id"] - 1) // FINE_STEPS_PER_MACRO_GROUP) + 1
@@ -7955,16 +8020,38 @@ for _ckpt_method_name, _stepwise_acc in rank_extension_stepwise_accuracy_by_meth
         _all_task_steps = list(_diag.keys())
         _macro_open = float(np.mean([_diag[t] for t in _group_task_steps])) * 100.0 if _group_task_steps else np.nan
         _cumulative_open = float(np.mean([_diag[t] for t in _all_task_steps])) * 100.0 if _all_task_steps else np.nan
-        _corresponding_5x20_step = (
-            _fine_step // FINE_STEPS_PER_MACRO_GROUP
-            if _fine_step % FINE_STEPS_PER_MACRO_GROUP == 0
-            else np.nan
-        )
+        _classes_seen_ckpt = (_fine_step_idx + 1) * CLASSES_PER_STEP
+        _cumulative_rank_ckpt = int(_active_rankext_schedule_for_checkpoints[_fine_step_idx])
+        # INVERSE-DEPTH LEG (4x25, 2026-08-24): was `_fine_step %
+        # FINE_STEPS_PER_MACRO_GROUP == 0` -- correct for 20x5/5x20 only by
+        # coincidence (their rank schedules were built with the same 0.8
+        # rank/class ratio ANCHORED to 20-class boundaries, so every
+        # FINE_STEPS_PER_MACRO_GROUP-th fine-step happened to land exactly
+        # on a historical classes-seen/rank pair). 4x25's steps (25/50/75/
+        # 100 classes) do NOT all land on 20-class boundaries (only 100
+        # does), so that coincidence no longer holds and the old formula
+        # would silently claim a false equivalence for fine_step 1-3 (e.g.
+        # "corresponding_5x20_step=1" for a 25-class/rank20 checkpoint that
+        # does not match 5x20 step1's 20-class/rank16 checkpoint at all).
+        # Replaced with an explicit, protocol-generic match on BOTH
+        # classes-seen (must be an exact multiple of the historical 20-class
+        # group size) AND cumulative rank (must equal the historical 5x20
+        # schedule's rank at that same class count, i.e.
+        # 16 * classes_seen/20) -- true for every 20x5/5x20 checkpoint as
+        # before, and correctly leaves 4x25's fine-steps 1-3 as NaN (no
+        # match) while still correctly identifying fine-step 4 (100
+        # classes, rank80) as corresponding_5x20_step=5.
+        _corresponding_5x20_step = np.nan
+        if _classes_seen_ckpt % HISTORICAL_MACRO_GROUP_CLASSES == 0:
+            _hist_step_candidate = _classes_seen_ckpt // HISTORICAL_MACRO_GROUP_CLASSES
+            _hist_rank_at_step = _hist_step_candidate * 16  # historical 5x20 schedule: +16 rank per +20-class step
+            if _cumulative_rank_ckpt == _hist_rank_at_step:
+                _corresponding_5x20_step = _hist_step_candidate
         protocol_depth_macro_checkpoint_rows.append({
             "method": _ckpt_method_name,
             "fine_step": _fine_step,
-            "classes_seen": (_fine_step_idx + 1) * CLASSES_PER_STEP,
-            "cumulative_rank": int(_active_rankext_schedule_for_checkpoints[_fine_step_idx]),
+            "classes_seen": _classes_seen_ckpt,
+            "cumulative_rank": _cumulative_rank_ckpt,
             "corresponding_5x20_step": _corresponding_5x20_step,
             "macro_group_diagonal_open_accuracy": _macro_open,
             "cumulative_diagonal_open_accuracy": _cumulative_open,

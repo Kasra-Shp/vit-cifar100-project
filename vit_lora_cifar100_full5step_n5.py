@@ -39,9 +39,12 @@
 # - `rank_extension`
 # - `rank_extension_kd_only_T2`
 # - `rank_extension_orth_factor_lam_50`
-# - `rank_extension_orth_factor_lam_15_kd_T2` (RENAMED 2026-08-25 from
-#   "..._lam_50_kd_T2" -- its effective lambda under the strict-fairness
-#   pair-4 rescaling is 15.0, not 50.0; see METHODS_TO_RUN's own comment)
+# - `rank_extension_orth_factor_lam_50_kd_T2` (RENAMED BACK 2026-08-25,
+#   FULL-STRENGTH COMBINED EXPERIMENT: was briefly `..._lam_15_kd_T2` under the
+#   strict-fairness pair-4 rescaling, which made its effective lambda 15.0, not
+#   50.0; COMBINED_LOSS_SCALE_ENABLED=False restores the unscaled lambda=50.0/
+#   kd=1.0 pair, so the identifier reverts to match. See METHODS_TO_RUN's own
+#   comment for the full list of every consumer renamed alongside this.)
 #
 
 # In[ ]:
@@ -247,19 +250,39 @@ CLASSES_PER_STEP = 25
 # 7-9 for KD methods are mostly "free" extra training that best-epoch selection
 # (PRE-THESIS FIX 1 below) will now correctly avoid over-fitting into, while the
 # non-KD methods use the additional epochs to keep closing their convergence gap.
-FULL_FT_EPOCHS = 9
-FULL_LORA_EPOCHS = 9
-FULL_JOINT_EPOCHS = 9
-FULL_ORTH_EPOCHS = 9
-FULL_RANKEXT_EPOCHS = 9
+# EPOCH REDUCTION EXPERIMENT (2026-08-25, explicit user directive): 9 -> 7,
+# uniformly across every epoch-budget constant (no method-specific override --
+# LORA_EPOCHS/RANKEXT_EPOCHS are the two actually consumed by the 8 active
+# methods' training paths (train_independent_loras() / run_rank_extension_
+# variant()) and by every reporting/plotting consumer that reads epoch counts;
+# FT/JOINT/ORTH/SCRATCH stay in lockstep for consistency even though their
+# training paths are currently disabled via METHODS_TO_RUN, same as every
+# prior epoch-budget change in this file's history above). Existing
+# best-epoch (val-CE) selection logic (PRE-THESIS FIX 1, USE_BEST_EPOCH_
+# SELECTION) is UNCHANGED -- this is a training-duration change only, not a
+# stopping-criterion change; no early stopping is introduced. Rationale:
+# per-(method,step) plateau analysis of the prior EPOCHS=9 run's own
+# training_loss_history_by_epoch.csv found the RankExt family's two KD-
+# carrying variants already flat/noisy (no further-than-1%-relative val-CE
+# movement) by epoch ~4-6, while its two non-KD variants and simple_avg's
+# FactorOrth variant still show small (<1% relative) genuine improvement out
+# to epoch 8-9 -- smaller than the ~1pt run-to-run reproducibility noise floor
+# already measured between nominally-identical historical reruns. EPOCHS=7
+# is chosen as the point that preserves that noise-floor-scale residual for
+# only the tail 1-2 epochs, not as a value with zero truncation risk.
+FULL_FT_EPOCHS = 7
+FULL_LORA_EPOCHS = 7
+FULL_JOINT_EPOCHS = 7
+FULL_ORTH_EPOCHS = 7
+FULL_RANKEXT_EPOCHS = 7
 
-SCRATCH_EPOCHS = 9
+SCRATCH_EPOCHS = 7
 
-FT_EPOCHS = 9
-LORA_EPOCHS = 9
-JOINT_EPOCHS = 9
-ORTH_EPOCHS = 9
-RANKEXT_EPOCHS = 9
+FT_EPOCHS = 7
+LORA_EPOCHS = 7
+JOINT_EPOCHS = 7
+ORTH_EPOCHS = 7
+RANKEXT_EPOCHS = 7
 
 
 BATCH_FT = 8
@@ -594,11 +617,14 @@ RANKEXT_PRETRAINED_ANCHOR_WEIGHT = 1.0
 RANKEXT_PROJECTED_PROTECT_METHODS = {
     "rank_extension_kd_only_T2",
     # RENAMED (2026-08-25): "..._lam_50_kd_T2" -> "..._lam_15_kd_T2" (pair-4's
-    # effective lambda is 15.0 under the strict-fairness rescaling, not 50.0)
-    # -- see METHODS_TO_RUN's own comment for the full rename. protect30's
-    # BEHAVIOR is unchanged: this method is still in this set, still gets
+    # effective lambda was 15.0 under the strict-fairness rescaling, not 50.0)
+    # -- see METHODS_TO_RUN's own comment for the full rename. RENAMED BACK
+    # (2026-08-25, FULL-STRENGTH COMBINED EXPERIMENT): COMBINED_LOSS_SCALE_
+    # ENABLED=False restores the unscaled lambda=50.0, so this identifier is
+    # "..._lam_50_kd_T2" again. protect30's BEHAVIOR is unchanged throughout
+    # both renames: this method is still in this set, still gets
     # protect_weight=30.0, only the spelling of its identifier changed.
-    "rank_extension_orth_factor_lam_15_kd_T2",
+    "rank_extension_orth_factor_lam_50_kd_T2",
     # ORTH-LAMBDA INTERACTION ABLATION (2026-08-22, job 4914807 follow-up)
     # REMOVED 2026-08-23: rank_extension_orth_factor_lam_25_kd_T2 tested
     # whether lambda_factor_orth=50 was over-constraining/overlapping with
@@ -648,17 +674,46 @@ CALIBRATION_ENABLED_FAMILIES = {
 # target-norm-over-all-rows behavior (Zhao et al. 2020 WA, unchanged for
 # simple_avg). "regime_grouped": FIX 1, rank_extension only.
 # "confidence_weighted_regime_grouped": FIX 2 (analysis_recency_fix2/
-# report.txt), rank_extension only -- same grouping as "regime_grouped" but
-# each step's target norm is boosted/damped by its own training-quality
-# signal (see RANKEXT_CONFIDENCE_WEIGHTED_CALIBRATION_ENABLED above and
-# calibrate_classifier_row_norms_confidence_weighted()); only selected when
-# RANKEXT_FAMILY_AWARE_CALIBRATION_ENABLED is ALSO True (FIX 2 is layered on
-# top of FIX 1's grouping, not a replacement for it). "off" is never actually
-# selected while CALIBRATION_ENABLED_FAMILIES also gates the family, but is
-# included so this dict alone documents intent if that invariant is ever
-# changed.
+# report.txt), originally rank_extension only -- same grouping as
+# "regime_grouped" but each step's target norm is boosted/damped by its own
+# training-quality signal (see RANKEXT_CONFIDENCE_WEIGHTED_CALIBRATION_ENABLED
+# above and calibrate_classifier_row_norms_confidence_weighted()); for
+# rank_extension only selected when RANKEXT_FAMILY_AWARE_CALIBRATION_ENABLED
+# is ALSO True (FIX 2 is layered on top of FIX 1's grouping, not a replacement
+# for it). CALIBRATION EXPERIMENT (2026-08-25): also now selected for
+# simple_avg -- see the dated note directly above CALIBRATION_MODE_BY_FAMILY
+# below for the rationale; simple_avg has no FIX-1-style prerequisite flag
+# since it never used "regime_grouped" as an intermediate step. "off" is never
+# actually selected while CALIBRATION_ENABLED_FAMILIES also gates the family,
+# but is included so this dict alone documents intent if that invariant is
+# ever changed.
+# CALIBRATION EXPERIMENT (2026-08-25, explicit user directive): simple_avg
+# switched from "global" to "confidence_weighted_regime_grouped" -- the SAME
+# algorithm already used by rank_extension (calibrate_classifier_row_norms_
+# confidence_weighted(), see that function's docstring). Rationale: prior R6
+# diagnostics (per_step_accuracy_open_vs_restricted_by_method.csv,
+# classifier_row_norm_diagnostics_by_method_step.csv) showed restricted
+# (closed-set) accuracy stays flat (92-95%) across all 4 simple_avg variants
+# while open-set accuracy collapses for the KD/FactorOrth variants, and
+# post-calibration row-norm ratios under "global" mode are already exactly
+# 1.0 -- i.e. the existing flat-mean calibration already perfectly equalizes
+# MAGNITUDE, so the residual open-set failure must be a SHAPE/structure
+# problem the flat rescale cannot reach. confidence_weighted_regime_grouped
+# targets exactly that axis (a per-step, validation-CE-derived boost on top
+# of the group mean) and is already implemented and validated for
+# rank_extension; nothing about calibrate_classifier_row_norms_confidence_
+# weighted() is rank_extension-specific (it only reads model.classifier.
+# weight, NUM_STEPS, classes_for_step(), and the module-global epoch_loss_rows
+# accumulator filtered by method_name -- all family-agnostic and already
+# populated for simple_avg methods via the same shared EpochValidationCallback
+# used by both families). See run_simple_avg_variant()'s calibration dispatch
+# below -- previously that function only ever called calibrate_classifier_
+# row_norms() (the "global"/"regime_grouped" function), never the confidence-
+# weighted one; that dispatch gap is fixed alongside this config flip so the
+# mode value actually takes effect instead of silently falling through to
+# flat single-group behavior. rank_extension's own calibration is UNCHANGED.
 CALIBRATION_MODE_BY_FAMILY = {
-    "simple_avg": "global",
+    "simple_avg": "confidence_weighted_regime_grouped",
     "rank_extension": (
         "confidence_weighted_regime_grouped"
         if (RANKEXT_FAMILY_AWARE_CALIBRATION_ENABLED and RANKEXT_CONFIDENCE_WEIGHTED_CALIBRATION_ENABLED)
@@ -736,7 +791,8 @@ LAMBDA_ORTH_FACTOR = LAMBDA_ORTH
 # reverted to its settled 1.0 here for the final 8-method thesis comparison
 # run; this is once again the single global constant every KD-active
 # method's config metadata (rank_extension_kd_only_T2, simple_avg_kd_T2,
-# rank_extension_orth_factor_lam_15_kd_T2, simple_avg_factor_orth_kd_T2)
+# rank_extension_orth_factor_lam_50_kd_T2 [renamed back 2026-08-25, see
+# COMBINED_LOSS_SCALE_ENABLED's own comment below], simple_avg_factor_orth_kd_T2)
 # reads its nominal kd_weight from -- no per-method override exists or is
 # introduced here. T (2.0), LAMBDA_ORTH (50.0), and every other
 # hyperparameter below are untouched.
@@ -805,7 +861,27 @@ KD_TEMPERATURE = KD_TEMPERATURES[-1]
 # rank_extension_orth_factor_lam_50, simple_avg_factor_orth use
 # LAMBDA_ORTH=50.0 unscaled) -- this flag affects ONLY the two combined
 # FactorOrth+KD methods (pair 4), one per family, symmetrically.
-COMBINED_LOSS_SCALE_ENABLED = True
+# FULL-STRENGTH COMBINED EXPERIMENT (2026-08-25, explicit user directive):
+# scaling DISABLED (True -> False). Both add_method() call sites that used to
+# receive lambda_orth_scale=COMBINED_LAMBDA_ORTH_SCALE / kd_weight_scale=
+# COMBINED_KD_WEIGHT_SCALE (simple_avg_factor_orth_kd_T2 and rank_extension's
+# combined method) resolve their scale args via the existing `float(...) if
+# COMBINED_LOSS_SCALE_ENABLED else 1.0` ternaries defined just below
+# (_combined_lambda_scale / _combined_kd_scale in build_active_method_
+# configs()) -- flipping this one flag is therefore sufficient to make BOTH
+# combined methods' EFFECTIVE lambda_orth/kd_weight resolve to the full,
+# unscaled LAMBDA_ORTH=50.0/KD_WEIGHT=1.0 globals, symmetrically, with no
+# other code path touched. COMBINED_LAMBDA_ORTH_SCALE/COMBINED_KD_WEIGHT_SCALE
+# themselves are left defined-but-inert below (not deleted) so the historical
+# 0.5/15 fairness-rescaled configuration remains reconstructable by flipping
+# this one flag back -- same "flag-gated, revert in one line" convention this
+# file already uses throughout. This does NOT touch COMBINED_ORTH_WARMUP_
+# ENABLED/EPOCHS or RANKEXT_ORTH_LAMBDA_WARMUP_ENABLED/EPOCHS -- both existing,
+# family-specific warmup mechanisms are unchanged; they will now ramp toward
+# the larger, unscaled lambda_orth=50 (rather than 15) for the two combined
+# methods, which is the correct, automatic consequence of this change, not a
+# new warmup being added anywhere.
+COMBINED_LOSS_SCALE_ENABLED = False
 COMBINED_LAMBDA_ORTH_SCALE = 0.3
 COMBINED_KD_WEIGHT_SCALE = 0.5
 
@@ -881,8 +957,12 @@ METHOD_DISPLAY_NAME_MAP = {
     # RENAMED (2026-08-25): key "..._lam_50_kd_T2" -> "..._lam_15_kd_T2" (see
     # METHODS_TO_RUN's comment); display name text unchanged (still just
     # "RankExt + FactorOrth + KD T2" -- the lambda value was never part of the
-    # human-readable display string, only the internal identifier).
-    "rank_extension_orth_factor_lam_15_kd_T2": "RankExt + FactorOrth + KD T2",
+    # human-readable display string, only the internal identifier). RENAMED
+    # BACK (2026-08-25, FULL-STRENGTH COMBINED EXPERIMENT): key is
+    # "..._lam_50_kd_T2" again, matching its restored effective lambda=50.0
+    # (see COMBINED_LOSS_SCALE_ENABLED's own comment). Display text still
+    # unchanged.
+    "rank_extension_orth_factor_lam_50_kd_T2": "RankExt + FactorOrth + KD T2",
 }
 
 METHOD_ALIAS_NAME_MAP = {
@@ -894,8 +974,11 @@ METHOD_ALIAS_NAME_MAP = {
     "rank_extension_kd_only_T2": "rank_extension_kd_only_T2",
     "rank_extension_orth_factor_lam_50": "rank_extension_orth_factor_lam_50",
     # RENAMED (2026-08-25): "..._lam_50_kd_T2" -> "..._lam_15_kd_T2" (both key
-    # and value) -- see METHODS_TO_RUN's comment for the full rename.
-    "rank_extension_orth_factor_lam_15_kd_T2": "rank_extension_orth_factor_lam_15_kd_T2",
+    # and value) -- see METHODS_TO_RUN's comment for the full rename. RENAMED
+    # BACK (2026-08-25, FULL-STRENGTH COMBINED EXPERIMENT): both key and value
+    # are "..._lam_50_kd_T2" again -- see COMBINED_LOSS_SCALE_ENABLED's own
+    # comment.
+    "rank_extension_orth_factor_lam_50_kd_T2": "rank_extension_orth_factor_lam_50_kd_T2",
 }
 
 SUPERVISOR_SELECTED_METHOD_SPECS = [
@@ -954,35 +1037,59 @@ SUPERVISOR_SELECTED_METHOD_SPECS = [
         "kd_weight": float(KD_WEIGHT),
     },
     {
+        # STALE-METADATA FIX (2026-08-25, found during FULL-STRENGTH COMBINED
+        # EXPERIMENT source audit): factor_lambda/kd_weight below were
+        # HARDCODED literals (50.0 / float(KD_WEIGHT), i.e. always reading the
+        # UNSCALED globals) ever since COMBINED_LAMBDA_ORTH_SCALE/COMBINED_
+        # KD_WEIGHT_SCALE were introduced -- unlike the rank_extension combined
+        # entry just below, which already computed its true scaled values.
+        # This meant supervisor_method_mapping.csv reported this method as
+        # kd=1.0/lambda=50.0 even while it was actually training at kd=0.5/
+        # lambda=15.0 under the pair-4 rescaling (a real, pre-existing
+        # metadata bug, not introduced by this edit). Both fields are now
+        # computed expressions, matching the rank_extension entry's pattern --
+        # correct regardless of COMBINED_LOSS_SCALE_ENABLED's value, today
+        # (False -> 50.0/1.0, matching the actual FULL-STRENGTH training
+        # config) and in the future if the scaling is ever re-enabled (True ->
+        # 15.0/0.5 again, automatically, with no dict edit needed).
         "internal_method_name": "simple_avg_factor_orth_kd_T2",
         "supervisor_requested_name": "simple_avg_factor_orth_lam_50_kd_T2",
         "display_name": "SimpleAvg + FactorOrth + KD T2",
         "family": "simple_avg",
-        "factor_lambda": 50.0,
+        "factor_lambda": float(LAMBDA_ORTH) * float(COMBINED_LAMBDA_ORTH_SCALE if COMBINED_LOSS_SCALE_ENABLED else 1.0),
         "kd_temperature": 2.0,
-        "kd_weight": float(KD_WEIGHT),
+        "kd_weight": float(KD_WEIGHT) * float(COMBINED_KD_WEIGHT_SCALE if COMBINED_LOSS_SCALE_ENABLED else 1.0),
     },
     {
         # RENAMED (2026-08-25): "..._lam_50_kd_T2" -> "..._lam_15_kd_T2" (both
         # internal_method_name and supervisor_requested_name) -- see
         # METHODS_TO_RUN's comment for the full rename. factor_lambda also
-        # corrected 50.0 -> 15.0 here: this field was hardcoded to the
-        # UNSCALED LAMBDA_ORTH value even before the rename (a pre-existing,
-        # separate inaccuracy in this spec list, not introduced by the
-        # rename) -- this method's true effective lambda_orth (LAMBDA_ORTH *
-        # COMBINED_LAMBDA_ORTH_SCALE = 50.0 * 0.3) has been 15.0 since the
-        # pair-4 rescaling was introduced; kd_weight below had the identical
-        # SCALED-vs-UNSCALED issue (float(KD_WEIGHT) read the global 1.0, not
-        # this method's actual scaled 0.5) and is corrected alongside
-        # factor_lambda here, same root cause, for consistency within this
-        # one dict entry. The per-method ACTIVE_METHOD_CONFIGS/
+        # corrected 50.0 -> a computed expression here: this field was
+        # hardcoded to the UNSCALED LAMBDA_ORTH value even before the rename
+        # (a pre-existing, separate inaccuracy in this spec list, not
+        # introduced by the rename) -- this method's true effective
+        # lambda_orth (LAMBDA_ORTH * COMBINED_LAMBDA_ORTH_SCALE = 50.0 * 0.3)
+        # was 15.0 under the pair-4 rescaling; kd_weight below had the
+        # identical SCALED-vs-UNSCALED issue (float(KD_WEIGHT) read the global
+        # 1.0, not this method's actual scaled 0.5) and was corrected
+        # alongside factor_lambda here, same root cause, for consistency
+        # within this one dict entry.
+        #
+        # RENAMED BACK + RE-VERIFIED (2026-08-25, FULL-STRENGTH COMBINED
+        # EXPERIMENT): identifiers are "..._lam_50_kd_T2" again, matching
+        # COMBINED_LOSS_SCALE_ENABLED=False's restored effective lambda=50.0.
+        # factor_lambda is now a computed expression (mirroring kd_weight's
+        # existing pattern below) rather than a hardcoded 15.0 literal --
+        # hardcoding it would have silently reintroduced the exact same
+        # stale-metadata bug this comment describes, just with the wrong
+        # constant baked in this time. The per-method ACTIVE_METHOD_CONFIGS/
         # hyperparameters_by_method.json rows remain the authoritative source
         # for both fields' true resolved values regardless.
-        "internal_method_name": "rank_extension_orth_factor_lam_15_kd_T2",
-        "supervisor_requested_name": "rank_extension_orth_factor_lam_15_kd_T2",
+        "internal_method_name": "rank_extension_orth_factor_lam_50_kd_T2",
+        "supervisor_requested_name": "rank_extension_orth_factor_lam_50_kd_T2",
         "display_name": "RankExt + FactorOrth + KD T2",
         "family": "rank_extension",
-        "factor_lambda": 15.0,
+        "factor_lambda": float(LAMBDA_ORTH) * float(COMBINED_LAMBDA_ORTH_SCALE if COMBINED_LOSS_SCALE_ENABLED else 1.0),
         "kd_temperature": 2.0,
         "kd_weight": float(KD_WEIGHT) * float(COMBINED_KD_WEIGHT_SCALE if COMBINED_LOSS_SCALE_ENABLED else 1.0),
     },
@@ -1279,7 +1386,10 @@ RANKEXT_NEW_BLOCK_WARMUP_DISABLED_METHODS = {
     # this method's new-block warmup stays disabled, only the identifier's
     # spelling changed (renaming it would otherwise have silently RE-ENABLED
     # new-block warmup for this method by dropping it out of this set).
-    "rank_extension_orth_factor_lam_15_kd_T2",
+    # RENAMED BACK (2026-08-25, FULL-STRENGTH COMBINED EXPERIMENT): key is
+    # "..._lam_50_kd_T2" again -- same caution applies, same unchanged
+    # behavior (new-block warmup stays disabled for this method).
+    "rank_extension_orth_factor_lam_50_kd_T2",
 }
 
 
@@ -1391,8 +1501,10 @@ def orth_lambda_warmup_multiplier(epoch_val, warmup_epochs, enabled):
 # principal supervisor-selected methods (SUPERVISOR_SELECTED_METHOD_SPECS
 # above -- simple_avg, simple_avg_kd_T2, simple_avg_factor_orth,
 # simple_avg_factor_orth_kd_T2, rank_extension, rank_extension_kd_only_T2,
-# rank_extension_orth_factor_lam_50, rank_extension_orth_factor_lam_15_kd_T2 --
-# RENAMED 2026-08-25 from "..._lam_50_kd_T2", see METHODS_TO_RUN's comment)
+# rank_extension_orth_factor_lam_50, rank_extension_orth_factor_lam_50_kd_T2 --
+# briefly "..._lam_15_kd_T2" under the pair-4 fairness rescaling, RENAMED BACK
+# 2026-08-25 for the FULL-STRENGTH COMBINED EXPERIMENT, see METHODS_TO_RUN's
+# comment)
 # are ALL reactivated together here for the final canonical 4x25 comparison,
 # at the settled KD_WEIGHT=1.0. The 4 simple_avg methods were previously kept
 # deactivated only to reduce runtime during the RankExt-only protocol-depth /
@@ -1443,10 +1555,17 @@ METHODS_TO_RUN = {
     # SELECTED_METHOD_SPECS, EXPECTED_ENABLED_METHOD_FAMILIES, this dict's own
     # key just below, build_active_method_configs()'s add_method() call, and
     # the VARIANT dict / summary-table filter lists further down -- ALL
-    # updated together so no lookup silently breaks. Behavior is UNCHANGED:
-    # same True/False state, same lambda_orth_scale=0.3/kd_weight_scale=0.5
-    # values, just consistently spelled "lam_15" everywhere.
-    "rank_extension_orth_factor_lam_15_kd": True,
+    # updated together so no lookup silently breaks. Behavior was UNCHANGED
+    # by that rename: same True/False state, same lambda_orth_scale=0.3/
+    # kd_weight_scale=0.5 values, just consistently spelled "lam_15"
+    # everywhere.
+    #
+    # RENAMED BACK (2026-08-25, FULL-STRENGTH COMBINED EXPERIMENT): key is
+    # "..._lam_50_kd" again, matching COMBINED_LOSS_SCALE_ENABLED=False's
+    # restored lambda_orth_scale=1.0/kd_weight_scale=1.0 (see that flag's own
+    # comment above LAMBDA_ORTH). Same True/False state (still True) as
+    # before both renames -- only the identifier's spelling changed each time.
+    "rank_extension_orth_factor_lam_50_kd": True,
     # RANK_EXT FIRST_STEP FIX (task 2 decision doc, 2026-08-17): the
     # feature-anchor lever's 4 opt-in method flags (rank_extension_featanchor,
     # rank_extension_orth_factor_featanchor, and their DEFAULT-OFF
@@ -1601,17 +1720,26 @@ def build_active_method_configs():
     # explicit historical-vs-fairness-run distinction.
     #
     # RENAMED (2026-08-25, user directive): "..._lam_50_kd_T2" ->
-    # "..._lam_15_kd_T2" -- the internal identifier now matches its true
-    # effective lambda (15.0, not 50.0), rather than relying on the resolved
-    # config-table columns alone to disambiguate from the name (which is what
-    # the PRIOR version of this comment had settled for; the user correctly
-    # flagged that as still misleading). See METHODS_TO_RUN's own comment
-    # above (base_method key, now "rank_extension_orth_factor_lam_15_kd") for
-    # the full list of every other consumer renamed alongside this call site.
+    # "..._lam_15_kd_T2" -- the internal identifier was made to match its true
+    # effective lambda (15.0, not 50.0) at the time, rather than relying on
+    # the resolved config-table columns alone to disambiguate from the name
+    # (which is what the PRIOR version of this comment had settled for; the
+    # user correctly flagged that as still misleading).
+    #
+    # RENAMED BACK (2026-08-25, FULL-STRENGTH COMBINED EXPERIMENT, user
+    # directive): "..._lam_15_kd_T2" -> "..._lam_50_kd_T2" -- _combined_
+    # lambda_scale/_combined_kd_scale (defined just above, gated on
+    # COMBINED_LOSS_SCALE_ENABLED=False) now resolve to 1.0/1.0, so this
+    # method's true effective lambda_orth/kd_weight are 50.0/1.0 again; the
+    # identifier is renamed back to match, same principle as the original
+    # rename -- the name always tracks the true resolved value, not the other
+    # way around. See METHODS_TO_RUN's own comment above (base_method key,
+    # now "rank_extension_orth_factor_lam_50_kd" again) for the full list of
+    # every other consumer renamed alongside this call site, both times.
     for kd_temp in KD_TEMPERATURES:
         kd_tag = kd_temperature_tag(kd_temp)
         add_method(
-            f"rank_extension_orth_factor_lam_15_kd_{kd_tag}", "rank_extension", "rank_extension_orth_factor_lam_15_kd",
+            f"rank_extension_orth_factor_lam_50_kd_{kd_tag}", "rank_extension", "rank_extension_orth_factor_lam_50_kd",
             uses_kd=True, kd_temperature=kd_temp, uses_factor_orth=True,
             lambda_orth_scale=_combined_lambda_scale, kd_weight_scale=_combined_kd_scale,
         )
@@ -1656,7 +1784,9 @@ EXPECTED_ENABLED_METHOD_FAMILIES = {
     "rank_extension_orth_factor_lam_50",
     # RENAMED (2026-08-25): "..._lam_50_kd" -> "..._lam_15_kd", matching
     # METHODS_TO_RUN's own key -- see that key's comment for the full rename.
-    "rank_extension_orth_factor_lam_15_kd",
+    # RENAMED BACK (2026-08-25, FULL-STRENGTH COMBINED EXPERIMENT): matching
+    # METHODS_TO_RUN's key, "..._lam_50_kd" again.
+    "rank_extension_orth_factor_lam_50_kd",
 }
 
 # FINAL THESIS COMPARISON: back to the settled KD_WEIGHT=1.0 (the KDw=0.75
@@ -4699,12 +4829,36 @@ def run_simple_avg_variant(method_name):
     )
 
     if method_cfg["apply_calibration"]:
-        merged_model = calibrate_classifier_row_norms(
-            merged_model,
-            mode=method_cfg.get("calibration_mode", "global"),
-            uses_kd=bool(method_cfg["uses_kd"]),
-            method_name=method_name,
-        )
+        calibration_mode = method_cfg.get("calibration_mode", "global")
+        # CALIBRATION EXPERIMENT (2026-08-25): mirrors run_rank_extension_
+        # variant()'s dispatch exactly (see that function's identical if/else
+        # just above its own calibrate_classifier_row_norms(...) call). Before
+        # this run, this branch did not exist here -- CALIBRATION_MODE_BY_
+        # FAMILY["simple_avg"] was always "global", so calibrate_classifier_
+        # row_norms_confidence_weighted() was only ever reachable from the
+        # rank_extension path. Now that simple_avg's mode can also be
+        # "confidence_weighted_regime_grouped", this function needs the same
+        # two-way dispatch or the mode value would silently fall through
+        # calibrate_classifier_row_norms()'s own mode check (which only
+        # special-cases the literal string "regime_grouped") into flat
+        # single-group ("global"-equivalent) behavior -- no error, just a
+        # config value that quietly does nothing. epoch_loss_rows is the same
+        # module-global accumulator run_rank_extension_variant() passes in
+        # (populated by the shared EpochValidationCallback for both families).
+        if calibration_mode == "confidence_weighted_regime_grouped":
+            merged_model = calibrate_classifier_row_norms_confidence_weighted(
+                merged_model,
+                epoch_loss_rows=epoch_loss_rows,
+                method_name=method_name,
+                uses_kd=bool(method_cfg["uses_kd"]),
+            )
+        else:
+            merged_model = calibrate_classifier_row_norms(
+                merged_model,
+                mode=calibration_mode,
+                uses_kd=bool(method_cfg["uses_kd"]),
+                method_name=method_name,
+            )
     else:
         # FIX 1 diagnostic: still record pre-calibration row-norm stats for
         # non-calibrated methods so classifier_row_norm_diagnostic_rows has
@@ -6682,9 +6836,12 @@ def run_rank_extension_variant(
     if ACTIVE_METHOD_MAP[method_name]["apply_calibration"]:
         calibration_mode = ACTIVE_METHOD_MAP[method_name].get("calibration_mode", "global")
         if calibration_mode == "confidence_weighted_regime_grouped":
-            # FIX 2 (analysis_recency_fix2/report.txt): rank_extension only --
-            # this is the only call site that can ever hit this mode, since
-            # CALIBRATION_MODE_BY_FAMILY["simple_avg"] is always "global".
+            # FIX 2 (analysis_recency_fix2/report.txt): originally rank_extension
+            # only, since CALIBRATION_MODE_BY_FAMILY["simple_avg"] was always
+            # "global". CALIBRATION EXPERIMENT (2026-08-25): simple_avg can now
+            # also resolve to this mode -- run_simple_avg_variant() carries the
+            # identical if/else dispatch (added alongside that config change),
+            # so this is no longer the only call site that can hit this branch.
             final_rank_model = calibrate_classifier_row_norms_confidence_weighted(
                 final_rank_model,
                 epoch_loss_rows=epoch_loss_rows,
@@ -7668,7 +7825,8 @@ if len(training_loss_history_df) > 0:
     assert len(missing_loss_logs) == 0, f"Missing epoch loss rows for active methods: {missing_loss_logs}"
 
 simple_factor_lambdas = sorted(summary_table.loc[summary_table["method"].isin(["simple_avg_factor_orth", "simple_avg_factor_orth_kd_T2"]), "lambda_factor_orth"].dropna().unique().tolist())
-rankext_factor_lambdas = sorted(summary_table.loc[summary_table["method"].isin(["rank_extension_orth_factor_lam_50", "rank_extension_orth_factor_lam_15_kd_T2"]), "lambda_factor_orth"].dropna().unique().tolist())
+# FULL-STRENGTH COMBINED EXPERIMENT (2026-08-25): "..._lam_15_kd_T2" -> "..._lam_50_kd_T2", matching every other renamed-back consumer above.
+rankext_factor_lambdas = sorted(summary_table.loc[summary_table["method"].isin(["rank_extension_orth_factor_lam_50", "rank_extension_orth_factor_lam_50_kd_T2"]), "lambda_factor_orth"].dropna().unique().tolist())
 delta_trace_lambdas = sorted(summary_table.loc[summary_table["uses_delta_trace"], "lambda_delta_trace"].dropna().unique().tolist())
 factor_orth_lambdas = sorted(summary_table.loc[summary_table["uses_factor_orth"], "lambda_factor_orth"].dropna().unique().tolist())
 kd_temperatures_used = sorted(summary_table.loc[summary_table["uses_kd"], "kd_temperature"].dropna().unique().tolist())
@@ -7676,7 +7834,7 @@ kd_weights_used = sorted(summary_table.loc[summary_table["uses_kd"], "kd_weight"
 replay_settings_used = sorted(summary_table["replay_per_class"].dropna().unique().tolist())
 
 simple_factor_ratio = float(loss_summary_by_method_df.loc[loss_summary_by_method_df["method_name"].isin(["simple_avg_factor_orth", "simple_avg_factor_orth_kd_T2"]), "mean_factor_orth_weighted_over_ce"].mean())
-rankext_factor_ratio = float(loss_summary_by_method_df.loc[loss_summary_by_method_df["method_name"].isin(["rank_extension_orth_factor_lam_50", "rank_extension_orth_factor_lam_15_kd_T2"]), "mean_factor_orth_weighted_over_ce"].mean())
+rankext_factor_ratio = float(loss_summary_by_method_df.loc[loss_summary_by_method_df["method_name"].isin(["rank_extension_orth_factor_lam_50", "rank_extension_orth_factor_lam_50_kd_T2"]), "mean_factor_orth_weighted_over_ce"].mean())
 delta_trace_ratio = float(loss_summary_by_method_df.loc[loss_summary_by_method_df["method_name"].isin(["simple_avg_delta_orth", "simple_avg_delta_orth_kd_T2", "rank_extension_orth_delta_trace_lam_50", "rank_extension_orth_delta_trace_lam_50_kd_T2"]), "mean_delta_trace_weighted_over_ce"].mean())
 
 print("\nSupervisor hyperparameter summary:")
@@ -8045,7 +8203,7 @@ from matplotlib.lines import Line2D
 DPI = 220
 REQ = list(ACTIVE_SUPERVISOR_SELECTED_INTERNAL_METHODS)
 SUPERVISOR_VARIANT_ORDER = ["Base", "KD (T=2)", "Factor-Orth", "KD + Factor-Orth"]
-VARIANT = {"simple_avg":"Base","rank_extension":"Base","simple_avg_factor_orth":"Factor-Orth","rank_extension_orth_factor_lam_50":"Factor-Orth","simple_avg_kd_T2":"KD (T=2)","rank_extension_kd_only_T2":"KD (T=2)","simple_avg_factor_orth_kd_T2":"KD + Factor-Orth","rank_extension_orth_factor_lam_15_kd_T2":"KD + Factor-Orth"}  # RENAMED 2026-08-25: "..._lam_50_kd_T2" -> "..._lam_15_kd_T2", see METHODS_TO_RUN's comment
+VARIANT = {"simple_avg":"Base","rank_extension":"Base","simple_avg_factor_orth":"Factor-Orth","rank_extension_orth_factor_lam_50":"Factor-Orth","simple_avg_kd_T2":"KD (T=2)","rank_extension_kd_only_T2":"KD (T=2)","simple_avg_factor_orth_kd_T2":"KD + Factor-Orth","rank_extension_orth_factor_lam_50_kd_T2":"KD + Factor-Orth"}  # RENAMED 2026-08-25: "..._lam_50_kd_T2" -> "..._lam_15_kd_T2", then RENAMED BACK 2026-08-25 (FULL-STRENGTH COMBINED EXPERIMENT) -> "..._lam_50_kd_T2" again, see METHODS_TO_RUN's comment
 VCOL = {"Base":"#1f77b4","KD (T=2)":"#ff7f0e","Factor-Orth":"#d62728","KD + Factor-Orth":"#2ca02c"}
 VSTYLE = {"Base":"-","KD (T=2)":"--","Factor-Orth":":","KD + Factor-Orth":"-."}
 FAMS = ["simple_avg","rank_extension"]

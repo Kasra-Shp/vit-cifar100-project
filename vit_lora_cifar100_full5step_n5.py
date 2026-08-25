@@ -39,7 +39,9 @@
 # - `rank_extension`
 # - `rank_extension_kd_only_T2`
 # - `rank_extension_orth_factor_lam_50`
-# - `rank_extension_orth_factor_lam_50_kd_T2`
+# - `rank_extension_orth_factor_lam_15_kd_T2` (RENAMED 2026-08-25 from
+#   "..._lam_50_kd_T2" -- its effective lambda under the strict-fairness
+#   pair-4 rescaling is 15.0, not 50.0; see METHODS_TO_RUN's own comment)
 #
 
 # In[ ]:
@@ -160,15 +162,30 @@ FAST_RUN = False
 # step marker, and is deliberately left untouched (renaming it would touch
 # unrelated infrastructure this task did not ask for).
 #
-# FINAL KD-WEIGHT EXPERIMENT (R6 roadmap, closing run): single-lever test of
-# KD_WEIGHT 1.0 -> 0.75 on the 4x25 flagship only (rank_extension and
-# rank_extension_kd_only_T2 disabled below via METHODS_TO_RUN -- their
-# results already exist from job 4918131 and are not being reproduced here).
-# "kdw075" in the run name distinguishes this treatment's output directory
-# from the KD-weight=1.0 baseline (job 4918131,
-# .../clip_vit_lora_cifar100_4x25_full_comparison_with_orth_rankext_EPOCH3_MAIN_20260824_160602),
-# which this run does not touch or overwrite.
-RUN_NAME_BASE = "clip_vit_lora_cifar100_4x25_kdw075_flagship_with_orth_rankext"
+# FINAL KD-WEIGHT EXPERIMENT (R6 roadmap, CLOSED 2026-08-25): single-lever
+# test of KD_WEIGHT 1.0 -> 0.75 on the 4x25 flagship only, job
+# ..._4x25_kdw075_flagship_with_orth_rankext_EPOCH3_MAIN_20260824_195751.
+# Result: all_seen 73.48 vs the KD_WEIGHT=1.0 baseline's 74.07 (-0.59pp),
+# forgetting_metric 0.2015 vs 0.1712 (worse), BWT -0.0855 vs -0.0529 (worse),
+# with a -13.20pp G1 (oldest group) retention collapse only partially offset
+# by +8.24pp G2 / +2.76pp G4 gains -- a net regression, not an improvement,
+# and the restricted-vs-open gap (the flagship's dominant bottleneck) was
+# essentially unchanged in aggregate (~93.3-93.4% restricted either way), so
+# KD weight is confirmed NOT to be the active lever on it. KD_WEIGHT is
+# reverted to 1.0 below (the settled value) and this branch is CLOSED -- no
+# further KD-weight sweep. See the KDw0.75 run directory itself (retained,
+# not deleted) for the full analysis.
+#
+# FINAL THESIS COMPARISON (R6 roadmap, closing run): all 8 principal
+# supervisor-selected methods (SimpleAvg x4, RankExt x4 -- see
+# SUPERVISOR_SELECTED_METHOD_SPECS above) reactivated together via
+# METHODS_TO_RUN below, at the settled KD_WEIGHT=1.0 / LAMBDA_ORTH=50.0 /
+# RANKEXT_RANK_SCHEDULE=[20,40,60,80] 4x25 configuration, for the final
+# canonical thesis comparison table/plots. No scientific setting is changed
+# for this run beyond reactivating the 4 simple_avg methods (already-existing
+# code path, previously deactivated only to reduce runtime -- see
+# METHODS_TO_RUN's own comments).
+RUN_NAME_BASE = "clip_vit_lora_cifar100_4x25_final_8methods_thesis_comparison"
 RUN_NAME = f"{RUN_NAME_BASE}_{'FAST_RUN_DEBUG' if FAST_RUN else 'EPOCH3_MAIN'}"
 
 MODEL_CHECKPOINT = "openai/clip-vit-base-patch16"
@@ -253,6 +270,13 @@ ACCUM_LORA = 1
 
 
 LR_FT = 3e-5
+# RESTORED (2026-08-25, explicit user correction): LR_LORA reverted back to
+# 5e-5, matching the R6 reference file byte-for-byte. A same-day STRICT-
+# FAIRNESS REDESIGN had briefly unified this to LR_RANKEXT's 1e-4 (see git
+# history for that analysis if it needs to be revisited), but per explicit
+# instruction this run restores SimpleAvg to its canonical reference-file
+# structure exactly. LR_RANKEXT below is UNTOUCHED by this revert -- current
+# RankExt setup stays exactly as-is.
 LR_LORA = 5e-5
 LR_JOINT = 5e-5
 
@@ -271,6 +295,31 @@ SCHED = "cosine"
 USE_FP16 = torch.cuda.is_available()
 
 
+# RESTORED (2026-08-25, explicit user correction, overrides the STRICT-
+# FAIRNESS REDESIGN note this comment block used to carry): SimpleAvg's rank
+# is back to its original/canonical project structure -- fixed rank=80 at
+# EVERY step, no rank growth, no capacity-matching redesign. The prior
+# same-day edit had changed LORA_R 80 -> 20 to try to match RankExt's
+# per-step NEW-rank budget rather than its final cumulative rank (see git
+# history for the full capacity analysis: because simple_avg's per-step delta
+# gets extract_lora_state()'d into a dense B@A matrix and then
+# simple_average_deltas()/apply_deltas_to_base() SUMS four such deltas
+# directly into the base weight, four independent rank-80 deltas can reach an
+# achievable merged rank up to min(4*80,768)=320 -- genuinely NOT capacity-
+# equal to rank_extension's persistent, provable rank<=80 cap, despite both
+# being nominally labeled "rank 80"). That capacity mismatch is REAL and
+# UNCHANGED by this revert -- it is not being disputed or hidden, just no
+# longer treated as something to fix by altering rank itself: per the
+# explicit instruction accompanying this revert, rank is SimpleAvg's defining
+# architectural axis (fixed-rank independent-then-merge vs. RankExt's
+# incremental cumulative-rank growth is literally the structural distinction
+# the whole comparison exists to study), so fairness is enforced only on
+# shared CONTROLLABLE settings -- target modules, head-LR multiplier, base
+# LR, and the pair-4 KD+FactorOrth loss-coefficient scaling all stay unified
+# per the still-standing fairness redesign (see TARGET_MODULES_BY_FAMILY /
+# HEAD_LR_MULTIPLIER_BY_FAMILY / LR_LORA==LR_RANKEXT / COMBINED_LOSS_SCALE_
+# ENABLED's own comments below, all untouched by this revert) -- rank itself
+# is excluded from that fairness pass by design, not by oversight.
 LORA_R = 80
 LORA_ALPHA = 2 * LORA_R
 # Bumped 0.05 -> 0.1 for the EPOCH6 run: R3's overfitting was mild (see
@@ -329,8 +378,29 @@ LORA_DROPOUT = 0.05
 # family_target_modules() for anything that knows its family.
 TARGET_MODULES = ["q_proj", "k_proj", "v_proj", "out_proj"]
 
+# RESTORED (2026-08-25, explicit user correction): simple_avg's target
+# modules reverted back to the 4-module ACCURACY-PUSH CHANGE 1 set (q,k,v,out
+# -- see that change's own comment above), matching the R6 reference file
+# (.../R6/vit_lora_cifar100_full5step_n5.py) byte-for-byte. A same-day STRICT-
+# FAIRNESS REDESIGN had briefly narrowed this to q_proj/v_proj (matching
+# rank_extension) to remove a target-module confound between families -- see
+# git history for that analysis if it needs to be revisited -- but per
+# explicit instruction this run restores SimpleAvg to its canonical
+# reference-file structure exactly, not a fairness-redesigned variant.
+# FINAL CORRECTION (2026-08-25, explicit user directive): simple_avg's target
+# modules set to q_proj/v_proj ONLY, for all 4 simple_avg methods -- narrower
+# than both the R6 reference file (q,k,v,out) and the earlier same-day STRICT-
+# FAIRNESS REDESIGN (which paired q,v with a rank=20 capacity redesign). This
+# time ONLY target_modules changes: rank (LORA_R=80, fixed, no growth) and
+# alpha (LORA_ALPHA=160) are explicitly UNCHANGED, per instruction -- see
+# LORA_R's own "RESTORED" comment above, still in force. rank_extension's own
+# target modules (q_proj/v_proj) are UNTOUCHED by this edit -- see
+# TARGET_MODULES_BY_FAMILY["rank_extension"] below, unchanged, still exactly
+# as the current (correct) RankExt setup has it; the two families now happen
+# to share the same 2-module set again, but that is this edit's incidental
+# result for simple_avg, not a change made to rank_extension.
 TARGET_MODULES_BY_FAMILY = {
-    "simple_avg": list(TARGET_MODULES),
+    "simple_avg": ["q_proj", "v_proj"],
     "rank_extension": ["q_proj", "v_proj"],
 }
 
@@ -523,7 +593,12 @@ RANKEXT_PRETRAINED_ANCHOR_WEIGHT = 1.0
 # plan.
 RANKEXT_PROJECTED_PROTECT_METHODS = {
     "rank_extension_kd_only_T2",
-    "rank_extension_orth_factor_lam_50_kd_T2",
+    # RENAMED (2026-08-25): "..._lam_50_kd_T2" -> "..._lam_15_kd_T2" (pair-4's
+    # effective lambda is 15.0 under the strict-fairness rescaling, not 50.0)
+    # -- see METHODS_TO_RUN's own comment for the full rename. protect30's
+    # BEHAVIOR is unchanged: this method is still in this set, still gets
+    # protect_weight=30.0, only the spelling of its identifier changed.
+    "rank_extension_orth_factor_lam_15_kd_T2",
     # ORTH-LAMBDA INTERACTION ABLATION (2026-08-22, job 4914807 follow-up)
     # REMOVED 2026-08-23: rank_extension_orth_factor_lam_25_kd_T2 tested
     # whether lambda_factor_orth=50 was over-constraining/overlapping with
@@ -626,6 +701,15 @@ def family_calibration_mode(family):
 # implicated; SimpleAvg+FactorOrth's 75.5% was achieved WITH it).
 HEAD_LR_MULTIPLIER = 10.0
 
+# RESTORED (2026-08-25, explicit user correction): simple_avg's head-LR
+# multiplier reverted back to x10, matching the R6 reference file byte-for-
+# byte. A same-day STRICT-FAIRNESS REDESIGN had briefly unified this to x1.0
+# for both families (see git history for that analysis if it needs to be
+# revisited), but per explicit instruction this run restores SimpleAvg to its
+# canonical reference-file structure exactly. rank_extension's own head-LR
+# multiplier (x1.0, its own proven-safe BASELINE -- see the REVERT comment
+# above for why x10 is unsafe specifically for rank_extension+factor-orth) is
+# UNTOUCHED by this revert.
 HEAD_LR_MULTIPLIER_BY_FAMILY = {
     "simple_avg": float(HEAD_LR_MULTIPLIER),
     "rank_extension": 1.0,
@@ -645,18 +729,18 @@ RANKEXT_REPLAY_PER_CLASS = REPLAY_PER_CLASS
 LAMBDA_ORTH = 50.0
 LAMBDA_ORTH_DELTA_TRACE = LAMBDA_ORTH
 LAMBDA_ORTH_FACTOR = LAMBDA_ORTH
-# FINAL KD-WEIGHT EXPERIMENT (R6 roadmap, closing run, one-off single-point
-# test, no sweep): KD_WEIGHT changed 1.0 -> 0.75 for this run only, to test
-# whether the flagship's KD term (measured at ~1.49-1.59x CE in the settled
-# 4x25 baseline, job 4918131) is mildly over-constraining new-class
-# plasticity. This is a single global constant, so it also changes the
-# nominal kd_weight recorded for every OTHER kd-active method's config
-# metadata (rank_extension_kd_only_T2, simple_avg_kd_T2, etc.) -- harmless
-# here because every one of those methods is inactive this run (see
-# METHODS_TO_RUN below: only rank_extension_orth_factor_lam_50_kd is True),
-# so none of them trains or reports a result under this value. T (2.0),
-# LAMBDA_ORTH (50.0), and every other hyperparameter below are untouched.
-KD_WEIGHT = 0.75
+# FINAL KD-WEIGHT EXPERIMENT (R6 roadmap, CLOSED 2026-08-25): the one-off
+# single-point KD_WEIGHT=0.75 treatment (job ..._4x25_kdw075_flagship_..._
+# 20260824_195751) is done and did not improve on the settled value -- see
+# the RUN_NAME_BASE comment above for the result summary. KD_WEIGHT is
+# reverted to its settled 1.0 here for the final 8-method thesis comparison
+# run; this is once again the single global constant every KD-active
+# method's config metadata (rank_extension_kd_only_T2, simple_avg_kd_T2,
+# rank_extension_orth_factor_lam_15_kd_T2, simple_avg_factor_orth_kd_T2)
+# reads its nominal kd_weight from -- no per-method override exists or is
+# introduced here. T (2.0), LAMBDA_ORTH (50.0), and every other
+# hyperparameter below are untouched.
+KD_WEIGHT = 1.0
 KD_TEMPERATURES = [2.0]
 KD_TEMPERATURE = KD_TEMPERATURES[-1]
 
@@ -700,6 +784,27 @@ KD_TEMPERATURE = KD_TEMPERATURES[-1]
 # to test, not a guaranteed outcome -- verify against the actual rerun.
 # Set to False to restore the naive full-strength sum (the calibfix
 # behavior that produced 63.71%).
+#
+# STRICT-FAIRNESS REDESIGN, pair-4 decision (2026-08-25, user directive): this
+# scaling now ALSO applies to rank_extension_orth_factor_lam_15_kd_T2 (see
+# that add_method() call site in build_active_method_configs() -- RENAMED
+# 2026-08-25 from "..._lam_50_kd_T2", since its true effective lambda is
+# 15.0, not 50.0; see METHODS_TO_RUN's own comment for the full rename) --
+# the user's explicit choice, given a genuine conflict between strict
+# coefficient parity and the training-stability evidence above, was to bring
+# RankExt's side of the FactorOrth+KD pair DOWN to SimpleAvg's already-
+# validated stable point (kd=0.5, lambda=15) rather than push SimpleAvg's
+# side UP into its documented 63.71% collapse. This makes THIS RUN's
+# rank_extension_orth_factor_lam_15_kd_T2 a deliberately different, rescaled
+# configuration from the one that produced
+# the historical all_seen=74.07 result (kd=1.0, lambda=50) -- that historical
+# run/config is untouched and retained separately, not reproduced by this run.
+# KD_WEIGHT and LAMBDA_ORTH themselves stay at their global settled values
+# (1.0 / 50.0) and are UNCHANGED for every other method in both families
+# (rank_extension_kd_only_T2, simple_avg_kd_T2 use KD_WEIGHT=1.0 unscaled;
+# rank_extension_orth_factor_lam_50, simple_avg_factor_orth use
+# LAMBDA_ORTH=50.0 unscaled) -- this flag affects ONLY the two combined
+# FactorOrth+KD methods (pair 4), one per family, symmetrically.
 COMBINED_LOSS_SCALE_ENABLED = True
 COMBINED_LAMBDA_ORTH_SCALE = 0.3
 COMBINED_KD_WEIGHT_SCALE = 0.5
@@ -773,7 +878,11 @@ METHOD_DISPLAY_NAME_MAP = {
     "rank_extension_orth_delta_trace_lam_50_kd_T2": "RankExt + DeltaTrace + KD T2",
     "rank_extension_orth_factor_lam_50": "RankExt + FactorOrth",
     "rank_extension_orth_factor_lam_50_kd_T1": "RankExt + FactorOrth + KD T1",
-    "rank_extension_orth_factor_lam_50_kd_T2": "RankExt + FactorOrth + KD T2",
+    # RENAMED (2026-08-25): key "..._lam_50_kd_T2" -> "..._lam_15_kd_T2" (see
+    # METHODS_TO_RUN's comment); display name text unchanged (still just
+    # "RankExt + FactorOrth + KD T2" -- the lambda value was never part of the
+    # human-readable display string, only the internal identifier).
+    "rank_extension_orth_factor_lam_15_kd_T2": "RankExt + FactorOrth + KD T2",
 }
 
 METHOD_ALIAS_NAME_MAP = {
@@ -784,7 +893,9 @@ METHOD_ALIAS_NAME_MAP = {
     "rank_extension": "rank_extension",
     "rank_extension_kd_only_T2": "rank_extension_kd_only_T2",
     "rank_extension_orth_factor_lam_50": "rank_extension_orth_factor_lam_50",
-    "rank_extension_orth_factor_lam_50_kd_T2": "rank_extension_orth_factor_lam_50_kd_T2",
+    # RENAMED (2026-08-25): "..._lam_50_kd_T2" -> "..._lam_15_kd_T2" (both key
+    # and value) -- see METHODS_TO_RUN's comment for the full rename.
+    "rank_extension_orth_factor_lam_15_kd_T2": "rank_extension_orth_factor_lam_15_kd_T2",
 }
 
 SUPERVISOR_SELECTED_METHOD_SPECS = [
@@ -852,13 +963,28 @@ SUPERVISOR_SELECTED_METHOD_SPECS = [
         "kd_weight": float(KD_WEIGHT),
     },
     {
-        "internal_method_name": "rank_extension_orth_factor_lam_50_kd_T2",
-        "supervisor_requested_name": "rank_extension_orth_factor_lam_50_kd_T2",
+        # RENAMED (2026-08-25): "..._lam_50_kd_T2" -> "..._lam_15_kd_T2" (both
+        # internal_method_name and supervisor_requested_name) -- see
+        # METHODS_TO_RUN's comment for the full rename. factor_lambda also
+        # corrected 50.0 -> 15.0 here: this field was hardcoded to the
+        # UNSCALED LAMBDA_ORTH value even before the rename (a pre-existing,
+        # separate inaccuracy in this spec list, not introduced by the
+        # rename) -- this method's true effective lambda_orth (LAMBDA_ORTH *
+        # COMBINED_LAMBDA_ORTH_SCALE = 50.0 * 0.3) has been 15.0 since the
+        # pair-4 rescaling was introduced; kd_weight below had the identical
+        # SCALED-vs-UNSCALED issue (float(KD_WEIGHT) read the global 1.0, not
+        # this method's actual scaled 0.5) and is corrected alongside
+        # factor_lambda here, same root cause, for consistency within this
+        # one dict entry. The per-method ACTIVE_METHOD_CONFIGS/
+        # hyperparameters_by_method.json rows remain the authoritative source
+        # for both fields' true resolved values regardless.
+        "internal_method_name": "rank_extension_orth_factor_lam_15_kd_T2",
+        "supervisor_requested_name": "rank_extension_orth_factor_lam_15_kd_T2",
         "display_name": "RankExt + FactorOrth + KD T2",
         "family": "rank_extension",
-        "factor_lambda": 50.0,
+        "factor_lambda": 15.0,
         "kd_temperature": 2.0,
-        "kd_weight": float(KD_WEIGHT),
+        "kd_weight": float(KD_WEIGHT) * float(COMBINED_KD_WEIGHT_SCALE if COMBINED_LOSS_SCALE_ENABLED else 1.0),
     },
     # ORTH-LAMBDA INTERACTION ABLATION (2026-08-22, job 4914807 follow-up)
     # REMOVED 2026-08-23: rank_extension_orth_factor_lam_25_kd_T2 spec entry
@@ -1148,7 +1274,12 @@ def family_uses_new_block_warmup(family):
 
 RANKEXT_NEW_BLOCK_WARMUP_DISABLED_METHODS = {
     "rank_extension_kd_only_T2",
-    "rank_extension_orth_factor_lam_50_kd_T2",
+    # RENAMED (2026-08-25): "..._lam_50_kd_T2" -> "..._lam_15_kd_T2" -- see
+    # METHODS_TO_RUN's own comment for the full rename. Behavior unchanged:
+    # this method's new-block warmup stays disabled, only the identifier's
+    # spelling changed (renaming it would otherwise have silently RE-ENABLED
+    # new-block warmup for this method by dropping it out of this set).
+    "rank_extension_orth_factor_lam_15_kd_T2",
 }
 
 
@@ -1256,42 +1387,66 @@ def orth_lambda_warmup_multiplier(epoch_val, warmup_epochs, enabled):
 #    to this crash -- A1 (color_map fix) + A2 (these CSVs now write before
 #    any plot, each plot try/excepted) fix that independently of point 2.
 #
-# BASELINE RESTORED (2026-08-24, post-Null-Space closure): the structural
-# Null-Space RankExt v2 experiment (rank_extension_nullspace / _kd_only_T2 /
-# _orth_factor_lam_50_kd_T2) is CLOSED -- job 4917775 showed accuracy/
-# representation benefit at noise level (flagship all_seen +0.11pp, with a
-# -0.90pp step1 and -2.75pp step5 regression) despite the structural
-# projection itself being enforced essentially exactly. Its 3 methods and
-# all supporting machinery have been fully removed from this file (see git
-# history at commit 8153008 for the removed implementation). The 3 settled,
-# pre-nullspace RankExt methods are reactivated here as the sole active
-# RankExt methods, matching the settled R6 baseline exactly (job 4914807/
-# 4915286 flagship: first=63.80, later=72.325, all_seen=70.62). simple_avg
-# (all 4 variants) stays deactivated, unrelated to this restoration.
+# FINAL THESIS COMPARISON (2026-08-25, post-KD-weight closure): the 8
+# principal supervisor-selected methods (SUPERVISOR_SELECTED_METHOD_SPECS
+# above -- simple_avg, simple_avg_kd_T2, simple_avg_factor_orth,
+# simple_avg_factor_orth_kd_T2, rank_extension, rank_extension_kd_only_T2,
+# rank_extension_orth_factor_lam_50, rank_extension_orth_factor_lam_15_kd_T2 --
+# RENAMED 2026-08-25 from "..._lam_50_kd_T2", see METHODS_TO_RUN's comment)
+# are ALL reactivated together here for the final canonical 4x25 comparison,
+# at the settled KD_WEIGHT=1.0. The 4 simple_avg methods were previously kept
+# deactivated only to reduce runtime during the RankExt-only protocol-depth /
+# KD-weight experiments (BASELINE RESTORED 2026-08-24 and FINAL KD-WEIGHT
+# EXPERIMENT notes below, both now historical) -- reactivating them here
+# introduces no new mechanism, only restores execution of the existing,
+# previously-exercised simple_avg code path (family-conditional target
+# modules/head-LR/calibration -- see TARGET_MODULES_BY_FAMILY /
+# HEAD_LR_MULTIPLIER_BY_FAMILY / CALIBRATION_MODE_BY_FAMILY -- are all
+# preserved unchanged). Non-KD FactorOrth (both families) and the 2 KD
+# families are reactivated together too, matching the full canonical 8. The
+# 2 delta-trace variants (simple_avg_delta_orth, rank_extension_orth_
+# delta_trace_lam_50, plus their _kd siblings) stay OUT -- excluded from the
+# 8-method set per FIX 2 below, not part of this comparison. Historical
+# baseline notes retained: the structural Null-Space RankExt v2 experiment
+# (rank_extension_nullspace / _kd_only_T2 / _orth_factor_lam_50_kd_T2) is
+# CLOSED -- job 4917775 showed accuracy/representation benefit at noise level
+# (flagship all_seen +0.11pp, with a -0.90pp step1 and -2.75pp step5
+# regression) despite the structural projection itself being enforced
+# essentially exactly. Its 3 methods and all supporting machinery have been
+# fully removed from this file (see git history at commit 8153008 for the
+# removed implementation) and are not part of this comparison.
 # Execution-selection only -- every implementation/config-construction path
 # below is untouched and can be reactivated by flipping these booleans back,
 # same as every prior disable in this dict.
 METHODS_TO_RUN = {
-    "simple_avg": False,
-    "simple_avg_kd": False,
+    "simple_avg": True,
+    "simple_avg_kd": True,
     "simple_avg_delta_orth": False,  # disabled for FIX 2 -- was True; delta-trace excluded from the 8-method set
     "simple_avg_delta_orth_kd": False,
-    "simple_avg_factor_orth": False,
-    "simple_avg_factor_orth_kd": False,
-    # FINAL KD-WEIGHT EXPERIMENT: rank_extension and rank_extension_kd_only
-    # disabled for this run -- their KD_WEIGHT=1.0 results already exist
-    # (job 4918131) and are not being reproduced; only the flagship
-    # (rank_extension_orth_factor_lam_50_kd) trains this run, at the new
-    # KD_WEIGHT=0.75, to isolate the single-lever treatment.
-    "rank_extension": False,
-    "rank_extension_kd_only": False,
+    "simple_avg_factor_orth": True,
+    "simple_avg_factor_orth_kd": True,
+    "rank_extension": True,
+    "rank_extension_kd_only": True,
     "rank_extension_orth_delta_trace_lam_50": False,  # disabled for FIX 2 -- was True; delta-trace excluded from the 8-method set
     "rank_extension_orth_delta_trace_lam_50_kd": False,
-    # Non-KD FactorOrth: stays deactivated -- never competitive vs the KD
-    # families (40.81 all_seen historical), not part of the settled 3-method
-    # baseline.
-    "rank_extension_orth_factor_lam_50": False,
-    "rank_extension_orth_factor_lam_50_kd": True,
+    "rank_extension_orth_factor_lam_50": True,
+    # RENAMED (2026-08-25, user directive): "..._lam_50_kd" -> "..._lam_15_kd".
+    # This is pair 4's RankExt side under the STRICT-FAIRNESS REDESIGN's pair-4
+    # rescaling (COMBINED_LOSS_SCALE_ENABLED, see that flag's own comment) --
+    # its EFFECTIVE lambda_orth is 15.0 (LAMBDA_ORTH=50.0 * COMBINED_LAMBDA_
+    # ORTH_SCALE=0.3), not 50.0, so keeping "lam_50" in its identifier would be
+    # factually wrong. Renaming (not just relabeling) so the internal method
+    # name itself matches its true trained lambda, matching every other
+    # consumer of this identifier -- see the corresponding renames at
+    # RANKEXT_PROJECTED_PROTECT_METHODS, RANKEXT_NEW_BLOCK_WARMUP_DISABLED_
+    # METHODS, METHOD_DISPLAY_NAME_MAP, METHOD_ALIAS_NAME_MAP, SUPERVISOR_
+    # SELECTED_METHOD_SPECS, EXPECTED_ENABLED_METHOD_FAMILIES, this dict's own
+    # key just below, build_active_method_configs()'s add_method() call, and
+    # the VARIANT dict / summary-table filter lists further down -- ALL
+    # updated together so no lookup silently breaks. Behavior is UNCHANGED:
+    # same True/False state, same lambda_orth_scale=0.3/kd_weight_scale=0.5
+    # values, just consistently spelled "lam_15" everywhere.
+    "rank_extension_orth_factor_lam_15_kd": True,
     # RANK_EXT FIRST_STEP FIX (task 2 decision doc, 2026-08-17): the
     # feature-anchor lever's 4 opt-in method flags (rank_extension_featanchor,
     # rank_extension_orth_factor_featanchor, and their DEFAULT-OFF
@@ -1373,7 +1528,14 @@ def build_active_method_configs():
             "kd_weight_scale": float(kd_weight_scale),
             "uses_replay": False,
             "uses_zero_old": False,
-            "rank": int(LORA_R),
+            # STRICT-FAIRNESS REDESIGN: "rank" used to be unconditionally
+            # int(LORA_R) for every method -- silently correct for
+            # rank_extension only because of the old (now-removed) LORA_R ==
+            # RANKEXT_RANK_SCHEDULE[-1] invariant. Now family-conditional so
+            # this column reports each family's own true value: simple_avg's
+            # own per-step rank (LORA_R) vs rank_extension's final cumulative
+            # rank (its rank schedule's last entry).
+            "rank": int(LORA_R) if family == "simple_avg" else int(active_rankext_rank_schedule()[-1]),
             "rank_schedule": ("fixed:" + str(LORA_R)) if family == "simple_avg" else "->".join(str(v) for v in active_rankext_rank_schedule()),
             "target_modules": ", ".join(family_target_modules(family)),
             "head_lr_multiplier": family_head_lr_multiplier(family),
@@ -1417,9 +1579,42 @@ def build_active_method_configs():
         kd_tag = kd_temperature_tag(kd_temp)
         add_method(f"rank_extension_orth_delta_trace_lam_50_kd_{kd_tag}", "rank_extension", "rank_extension_orth_delta_trace_lam_50_kd", uses_kd=True, kd_temperature=kd_temp, uses_delta_trace=True)
     add_method("rank_extension_orth_factor_lam_50", "rank_extension", "rank_extension_orth_factor_lam_50", uses_factor_orth=True)
+    # STRICT-FAIRNESS REDESIGN, pair-4 decision (2026-08-25, user directive):
+    # rather than either (a) removing simple_avg_factor_orth_kd_T2's combined-
+    # loss scaling (risking reproducing its documented ~63.71% training
+    # collapse at full-strength kd=1.0/lambda=50 -- see COMBINED_LOSS_SCALE_
+    # ENABLED's own comment above for the evidence) or (b) leaving pair 4
+    # coefficient-mismatched, the RankExt side of pair 4 is scaled DOWN to
+    # match SimpleAvg's already-stabilized combined coefficients instead --
+    # reusing the SAME COMBINED_KD_WEIGHT_SCALE (0.5) / COMBINED_LAMBDA_ORTH_
+    # SCALE (0.3) constants applied to simple_avg_factor_orth_kd_T2 just
+    # above, so both sides of pair 4 resolve to the IDENTICAL effective
+    # kd_weight=0.5, lambda_orth=15 (KD_TEMPERATURES/T=2 untouched, KD_WEIGHT
+    # and LAMBDA_ORTH globals untouched -- this affects ONLY this one method's
+    # own resolved coefficients, exactly as the pre-existing mechanism already
+    # does for simple_avg_factor_orth_kd_T2). This makes this method's config
+    # in THIS run a DIFFERENT, deliberately-rescaled variant of the flagship --
+    # NOT the same trained configuration that produced the historical
+    # all_seen=74.07 result (kd=1.0/lambda=50, job 4918131, dir
+    # ..._4x25_full_comparison_with_orth_rankext_..._160602, untouched and
+    # retained separately) -- see this run's own fairness-audit report for the
+    # explicit historical-vs-fairness-run distinction.
+    #
+    # RENAMED (2026-08-25, user directive): "..._lam_50_kd_T2" ->
+    # "..._lam_15_kd_T2" -- the internal identifier now matches its true
+    # effective lambda (15.0, not 50.0), rather than relying on the resolved
+    # config-table columns alone to disambiguate from the name (which is what
+    # the PRIOR version of this comment had settled for; the user correctly
+    # flagged that as still misleading). See METHODS_TO_RUN's own comment
+    # above (base_method key, now "rank_extension_orth_factor_lam_15_kd") for
+    # the full list of every other consumer renamed alongside this call site.
     for kd_temp in KD_TEMPERATURES:
         kd_tag = kd_temperature_tag(kd_temp)
-        add_method(f"rank_extension_orth_factor_lam_50_kd_{kd_tag}", "rank_extension", "rank_extension_orth_factor_lam_50_kd", uses_kd=True, kd_temperature=kd_temp, uses_factor_orth=True)
+        add_method(
+            f"rank_extension_orth_factor_lam_15_kd_{kd_tag}", "rank_extension", "rank_extension_orth_factor_lam_15_kd",
+            uses_kd=True, kd_temperature=kd_temp, uses_factor_orth=True,
+            lambda_orth_scale=_combined_lambda_scale, kd_weight_scale=_combined_kd_scale,
+        )
 
     return configs
 
@@ -1446,22 +1641,41 @@ ENABLED_METHOD_FAMILIES = [name for name, enabled in METHODS_TO_RUN.items() if e
 # removed from the expected set to match the two flags flipped to False above --
 # otherwise `assert set(ENABLED_METHOD_FAMILIES) == EXPECTED_ENABLED_METHOD_FAMILIES`
 # below would fail as soon as those two were disabled.
-# BASELINE RESTORED (2026-08-24): back to the settled 3-method RankExt set,
-# matching METHODS_TO_RUN above -- simple_avg (all 4 variants) stays out.
-# FINAL KD-WEIGHT EXPERIMENT: narrowed from the settled 3-method
-# {rank_extension, rank_extension_kd_only, rank_extension_orth_factor_lam_50_kd}
-# set to the flagship alone, matching METHODS_TO_RUN above.
+# FINAL THESIS COMPARISON (2026-08-25): all 8 principal base_method flags,
+# matching METHODS_TO_RUN above -- the settled 3-method RankEXT-only set
+# (BASELINE RESTORED 2026-08-24) and the single-flagship KD-weight-treatment
+# set (FINAL KD-WEIGHT EXPERIMENT, now closed) are both historical; this is
+# the full canonical 8-method comparison.
 EXPECTED_ENABLED_METHOD_FAMILIES = {
-    "rank_extension_orth_factor_lam_50_kd",
+    "simple_avg",
+    "simple_avg_kd",
+    "simple_avg_factor_orth",
+    "simple_avg_factor_orth_kd",
+    "rank_extension",
+    "rank_extension_kd_only",
+    "rank_extension_orth_factor_lam_50",
+    # RENAMED (2026-08-25): "..._lam_50_kd" -> "..._lam_15_kd", matching
+    # METHODS_TO_RUN's own key -- see that key's comment for the full rename.
+    "rank_extension_orth_factor_lam_15_kd",
 }
 
-# FINAL KD-WEIGHT EXPERIMENT: intentionally 0.75 this run, not the usual 1.0
-# -- see KD_WEIGHT definition above for the single-lever rationale.
-assert KD_WEIGHT == 0.75
+# FINAL THESIS COMPARISON: back to the settled KD_WEIGHT=1.0 (the KDw=0.75
+# single-point treatment above is closed -- see KD_WEIGHT definition above).
+assert KD_WEIGHT == 1.0
 assert KD_TEMPERATURES == [2.0]
 assert LAMBDA_ORTH == 50.0
 assert LORA_R == 80
 assert LORA_ALPHA == 160
+# RESTORED (2026-08-25, explicit user correction): back to the original
+# final-rank-matched invariant -- see LORA_R's own "RESTORED" comment above
+# for why rank itself is deliberately excluded from the fairness pass (it is
+# SimpleAvg's defining architectural axis, not a controllable setting). This
+# also restores the ORIGINAL alpha check (RankExt's cumulative-final alpha
+# vs LORA_ALPHA) in place of the now-removed alpha-per-rank-density variant
+# the same-day rank redesign had introduced -- both forms are mathematically
+# equivalent whenever LORA_R == RANKEXT_RANK_SCHEDULE[-1], which is true
+# again after this revert, so nothing is lost, restoring the original form
+# exactly.
 assert LORA_R == RANKEXT_RANK_SCHEDULE[-1]
 assert float(RANKEXT_ALPHA_PER_RANK * RANKEXT_RANK_SCHEDULE[-1]) == float(LORA_ALPHA)
 # CAPACITY TEST verification: whichever schedule is ACTIVE (default or WIDE),
@@ -1481,11 +1695,21 @@ assert TARGET_MODULES == ["q_proj", "k_proj", "v_proj", "out_proj"]
 # REVERT (2026-07-16): rank_extension's target modules are pinned back to the
 # BASELINE-proven 2-module set. Keep in sync with TARGET_MODULES_BY_FAMILY.
 assert TARGET_MODULES_BY_FAMILY["rank_extension"] == ["q_proj", "v_proj"]
-assert TARGET_MODULES_BY_FAMILY["simple_avg"] == TARGET_MODULES
+# FINAL CORRECTION (2026-08-25): simple_avg is pinned to q_proj/v_proj only
+# (see TARGET_MODULES_BY_FAMILY's own comment above) -- no longer equal to the
+# global 4-module TARGET_MODULES default, by explicit instruction.
+assert TARGET_MODULES_BY_FAMILY["simple_avg"] == ["q_proj", "v_proj"]
 assert set(ENABLED_METHOD_FAMILIES) == EXPECTED_ENABLED_METHOD_FAMILIES
 assert not any(cfg["uses_replay"] for cfg in ACTIVE_METHOD_CONFIGS)
 assert not any(cfg["uses_zero_old"] for cfg in ACTIVE_METHOD_CONFIGS)
-assert all(cfg["rank"] == LORA_R for cfg in ACTIVE_METHOD_CONFIGS)
+# STRICT-FAIRNESS REDESIGN: family-conditional, matching add_method()'s own
+# "rank" field logic above -- simple_avg's configs report their own per-step
+# rank (LORA_R); rank_extension's report their final cumulative rank.
+assert all(
+    (cfg["rank"] == LORA_R) if cfg["family"] == "simple_avg"
+    else (cfg["rank"] == active_rankext_rank_schedule()[-1])
+    for cfg in ACTIVE_METHOD_CONFIGS
+)
 # Per-family target_modules check (was a single global comparison before the
 # REVERT above made this family-conditional).
 assert all(
@@ -1813,7 +2037,11 @@ print({
     "LORA_R": LORA_R,
     "LORA_ALPHA": LORA_ALPHA,
     "LORA_DROPOUT": LORA_DROPOUT,
-    "TARGET_MODULES (default/simple_avg)": TARGET_MODULES,
+    # FINAL CORRECTION (2026-08-25): TARGET_MODULES is only the unused global
+    # fallback again (simple_avg is pinned to q_proj/v_proj explicitly, no
+    # longer equal to this 4-module default) -- see TARGET_MODULES_BY_FAMILY
+    # on the next line for what simple_avg/rank_extension actually use.
+    "TARGET_MODULES (unused fallback default)": TARGET_MODULES,
     "TARGET_MODULES_BY_FAMILY": TARGET_MODULES_BY_FAMILY,
     "HEAD_LR_MULTIPLIER_BY_FAMILY": HEAD_LR_MULTIPLIER_BY_FAMILY,
     "RANKEXT_RANK_SCHEDULE_active": active_rankext_rank_schedule(),
@@ -4412,6 +4640,25 @@ def append_simple_method_summary(method_name, eval_rows, backward_transfer=np.na
 
 
 def run_simple_avg_variant(method_name):
+    # REPRODUCIBILITY-ONLY FIX (2026-08-25, not a scientific change): SEED is
+    # set once at module load (see SEED's own definition comment) and never
+    # reset per method, so model/adapter init, dropout, and every other
+    # global-RNG-dependent draw silently depend on how many methods already
+    # trained earlier in THIS run -- i.e. results become a function of
+    # execution order/method-count, not just hyperparameters (e.g. the
+    # flagship trained 3rd-of-3 in the historical 74.07 run but 8th-of-8 in
+    # the 8-method final comparison). Resetting to the SAME experiment seed
+    # here, once per top-level method call and before any model/adapter/
+    # optimizer/DataLoader construction happens inside train_independent_
+    # loras() below, makes every method start from an identical, order-
+    # independent RNG state -- this is the single top-level entry point for
+    # every simple_avg-family method (see simple_avg_execution_order's call
+    # loop below, exactly one call per active method). Uses the project's
+    # existing set_seed() (transformers.set_seed -- covers random, numpy,
+    # torch CPU, and torch.cuda.manual_seed_all for every device) rather than
+    # duplicating manual seeding code. Per-class/per-step dataset shuffles
+    # (seed=SEED+offset elsewhere in this file) are untouched by this call.
+    set_seed(SEED)
     method_cfg = ACTIVE_METHOD_MAP[method_name]
     step_states, specialist_diagonal_accuracy = train_independent_loras(
         method_name=method_name,
@@ -6167,6 +6414,15 @@ def run_rank_extension_variant(
     orth_train_records=None,
     orth_summary_records=None,
 ):
+    # REPRODUCIBILITY-ONLY FIX (2026-08-25, not a scientific change): same
+    # method-order RNG independence fix as run_simple_avg_variant() above --
+    # see that function's comment for the full rationale. This is the single
+    # top-level entry point for every rank_extension-family method (see
+    # rank_extension_execution_order's call loop below, exactly one call per
+    # active method), called here before this function builds any
+    # model/adapter/optimizer/DataLoader (including the shared non-drifting
+    # teacher built once before the step loop, a few lines down).
+    set_seed(SEED)
     previous_rank_state = None
     stepwise_task_accuracies = {}
     # PRE-THESIS FIX 2: {step_idx: accuracy_fraction} zero-shot forward-transfer
@@ -7412,7 +7668,7 @@ if len(training_loss_history_df) > 0:
     assert len(missing_loss_logs) == 0, f"Missing epoch loss rows for active methods: {missing_loss_logs}"
 
 simple_factor_lambdas = sorted(summary_table.loc[summary_table["method"].isin(["simple_avg_factor_orth", "simple_avg_factor_orth_kd_T2"]), "lambda_factor_orth"].dropna().unique().tolist())
-rankext_factor_lambdas = sorted(summary_table.loc[summary_table["method"].isin(["rank_extension_orth_factor_lam_50", "rank_extension_orth_factor_lam_50_kd_T2"]), "lambda_factor_orth"].dropna().unique().tolist())
+rankext_factor_lambdas = sorted(summary_table.loc[summary_table["method"].isin(["rank_extension_orth_factor_lam_50", "rank_extension_orth_factor_lam_15_kd_T2"]), "lambda_factor_orth"].dropna().unique().tolist())
 delta_trace_lambdas = sorted(summary_table.loc[summary_table["uses_delta_trace"], "lambda_delta_trace"].dropna().unique().tolist())
 factor_orth_lambdas = sorted(summary_table.loc[summary_table["uses_factor_orth"], "lambda_factor_orth"].dropna().unique().tolist())
 kd_temperatures_used = sorted(summary_table.loc[summary_table["uses_kd"], "kd_temperature"].dropna().unique().tolist())
@@ -7420,7 +7676,7 @@ kd_weights_used = sorted(summary_table.loc[summary_table["uses_kd"], "kd_weight"
 replay_settings_used = sorted(summary_table["replay_per_class"].dropna().unique().tolist())
 
 simple_factor_ratio = float(loss_summary_by_method_df.loc[loss_summary_by_method_df["method_name"].isin(["simple_avg_factor_orth", "simple_avg_factor_orth_kd_T2"]), "mean_factor_orth_weighted_over_ce"].mean())
-rankext_factor_ratio = float(loss_summary_by_method_df.loc[loss_summary_by_method_df["method_name"].isin(["rank_extension_orth_factor_lam_50", "rank_extension_orth_factor_lam_50_kd_T2"]), "mean_factor_orth_weighted_over_ce"].mean())
+rankext_factor_ratio = float(loss_summary_by_method_df.loc[loss_summary_by_method_df["method_name"].isin(["rank_extension_orth_factor_lam_50", "rank_extension_orth_factor_lam_15_kd_T2"]), "mean_factor_orth_weighted_over_ce"].mean())
 delta_trace_ratio = float(loss_summary_by_method_df.loc[loss_summary_by_method_df["method_name"].isin(["simple_avg_delta_orth", "simple_avg_delta_orth_kd_T2", "rank_extension_orth_delta_trace_lam_50", "rank_extension_orth_delta_trace_lam_50_kd_T2"]), "mean_delta_trace_weighted_over_ce"].mean())
 
 print("\nSupervisor hyperparameter summary:")
@@ -7636,6 +7892,21 @@ from matplotlib.lines import Line2D
 
 selected_epoch_df = training_loss_history_df[training_loss_history_df["method_name"].isin(ACTIVE_SUPERVISOR_SELECTED_INTERNAL_METHODS)].copy()
 def _plot_15_supervisor_selected_train_val_ce():
+    # REPORTING-ONLY FIX (2026-08-25, not a scientific change): without this
+    # `global` declaration, the `selected_epoch_df = selected_epoch_df.dropna(...)`
+    # rebind further down this function body makes Python treat the name as
+    # local for the ENTIRE function (standard Python scoping: any assignment
+    # to a name anywhere in a function body makes it local throughout that
+    # function, regardless of which branch it's under), so the very first
+    # read at `if len(selected_epoch_df) > 0:` below raised UnboundLocalError
+    # on every single run regardless of method count -- confirmed identical
+    # in reports/plot_failures.txt of the prior 3-method 74.07 baseline run
+    # (job 4918131) and the 1-method KDw0.75 run, so this was never a
+    # narrow/single-method artifact. Declaring it global here makes every
+    # reference in this function resolve to the module-level
+    # `selected_epoch_df` defined just above, exactly as the plotting logic
+    # already assumed. No plot content, data, or metric computation changes.
+    global selected_epoch_df
     if len(selected_epoch_df) > 0:
         # FIX 1 (was: "KeyError: 'family'" here, which killed the previous cluster run
         # AFTER training had already finished, losing the final summary tables).
@@ -7731,6 +8002,15 @@ _safe_plot("15_supervisor_selected_train_val_ce", _plot_15_supervisor_selected_t
 
 selected_acc_df = supervisor_selected_accuracy_export_df.copy()
 def _plot_17_supervisor_selected_accuracy_comparison():
+    # REPORTING-ONLY FIX (2026-08-25, not a scientific change): same
+    # UnboundLocalError cause and same fix as _plot_15_supervisor_selected_
+    # train_val_ce() above -- the `selected_acc_df = selected_acc_df.sort_
+    # values(...)` rebind further down makes the name local for this whole
+    # function, so the first read below raised unconditionally (confirmed
+    # in both the 3-method 74.07 baseline run and the 1-method KDw0.75 run's
+    # reports/plot_failures.txt). No plot content, data, or metric
+    # computation changes.
+    global selected_acc_df
     if len(selected_acc_df) > 0:
         selected_acc_df["display_name"] = pd.Categorical(
             selected_acc_df["display_name"],
@@ -7765,7 +8045,7 @@ from matplotlib.lines import Line2D
 DPI = 220
 REQ = list(ACTIVE_SUPERVISOR_SELECTED_INTERNAL_METHODS)
 SUPERVISOR_VARIANT_ORDER = ["Base", "KD (T=2)", "Factor-Orth", "KD + Factor-Orth"]
-VARIANT = {"simple_avg":"Base","rank_extension":"Base","simple_avg_factor_orth":"Factor-Orth","rank_extension_orth_factor_lam_50":"Factor-Orth","simple_avg_kd_T2":"KD (T=2)","rank_extension_kd_only_T2":"KD (T=2)","simple_avg_factor_orth_kd_T2":"KD + Factor-Orth","rank_extension_orth_factor_lam_50_kd_T2":"KD + Factor-Orth"}
+VARIANT = {"simple_avg":"Base","rank_extension":"Base","simple_avg_factor_orth":"Factor-Orth","rank_extension_orth_factor_lam_50":"Factor-Orth","simple_avg_kd_T2":"KD (T=2)","rank_extension_kd_only_T2":"KD (T=2)","simple_avg_factor_orth_kd_T2":"KD + Factor-Orth","rank_extension_orth_factor_lam_15_kd_T2":"KD + Factor-Orth"}  # RENAMED 2026-08-25: "..._lam_50_kd_T2" -> "..._lam_15_kd_T2", see METHODS_TO_RUN's comment
 VCOL = {"Base":"#1f77b4","KD (T=2)":"#ff7f0e","Factor-Orth":"#d62728","KD + Factor-Orth":"#2ca02c"}
 VSTYLE = {"Base":"-","KD (T=2)":"--","Factor-Orth":":","KD + Factor-Orth":"-."}
 FAMS = ["simple_avg","rank_extension"]

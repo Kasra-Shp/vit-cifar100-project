@@ -188,7 +188,13 @@ FAST_RUN = False
 # for this run beyond reactivating the 4 simple_avg methods (already-existing
 # code path, previously deactivated only to reduce runtime -- see
 # METHODS_TO_RUN's own comments).
-RUN_NAME_BASE = "clip_vit_lora_cifar100_4x25_final_8methods_thesis_comparison"
+# WIDE RANKEXT CAPACITY-SENSITIVITY EXPERIMENT (2026-09-02): distinct run
+# identifier so this job's outputs are isolated from the canonical 8-method
+# thesis comparison. RankExt wide schedule [40,80,120,160], final cumulative
+# rank 160, per-block effective LoRA scaling 2.0, 4x25 protocol. Restore the
+# canonical string (and flip USE_RANKEXT_RANK_SCHEDULE_WIDE back to False)
+# after this control experiment is done.
+RUN_NAME_BASE = "clip_vit_lora_cifar100_4x25_rankext_widerank40_final160_scaling2_capacity_sensitivity"
 RUN_NAME = f"{RUN_NAME_BASE}_{'FAST_RUN_DEBUG' if FAST_RUN else 'EPOCH3_MAIN'}"
 
 MODEL_CHECKPOINT = "openai/clip-vit-base-patch16"
@@ -1227,7 +1233,24 @@ RANKEXT_ALPHA_PER_RANK = 2.0
 # ([20,40,60,80] -> [40,80,120,160]). Not a new scientific setting -- still
 # never used while the flag stays False.
 RANKEXT_RANK_SCHEDULE_WIDE = [40, 80, 120, 160]
-USE_RANKEXT_RANK_SCHEDULE_WIDE = False
+# WIDE RANKEXT CAPACITY-SENSITIVITY EXPERIMENT (2026-09-02, supervisor-requested
+# control): flipped False -> True to activate the pre-existing wide schedule
+# [40,80,120,160] for the 4x25 protocol. This is a capacity-INCREASED /
+# capacity-sensitivity control (each incremental step now appends a rank-40 new
+# block instead of rank-20; cumulative rank 40/80/120/160 instead of
+# 20/40/60/80), run to test whether more RankExt capacity narrows the gap to
+# SimpleAvg. It is NOT "fully capacity-matched" to SimpleAvg. The default
+# RANKEXT_RANK_SCHEDULE=[20,40,60,80] literal above is UNCHANGED and remains
+# available (flip this flag back to False to restore the canonical config
+# byte-for-byte). Effective LoRA scaling is UNCHANGED at 2.0 for every block at
+# every step: GrowingRankLoRALinear.scaling = (RANKEXT_ALPHA_PER_RANK *
+# total_rank) / total_rank = RANKEXT_ALPHA_PER_RANK = 2.0, independent of
+# total_rank, so widening the schedule does not rescale frozen or new blocks.
+# All four active RankExt variants pick this up automatically via
+# active_rankext_rank_schedule(); SimpleAvg (rank=80, alpha=160) is untouched.
+# RUN_NAME_BASE below is changed in lockstep so this run's outputs land in a
+# distinct results/ directory and never overwrite the canonical 8-method run.
+USE_RANKEXT_RANK_SCHEDULE_WIDE = True
 assert len(RANKEXT_RANK_SCHEDULE_WIDE) == NUM_STEPS
 assert all(RANKEXT_RANK_SCHEDULE_WIDE[i] > RANKEXT_RANK_SCHEDULE_WIDE[i - 1] for i in range(1, NUM_STEPS))
 

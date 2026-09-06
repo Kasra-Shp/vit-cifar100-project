@@ -116,7 +116,17 @@ except ImportError:
 # supervisor_selected_accuracy_comparison.csv, final_metrics_all_methods.csv)
 # and into configs/run_config.json, so which seed produced a given saved
 # table is always recoverable from that table alone.
-SEED = 42
+#
+# CANONICAL 3-SEED REPLICATION (2026-09-06): the "pending multi-seed sweep"
+# noted above is now this change -- SEED is externally settable via the
+# REPLICATION_SEED environment variable, defaulting to 42 (the canonical
+# R6-15 seed) when unset, so this line alone still fully determines every
+# source of randomness (nothing else changed -- no new RNG call, no new
+# determinism setting) and every existing/future default invocation without
+# REPLICATION_SEED set behaves exactly as before. Seeds 123 and 2026 are
+# launched by setting REPLICATION_SEED=123 / REPLICATION_SEED=2026 in the
+# job environment. `os` is already imported above.
+SEED = int(os.environ.get("REPLICATION_SEED", "42"))
 set_seed(SEED)
 random.seed(SEED)
 np.random.seed(SEED)
@@ -188,13 +198,21 @@ FAST_RUN = False
 # for this run beyond reactivating the 4 simple_avg methods (already-existing
 # code path, previously deactivated only to reduce runtime -- see
 # METHODS_TO_RUN's own comments).
-# WIDE RANKEXT CAPACITY-SENSITIVITY EXPERIMENT (2026-09-02): distinct run
-# identifier so this job's outputs are isolated from the canonical 8-method
-# thesis comparison. RankExt wide schedule [40,80,120,160], final cumulative
-# rank 160, per-block effective LoRA scaling 2.0, 4x25 protocol. Restore the
-# canonical string (and flip USE_RANKEXT_RANK_SCHEDULE_WIDE back to False)
-# after this control experiment is done.
-RUN_NAME_BASE = "clip_vit_lora_cifar100_4x25_rankext_widerank40_final160_scaling2_capacity_sensitivity"
+# WIDE RANKEXT CAPACITY-SENSITIVITY EXPERIMENT (2026-09-02, CLOSED): produced
+# R6-16 (job 4933319), analyzed in
+# thesis_agent/reports/r6_wide_rank_capacity_analysis.md. That control run is
+# complete and untouched; USE_RANKEXT_RANK_SCHEDULE_WIDE is reverted to False
+# below (see that flag's own comment) so this string no longer needs to name
+# a wide-schedule run.
+#
+# CANONICAL 3-SEED REPLICATION (2026-09-06): RUN_NAME_BASE now encodes SEED
+# so seeds 42 (default/unset REPLICATION_SEED), 123, and 2026 each write to
+# their own distinct output directory and can never overwrite each other, nor
+# R6-15's own directory (`clip_vit_lora_cifar100_4x25_final_8methods_thesis_
+# comparison_EPOCH3_MAIN_20260825_203830`, a fixed historical path, unaffected
+# by any change here) or R6-16's. No "widerank"/"capacity_sensitivity" wording
+# remains in this name.
+RUN_NAME_BASE = f"clip_vit_lora_cifar100_4x25_canonical_3seed_seed{SEED}"
 RUN_NAME = f"{RUN_NAME_BASE}_{'FAST_RUN_DEBUG' if FAST_RUN else 'EPOCH3_MAIN'}"
 
 MODEL_CHECKPOINT = "openai/clip-vit-base-patch16"
@@ -1248,9 +1266,13 @@ RANKEXT_RANK_SCHEDULE_WIDE = [40, 80, 120, 160]
 # total_rank, so widening the schedule does not rescale frozen or new blocks.
 # All four active RankExt variants pick this up automatically via
 # active_rankext_rank_schedule(); SimpleAvg (rank=80, alpha=160) is untouched.
-# RUN_NAME_BASE below is changed in lockstep so this run's outputs land in a
-# distinct results/ directory and never overwrite the canonical 8-method run.
-USE_RANKEXT_RANK_SCHEDULE_WIDE = True
+#
+# REVERTED FOR CANONICAL 3-SEED REPLICATION (2026-09-06): the wide-schedule
+# control experiment (R6-16, job 4933319) is complete and analyzed; this flag
+# is restored to False so active_rankext_rank_schedule() resolves back to the
+# canonical RANKEXT_RANK_SCHEDULE = [20, 40, 60, 80] (traced below, not just
+# this constant) for the seed-123/seed-2026 canonical replication runs.
+USE_RANKEXT_RANK_SCHEDULE_WIDE = False
 assert len(RANKEXT_RANK_SCHEDULE_WIDE) == NUM_STEPS
 assert all(RANKEXT_RANK_SCHEDULE_WIDE[i] > RANKEXT_RANK_SCHEDULE_WIDE[i - 1] for i in range(1, NUM_STEPS))
 

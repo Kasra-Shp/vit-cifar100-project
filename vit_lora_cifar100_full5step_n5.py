@@ -119,14 +119,14 @@ except ImportError:
 #
 # CANONICAL 3-SEED REPLICATION (2026-09-06): the "pending multi-seed sweep"
 # noted above is now this change -- SEED is externally settable via the
-# REPLICATION_SEED environment variable, defaulting to 42 (the canonical
-# R6-15 seed) when unset, so this line alone still fully determines every
-# source of randomness (nothing else changed -- no new RNG call, no new
-# determinism setting) and every existing/future default invocation without
-# REPLICATION_SEED set behaves exactly as before. Seeds 123 and 2026 are
-# launched by setting REPLICATION_SEED=123 / REPLICATION_SEED=2026 in the
-# job environment. `os` is already imported above.
-SEED = int(os.environ.get("REPLICATION_SEED", "42"))
+# REPLICATION_SEED environment variable. R6-15's canonical seed was 42;
+# this working tree is prepared for the seed-123 replication run, so the
+# default below is now 123 -- a submitted job that (for any reason) never
+# receives REPLICATION_SEED from its environment still runs seed 123, not a
+# silent fallback to 42. Nothing else about SEED's role changed (no new RNG
+# call, no new determinism setting; every per-class/per-step shuffle still
+# derives from this one constant). `os` is already imported above.
+SEED = int(os.environ.get("REPLICATION_SEED", "123"))
 set_seed(SEED)
 random.seed(SEED)
 np.random.seed(SEED)
@@ -205,14 +205,14 @@ FAST_RUN = False
 # below (see that flag's own comment) so this string no longer needs to name
 # a wide-schedule run.
 #
-# CANONICAL 3-SEED REPLICATION (2026-09-06): RUN_NAME_BASE now encodes SEED
-# so seeds 42 (default/unset REPLICATION_SEED), 123, and 2026 each write to
-# their own distinct output directory and can never overwrite each other, nor
-# R6-15's own directory (`clip_vit_lora_cifar100_4x25_final_8methods_thesis_
-# comparison_EPOCH3_MAIN_20260825_203830`, a fixed historical path, unaffected
-# by any change here) or R6-16's. No "widerank"/"capacity_sensitivity" wording
-# remains in this name.
-RUN_NAME_BASE = f"clip_vit_lora_cifar100_4x25_canonical_3seed_seed{SEED}"
+# CANONICAL SEED-123 REPLICATION (2026-09-07): RUN_NAME_BASE encodes SEED so
+# this run writes to its own distinct output directory and can never
+# overwrite R6-15's own directory (`clip_vit_lora_cifar100_4x25_final_8methods_
+# thesis_comparison_EPOCH3_MAIN_20260825_203830`, a fixed historical path,
+# unaffected by any change here), R6-16's, or a future seed's. No
+# "3seed"/"widerank"/"capacity_sensitivity"/"seed42" wording remains in this
+# name -- this is a single additional seed (123) run, not a multi-seed sweep.
+RUN_NAME_BASE = f"clip_vit_lora_cifar100_4x25_canonical_seed{SEED}"
 RUN_NAME = f"{RUN_NAME_BASE}_{'FAST_RUN_DEBUG' if FAST_RUN else 'EPOCH3_MAIN'}"
 
 MODEL_CHECKPOINT = "openai/clip-vit-base-patch16"

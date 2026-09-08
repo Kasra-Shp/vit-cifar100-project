@@ -119,14 +119,16 @@ except ImportError:
 #
 # CANONICAL 3-SEED REPLICATION (2026-09-06): the "pending multi-seed sweep"
 # noted above is now this change -- SEED is externally settable via the
-# REPLICATION_SEED environment variable. R6-15's canonical seed was 42;
-# this working tree is prepared for the seed-123 replication run, so the
-# default below is now 123 -- a submitted job that (for any reason) never
-# receives REPLICATION_SEED from its environment still runs seed 123, not a
-# silent fallback to 42. Nothing else about SEED's role changed (no new RNG
-# call, no new determinism setting; every per-class/per-step shuffle still
-# derives from this one constant). `os` is already imported above.
-SEED = int(os.environ.get("REPLICATION_SEED", "123"))
+# REPLICATION_SEED environment variable, defaulting to 42 (the canonical
+# R6-15 seed) when unset. Seed 123 was run as an independent-seed replicate
+# (R6-17, RESTORED 2026-09-08 after that replication completed and was
+# analyzed -- see thesis_agent/reports/r6_seed42_seed123_replication_analysis.md;
+# the default below briefly read "123" during that run's preparation and has
+# now been reverted to the canonical default). Nothing else about SEED's
+# role changed (no new RNG call, no new determinism setting; every
+# per-class/per-step shuffle still derives from this one constant). `os` is
+# already imported above.
+SEED = int(os.environ.get("REPLICATION_SEED", "42"))
 set_seed(SEED)
 random.seed(SEED)
 np.random.seed(SEED)
@@ -205,14 +207,27 @@ FAST_RUN = False
 # below (see that flag's own comment) so this string no longer needs to name
 # a wide-schedule run.
 #
-# CANONICAL SEED-123 REPLICATION (2026-09-07): RUN_NAME_BASE encodes SEED so
-# this run writes to its own distinct output directory and can never
-# overwrite R6-15's own directory (`clip_vit_lora_cifar100_4x25_final_8methods_
-# thesis_comparison_EPOCH3_MAIN_20260825_203830`, a fixed historical path,
-# unaffected by any change here), R6-16's, or a future seed's. No
-# "3seed"/"widerank"/"capacity_sensitivity"/"seed42" wording remains in this
-# name -- this is a single additional seed (123) run, not a multi-seed sweep.
-RUN_NAME_BASE = f"clip_vit_lora_cifar100_4x25_canonical_seed{SEED}"
+# RUN NAMING (RESTORED TO NEUTRAL/PARAMETERIZED FORM, 2026-09-08): RUN_NAME_BASE
+# previously hardcoded both the dataset ("cifar100") and the specific
+# replication ("canonical_seed123") into one literal string, which is exactly
+# the kind of stale, run-specific wording that must NOT persist as future
+# experiments (e.g. the planned ImageNet-100 generalization study -- see
+# thesis_agent/reports/imagenet100_generalization_preparation.md) reuse this
+# same script. DATASET_NAME and EXPERIMENT_LABEL below are the two pieces of
+# metadata that actually change between experiment families; SEED already
+# varies per replication. Together they compose a self-documenting run name
+# without inventing a new naming scheme per experiment:
+#   cifar100 / canonical / seed42   -> clip_vit_lora_cifar100_4x25_canonical_seed42
+#   imagenet100 / generalization / seed42 -> clip_vit_lora_imagenet100_4x25_generalization_seed42
+# The "4x25" segment stays a literal (not derived from NUM_STEPS/CLASSES_PER_STEP,
+# which are defined later in this file) because every experiment run through
+# this constant to date, CIFAR-100 and the planned ImageNet-100 run alike, uses
+# the same 4x25 protocol; if that ever changes, update this literal alongside
+# NUM_STEPS/CLASSES_PER_STEP rather than deriving it automatically, to avoid a
+# silent mismatch between the run name and an accidentally-changed protocol.
+DATASET_NAME = "cifar100"       # "cifar100" (canonical) | "imagenet100" (generalization study, not yet launched)
+EXPERIMENT_LABEL = "canonical"  # short family/purpose tag: "canonical", "generalization", etc. -- NOT a seed or dataset name
+RUN_NAME_BASE = f"clip_vit_lora_{DATASET_NAME}_4x25_{EXPERIMENT_LABEL}_seed{SEED}"
 RUN_NAME = f"{RUN_NAME_BASE}_{'FAST_RUN_DEBUG' if FAST_RUN else 'EPOCH3_MAIN'}"
 
 MODEL_CHECKPOINT = "openai/clip-vit-base-patch16"
@@ -239,6 +254,186 @@ NUM_CLASSES = 100
 NUM_STEPS = 4
 CLASSES_PER_STEP = 25
 
+# =============================================================================
+# DATASET REGISTRY (added 2026-09-08, ImageNet-100 generalization-study
+# preparation -- see thesis_agent/reports/imagenet100_generalization_preparation.md
+# for the full portability audit and rationale). Scoped ONLY to the
+# data-loading/preprocessing layer below (dataset load, column-name
+# detection, final-eval-split naming); SimpleAvg/RankExt/KD/FactorOrth/
+# calibration/evaluation-metric code is untouched and dataset-agnostic by
+# construction (verified in the portability audit), so this dict is the
+# ONLY place a new dataset's identity is threaded through.
+#
+# NOT YET LAUNCHED for imagenet100 -- DATASET_NAME above defaults to
+# "cifar100" (the canonical, already-run configuration) and must be changed
+# explicitly, with author review of the exact class list below, before any
+# imagenet100 job is submitted.
+# =============================================================================
+DATASET_REGISTRY = {
+    "cifar100": {
+        "hf_id": "cifar100",
+        "loader": "hf_hub",
+        # CIFAR-100's HF dataset ships {"train": 50000, "test": 10000}; "test"
+        # is the final, never-selected-on evaluation split (existing policy,
+        # unchanged). See build_classwise_train_val_splits() below for how
+        # the model-selection validation set is carved out of "train".
+        "final_eval_split": "test",
+    },
+    "imagenet100": {
+        # FINALIZED 2026-09-08 (supersedes the 2026-09-08-earlier CMC choice
+        # below, once full local ImageNet-1k access was confirmed on the
+        # UniPD cluster -- see thesis_agent/reports/
+        # imagenet100_generalization_preparation.md, "Final ImageNet-100
+        # Benchmark Selection"). Chosen definition: the PODNet / DER / DyTox
+        # class-incremental-learning lineage's ImageNet100 -- confirmed by
+        # directly downloading and diffing the primary source files (not
+        # inferred from the name):
+        #   - PODNet (arthurdouillard/incremental_learning.pytorch,
+        #     imagenet_split/{train,val}_100.txt) -- 129,395 train / 5,000 val
+        #     images, 100 classes, verified as the exact WNIDs n01440764
+        #     through n01855672 (the alphabetically/numerically FIRST 100
+        #     WNIDs of the full 1000-class ImageNet-1k, in ascending sort
+        #     order -- confirmed programmatically, not the "seed-1993 random
+        #     shuffle of the SUBSET" some secondary sources describe; that
+        #     description could not be reconciled with the primary file's own
+        #     content and is presumed to conflate task-order shuffling with
+        #     subset selection).
+        #   - DER (Rhyssiyan/DER-ClassIL.pytorch) explicitly defers to this
+        #     exact PODNet split in its own README ("ImageNet100: Refer to
+        #     ImageNet100_Split", linking straight to the file above) --
+        #     confirmed the same subset, not a separate one.
+        #   - DyTox (arthurdouillard/dytox, imagenet100_splits/val_100.txt)
+        #     is BYTE-FOR-BYTE IDENTICAL (`diff` = 0 lines) to PODNet's own
+        #     val_100.txt -- confirmed the same subset and label mapping.
+        # This is now the ONLY active imagenet100 class-list; the CMC/Tian et
+        # al. list previously wired here is preserved for reproducibility as
+        # IMAGENET100_SYNSETS_CMC_ALTERNATIVE below, clearly marked inactive
+        # (Jaccard overlap with this chosen list: 8/192 = 0.0417 -- these are
+        # two effectively unrelated 100-class subsets, not two orderings of
+        # the same one).
+        "loader": "local_imagefolder",
+        "final_eval_split": "validation",
+    },
+}[DATASET_NAME]
+
+# =============================================================================
+# IMAGENET-100 CLASS DEFINITION (finalized 2026-09-08)
+# =============================================================================
+# IMAGENET100_SYNSETS: the 100 WNIDs in their natural ascending-sort order,
+# exactly as extracted from PODNet's imagenet_split/val_100.txt AND
+# train_100.txt (both downloaded in full and cross-checked: identical
+# label-to-WNID mapping in both files, 100/100 unique, all valid WNIDs,
+# monotonically increasing -- i.e. this is literally sorted(all_1000_wnids)[:100]).
+# Source: https://raw.githubusercontent.com/arthurdouillard/incremental_learning.pytorch/master/imagenet_split/val_100.txt
+# Cross-verified byte-identical against: https://raw.githubusercontent.com/arthurdouillard/dytox/main/imagenet100_splits/val_100.txt
+# DER (Rhyssiyan/DER-ClassIL.pytorch) confirmed via its own README to reuse
+# this exact file rather than defining a separate one.
+IMAGENET100_SYNSETS = [
+    "n01440764", "n01443537", "n01484850", "n01491361", "n01494475",
+    "n01496331", "n01498041", "n01514668", "n01514859", "n01518878",
+    "n01530575", "n01531178", "n01532829", "n01534433", "n01537544",
+    "n01558993", "n01560419", "n01580077", "n01582220", "n01592084",
+    "n01601694", "n01608432", "n01614925", "n01616318", "n01622779",
+    "n01629819", "n01630670", "n01631663", "n01632458", "n01632777",
+    "n01641577", "n01644373", "n01644900", "n01664065", "n01665541",
+    "n01667114", "n01667778", "n01669191", "n01675722", "n01677366",
+    "n01682714", "n01685808", "n01687978", "n01688243", "n01689811",
+    "n01692333", "n01693334", "n01694178", "n01695060", "n01697457",
+    "n01698640", "n01704323", "n01728572", "n01728920", "n01729322",
+    "n01729977", "n01734418", "n01735189", "n01737021", "n01739381",
+    "n01740131", "n01742172", "n01744401", "n01748264", "n01749939",
+    "n01751748", "n01753488", "n01755581", "n01756291", "n01768244",
+    "n01770081", "n01770393", "n01773157", "n01773549", "n01773797",
+    "n01774384", "n01774750", "n01775062", "n01776313", "n01784675",
+    "n01795545", "n01796340", "n01797886", "n01798484", "n01806143",
+    "n01806567", "n01807496", "n01817953", "n01818515", "n01819313",
+    "n01820546", "n01824575", "n01828970", "n01829413", "n01833805",
+    "n01843065", "n01843383", "n01847000", "n01855032", "n01855672",
+]
+
+# IMAGENET100_CLASS_ORDER: the SAME 100 WNIDs, permuted ONCE, deterministically,
+# with this project's canonical SEED=42 (Python's `random.Random(42).shuffle`
+# applied to the IMAGENET100_SYNSETS list above). No canonical published
+# per-step task order was confirmed to accompany this benchmark in the
+# investigation behind this pass (PODNet-family configs reference a
+# "class order" concept but its exact published values were not extracted
+# in this session) -- this is the documented fallback the task specified for
+# exactly that situation, not an arbitrary/cherry-picked grouping. Position
+# in this list, NOT alphabetical order, determines the 4x25 step assignment
+# (positions 0-24 = step 1, 25-49 = step 2, 50-74 = step 3, 75-99 = step 4).
+IMAGENET100_CLASS_ORDER = [
+    "n01687978", "n01685808", "n01824575", "n01518878", "n01751748",
+    "n01698640", "n01443537", "n01770081", "n01558993", "n01776313",
+    "n01773549", "n01530575", "n01729977", "n01734418", "n01773157",
+    "n01692333", "n01695060", "n01828970", "n01774750", "n01669191",
+    "n01641577", "n01608432", "n01644900", "n01843383", "n01795545",
+    "n01697457", "n01798484", "n01630670", "n01817953", "n01664065",
+    "n01514859", "n01694178", "n01739381", "n01748264", "n01773797",
+    "n01689811", "n01855032", "n01728572", "n01806567", "n01532829",
+    "n01667778", "n01616318", "n01677366", "n01682714", "n01582220",
+    "n01753488", "n01742172", "n01740131", "n01514668", "n01665541",
+    "n01855672", "n01693334", "n01484850", "n01704323", "n01560419",
+    "n01675722", "n01737021", "n01756291", "n01614925", "n01744401",
+    "n01622779", "n01496331", "n01498041", "n01755581", "n01797886",
+    "n01592084", "n01784675", "n01688243", "n01820546", "n01601694",
+    "n01440764", "n01843065", "n01735189", "n01829413", "n01728920",
+    "n01819313", "n01629819", "n01770393", "n01806143", "n01775062",
+    "n01749939", "n01632777", "n01631663", "n01818515", "n01847000",
+    "n01494475", "n01729322", "n01774384", "n01531178", "n01768244",
+    "n01807496", "n01534433", "n01580077", "n01632458", "n01644373",
+    "n01667114", "n01833805", "n01491361", "n01537544", "n01796340",
+]
+
+# IMAGENET100_SYNSETS_CMC_ALTERNATIVE: the ORIGINAL candidate wired here
+# earlier (CMC / Tian et al. 2020, "Contrastive Multiview Coding",
+# https://raw.githubusercontent.com/HobbitLong/CMC/master/imagenet100.txt).
+# PRESERVED FOR REPRODUCIBILITY ONLY -- NOT ACTIVE, NOT USED BY ANY CODE
+# BELOW. Retained per the explicit instruction to keep alternative
+# definitions on record rather than delete them once superseded.
+IMAGENET100_SYNSETS_CMC_ALTERNATIVE = [
+    "n02869837", "n01749939", "n02488291", "n02107142", "n13037406",
+    "n02091831", "n04517823", "n04589890", "n03062245", "n01773797",
+    "n01735189", "n07831146", "n07753275", "n03085013", "n04485082",
+    "n02105505", "n01983481", "n02788148", "n03530642", "n04435653",
+    "n02086910", "n02859443", "n13040303", "n03594734", "n02085620",
+    "n02099849", "n01558993", "n04493381", "n02109047", "n04111531",
+    "n02877765", "n04429376", "n02009229", "n01978455", "n02106550",
+    "n01820546", "n01692333", "n07714571", "n02974003", "n02114855",
+    "n03785016", "n03764736", "n03775546", "n02087046", "n07836838",
+    "n04099969", "n04592741", "n03891251", "n02701002", "n03379051",
+    "n02259212", "n07715103", "n03947888", "n04026417", "n02326432",
+    "n03637318", "n01980166", "n02113799", "n02086240", "n03903868",
+    "n02483362", "n04127249", "n02089973", "n03017168", "n02093428",
+    "n02804414", "n02396427", "n04418357", "n02172182", "n01729322",
+    "n02113978", "n03787032", "n02089867", "n02119022", "n03777754",
+    "n04238763", "n02231487", "n03032252", "n02138441", "n02104029",
+    "n03837869", "n03494278", "n04136333", "n03794056", "n03492542",
+    "n02018207", "n04067472", "n03930630", "n03584829", "n02123045",
+    "n04229816", "n02100583", "n03642806", "n04336792", "n03259280",
+    "n02116738", "n02108089", "n03424325", "n01855672", "n02090622",
+]
+
+if DATASET_NAME == "imagenet100":
+    def _is_wnid(s):
+        return isinstance(s, str) and len(s) == 9 and s[0] == "n" and s[1:].isdigit()
+    for _name, _lst in [
+        ("IMAGENET100_SYNSETS", IMAGENET100_SYNSETS),
+        ("IMAGENET100_CLASS_ORDER", IMAGENET100_CLASS_ORDER),
+        ("IMAGENET100_SYNSETS_CMC_ALTERNATIVE", IMAGENET100_SYNSETS_CMC_ALTERNATIVE),
+    ]:
+        assert len(_lst) == 100, f"{_name} must have exactly 100 entries, got {len(_lst)}"
+        assert len(set(_lst)) == 100, f"{_name} contains duplicate WNIDs"
+        assert all(_is_wnid(s) for s in _lst), f"{_name} contains a malformed WNID"
+    assert set(IMAGENET100_CLASS_ORDER) == set(IMAGENET100_SYNSETS), (
+        "IMAGENET100_CLASS_ORDER must be a permutation of IMAGENET100_SYNSETS "
+        "(same 100 classes, different order) -- got a different class set."
+    )
+    # WNID -> contiguous target label 0..99, assigned by POSITION in
+    # IMAGENET100_CLASS_ORDER (the seed-42 permutation), NOT by the original
+    # full ImageNet-1k class index and NOT by alphabetical order. This is the
+    # single source of truth for label remapping in the loader below.
+    IMAGENET100_WNID_TO_LABEL = {wnid: i for i, wnid in enumerate(IMAGENET100_CLASS_ORDER)}
+    IMAGENET_ROOT = os.environ.get("IMAGENET_ROOT", "/nfsd/lttm4/datasets/ImageNet-1k_torch")
 
 
 
@@ -1285,6 +1480,56 @@ def active_rankext_rank_schedule():
     return list(RANKEXT_RANK_SCHEDULE_WIDE) if USE_RANKEXT_RANK_SCHEDULE_WIDE else list(RANKEXT_RANK_SCHEDULE)
 
 
+# =============================================================================
+# EXPERIMENT-INVARIANT ASSERTIONS (added 2026-09-08, ImageNet-100
+# generalization-study preparation): consolidates the scientific-configuration
+# checks the preparation report commits to, in one place, so a misconfigured
+# launch (either dataset) fails fast at import time rather than producing a
+# silently-wrong run. This is IN ADDITION TO, not a replacement for, the
+# existing per-flag asserts scattered through this file (RANKEXT_RANK_SCHEDULE_WIDE
+# length/monotonicity above, LORA_R==RANKEXT_RANK_SCHEDULE[-1] later, etc.).
+# =============================================================================
+assert DATASET_NAME in ("cifar100", "imagenet100"), f"Unknown DATASET_NAME: {DATASET_NAME!r}"
+assert NUM_CLASSES == 100, f"NUM_CLASSES must be 100 for the canonical 4x25 protocol, got {NUM_CLASSES}"
+assert NUM_STEPS == 4, f"NUM_STEPS must be 4 for the canonical 4x25 protocol, got {NUM_STEPS}"
+assert CLASSES_PER_STEP == 25, f"CLASSES_PER_STEP must be 25 for the canonical 4x25 protocol, got {CLASSES_PER_STEP}"
+assert NUM_STEPS * CLASSES_PER_STEP == NUM_CLASSES, (
+    f"NUM_STEPS*CLASSES_PER_STEP ({NUM_STEPS * CLASSES_PER_STEP}) must equal NUM_CLASSES ({NUM_CLASSES})"
+)
+assert MODEL_CHECKPOINT == "openai/clip-vit-base-patch16", (
+    f"Backbone must stay fixed at CLIP ViT-B/16 for a dataset-generalization run "
+    f"(this is a dataset-only ablation, not a dataset+backbone one); got {MODEL_CHECKPOINT!r}"
+)
+assert not USE_RANKEXT_RANK_SCHEDULE_WIDE, (
+    "USE_RANKEXT_RANK_SCHEDULE_WIDE must be False for any canonical or "
+    "generalization run -- the wide schedule is an R6-16 capacity-sensitivity "
+    "ablation only and must not be enabled here."
+)
+assert active_rankext_rank_schedule() == [20, 40, 60, 80], (
+    f"Active RankExt schedule must be the canonical [20, 40, 60, 80], "
+    f"got {active_rankext_rank_schedule()}"
+)
+if DATASET_NAME == "imagenet100":
+    assert EXPERIMENT_LABEL != "canonical", (
+        "EXPERIMENT_LABEL is still 'canonical' with DATASET_NAME='imagenet100' -- "
+        "set EXPERIMENT_LABEL='generalization' (or similar) before launch so the "
+        "run name/output directory cannot be mistaken for the CIFAR-100 canonical "
+        "run or reuse 'canonical_seed123'-style stale replication wording."
+    )
+    assert "cifar100" not in RUN_NAME_BASE, f"RUN_NAME_BASE must not mention cifar100: {RUN_NAME_BASE!r}"
+    for _bad_token in ("seed123", "3seed", "widerank", "capacity_sensitivity"):
+        assert _bad_token not in RUN_NAME_BASE, (
+            f"RUN_NAME_BASE must not contain stale replication wording {_bad_token!r}: {RUN_NAME_BASE!r}"
+        )
+    print(f"imagenet100 experiment-invariant assertions PASSED. RUN_NAME_BASE={RUN_NAME_BASE!r}, "
+          f"seed={SEED}, protocol={NUM_STEPS}x{CLASSES_PER_STEP}, "
+          f"rankext_schedule={active_rankext_rank_schedule()}, backbone={MODEL_CHECKPOINT!r}")
+else:
+    print(f"cifar100 (canonical) experiment-invariant assertions PASSED. RUN_NAME_BASE={RUN_NAME_BASE!r}, "
+          f"seed={SEED}, protocol={NUM_STEPS}x{CLASSES_PER_STEP}, "
+          f"rankext_schedule={active_rankext_rank_schedule()}, backbone={MODEL_CHECKPOINT!r}")
+
+
 def active_rankext_lora_alpha():
     """Effective LoRA alpha implied by RANKEXT_ALPHA_PER_RANK at the active
     schedule's FINAL rank -- i.e. the rank_extension-family analogue of the
@@ -2269,10 +2514,92 @@ print("Disabled methods/flags for this run:", disabled_methods)
 # In[ ]:
 
 
-dataset = load_dataset("cifar100")
+# DATASET-AGNOSTIC LOAD (2026-09-08, revised after full local ImageNet-1k
+# access was confirmed -- see thesis_agent/reports/
+# imagenet100_generalization_preparation.md "Final ImageNet-100 Benchmark
+# Selection"). Dispatches on DATASET_REGISTRY['loader']:
+#   - cifar100:    unchanged -- load_dataset("cifar100") from the HF Hub.
+#   - imagenet100: loads the shared local ImageNet-1k ImageFolder tree at
+#     IMAGENET_ROOT (env-var configurable, default
+#     /nfsd/lttm4/datasets/ImageNet-1k_torch; NOT hardcoded to any user's
+#     home directory), filtered via `data_files` glob patterns to ONLY the
+#     100 selected WNIDs (IMAGENET100_SYNSETS) -- the other 900 ImageNet-1k
+#     classes are never touched/loaded/copied. NO download, NO HuggingFace
+#     Hub access, NO dataset duplication -- reads the shared NFS dataset
+#     directly, read-only.
+if DATASET_REGISTRY["loader"] == "hf_hub":
+    dataset = load_dataset(DATASET_REGISTRY["hf_id"])
+elif DATASET_REGISTRY["loader"] == "local_imagefolder":
+    dataset = load_dataset(
+        "imagefolder",
+        data_dir=IMAGENET_ROOT,
+        data_files={
+            "train": [f"train/{wnid}/*" for wnid in IMAGENET100_SYNSETS],
+            "validation": [f"val/{wnid}/*" for wnid in IMAGENET100_SYNSETS],
+        },
+    )
+else:
+    raise ValueError(f"Unknown loader: {DATASET_REGISTRY['loader']!r}")
 
 LABEL_COL = "fine_label" if "fine_label" in dataset["train"].column_names else "label"
 IMAGE_COL = "img" if "img" in dataset["train"].column_names else "image"
+
+if DATASET_NAME == "imagenet100":
+    # HF's `imagefolder` builder assigns its OWN ClassLabel indices (0..99),
+    # ordered by the ALPHABETICALLY SORTED set of discovered class-subfolder
+    # names among the 100 we filtered to -- since IMAGENET100_SYNSETS is
+    # already stored in that same sorted order (Section: IMAGENET-100 CLASS
+    # DEFINITION above), the loader's own indices are expected to equal
+    # IMAGENET100_SYNSETS's position order. They are NEVER assumed to equal
+    # our chosen IMAGENET100_CLASS_ORDER (the seed-42 permutation) -- that
+    # remapping is applied explicitly below regardless of what the loader's
+    # own indexing turns out to be, so a wrong assumption here cannot
+    # silently leak the wrong labels into the classifier.
+    _label_feature = dataset["train"].features[LABEL_COL]
+    assert hasattr(_label_feature, "names") and _label_feature.names is not None, (
+        "imagefolder loader did not expose a ClassLabel feature with .names -- "
+        "cannot safely verify/remap classes. STOP."
+    )
+    _loaded_class_names = list(_label_feature.names)
+    assert len(_loaded_class_names) == 100, (
+        f"Loaded imagenet100 dataset has {len(_loaded_class_names)} classes, expected 100 "
+        f"-- check IMAGENET_ROOT ({IMAGENET_ROOT}) and the data_files glob patterns."
+    )
+    assert sorted(_loaded_class_names) == sorted(IMAGENET100_SYNSETS), (
+        "Loaded local ImageNet-1k directory's discovered class set does not match "
+        "the recorded IMAGENET100_SYNSETS -- STOP and reconcile before proceeding "
+        "(check IMAGENET_ROOT and the 100 WNID directory names)."
+    )
+    print("imagenet100 class-set assertion PASSED: 100 classes match IMAGENET100_SYNSETS.")
+
+    # Explicit label remap: loader's own ClassLabel index -> our chosen
+    # IMAGENET100_WNID_TO_LABEL (position in IMAGENET100_CLASS_ORDER, the
+    # seed-42 permutation) -- this is the step that guarantees the original
+    # ImageNet-1k indices (or the loader's own alphabetical-of-the-100
+    # indices) never silently become classifier targets.
+    _OLD_LABEL_TO_WNID = {i: n for i, n in enumerate(_loaded_class_names)}
+
+    def _remap_imagenet100_label(example):
+        old_label = example[LABEL_COL]
+        wnid = _OLD_LABEL_TO_WNID[old_label]
+        example[LABEL_COL] = IMAGENET100_WNID_TO_LABEL[wnid]
+        return example
+
+    dataset = dataset.map(_remap_imagenet100_label)
+    print(
+        "imagenet100 label remap applied: loader's own 0-99 ClassLabel indices "
+        "replaced with IMAGENET100_CLASS_ORDER-derived contiguous 0-99 targets "
+        "(seed-42 permutation, NOT alphabetical order, NOT the original "
+        "ImageNet-1k 0-999 indices)."
+    )
+    # NOTE (untested, pending cluster smoke test -- see preparation report
+    # Section 12/"Final ImageNet-100 Benchmark Selection"): this remap logic
+    # has been reviewed and is believed correct but has NOT been executed
+    # against the real local ImageNet-1k directory tree in this pass (no
+    # cluster access from this environment). Verify the printed class-set
+    # assertion and a `Counter(dataset["train"][LABEL_COL])` sanity check
+    # (expect exactly 100 distinct values, 0..99, non-degenerate per-class
+    # counts) at first real load before trusting this further.
 
 # PROTOCOL-DEPTH VALIDATION (2026-08-24): was a hardcoded 5-entry literal
 # ([range(0,20), range(20,40), ...]) -- the one genuinely protocol-specific
@@ -2280,14 +2607,22 @@ IMAGE_COL = "img" if "img" in dataset["train"].column_names else "image"
 # read NUM_STEPS/CLASSES_PER_STEP/classes_for_step() symbolically). Now
 # derived generically from NUM_STEPS/CLASSES_PER_STEP so it is correct for
 # BOTH 5x20 (unchanged: reduces to the exact same 5 ranges above) and 20x5
-# (20 ranges of 5). Classes are NOT shuffled/permuted here or anywhere else
-# in this construction -- native CIFAR-100 label order 0..99 is simply
-# chunked contiguously -- so this generalization, by construction, preserves
-# class order/content exactly: fine-steps 1-4 under 20x5 are classes 0-19
+# (20 ranges of 5). Classes are NOT shuffled/permuted HERE -- this chunks
+# whatever integer label 0..99 each example already carries by the time it
+# reaches this line, contiguously, with no further reordering. For
+# cifar100 that integer label is CIFAR's own native, untouched label order.
+# For imagenet100 (added 2026-09-08) that integer label is the result of
+# the explicit remap applied just above (IMAGENET100_WNID_TO_LABEL, itself
+# derived from the documented seed-42 permutation IMAGENET100_CLASS_ORDER,
+# not an arbitrary/cherry-picked grouping) -- so "step 1 = positions 0-24"
+# means "the first 25 classes of IMAGENET100_CLASS_ORDER," recorded in full
+# in that constant and in the preparation report, not a semantically
+# convenient hand-picked group. Fine-steps 1-4 under 20x5 are classes 0-19
 # split into four 5-class blocks, i.e. bit-identical to 5x20's step 1 class
 # SET (just partitioned into more, smaller steps), and likewise for every
 # other 20-class group (verified programmatically in the pre-flight
-# synthetic test below).
+# synthetic test below, for cifar100; the same arithmetic applies to
+# whatever dataset's labels are in play).
 class_splits = [
     list(range(i * CLASSES_PER_STEP, (i + 1) * CLASSES_PER_STEP))
     for i in range(NUM_STEPS)
@@ -2661,7 +2996,14 @@ def make_val_dataset(class_ids):
 
 
 def make_eval_dataset(class_ids):
-    ds = filter_by_classes(dataset["test"], class_ids)
+    # DATASET_REGISTRY["final_eval_split"] is "test" for cifar100 (unchanged)
+    # and "validation" for imagenet100 (clane9/imagenet-100 has no split
+    # literally named "test"; its "validation" split IS ImageNet's official,
+    # final, never-used-for-model-selection evaluation set -- see the
+    # DATASET REGISTRY comment above). Either way this remains the ONE
+    # final-evaluation split, never the model-selection val_source used
+    # elsewhere (make_val_dataset, unchanged).
+    ds = filter_by_classes(dataset[DATASET_REGISTRY["final_eval_split"]], class_ids)
     ds = ds.with_transform(preprocess_val)
     return ds
 

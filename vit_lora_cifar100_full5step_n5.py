@@ -99,6 +99,23 @@ except ImportError:
     _HAVE_SCIPY = False
 
 
+class N5StopAfterSetup(Exception):
+    """Raised (2026-09-08, added for scripts/smoke_test_imagenet100.py) only
+    when the environment variable N5_SKIP_TRAINING_DRIVER=1 is set, at the
+    exact point (just before the simple_avg driver loop, see that loop's own
+    comment) where this module has finished ALL config/model/dataset/
+    function-definition setup and would otherwise start actually training
+    every active method. A caller that `exec`'s or imports this module with
+    that env var set (and catches this exception) gets full access to every
+    name defined above that point -- DATASET_REGISTRY, class_splits, dataset,
+    fresh_pretrained_model, add_lora, build_rank_extension_model, the Trainer
+    subclasses, calibration functions, etc. -- without any training running.
+    Plain `python vit_lora_cifar100_full5step_n5.py` (the unchanged, existing
+    cluster usage) never sets this env var, so this class is defined but its
+    raise site is simply never reached in that usage -- zero behavior change."""
+    pass
+
+
 # In[ ]:
 
 
@@ -225,8 +242,14 @@ FAST_RUN = False
 # the same 4x25 protocol; if that ever changes, update this literal alongside
 # NUM_STEPS/CLASSES_PER_STEP rather than deriving it automatically, to avoid a
 # silent mismatch between the run name and an accidentally-changed protocol.
-DATASET_NAME = "cifar100"       # "cifar100" (canonical) | "imagenet100" (generalization study, not yet launched)
-EXPERIMENT_LABEL = "canonical"  # short family/purpose tag: "canonical", "generalization", etc. -- NOT a seed or dataset name
+# Both overridable via environment variable (2026-09-08, added for
+# scripts/smoke_test_imagenet100.py -- exactly the same "env-var override,
+# canonical default unchanged" pattern already used for SEED/IMAGENET_ROOT
+# elsewhere in this file; plain `python vit_lora_cifar100_full5step_n5.py`
+# with no environment set behaves EXACTLY as before, still defaulting to the
+# canonical cifar100 configuration).
+DATASET_NAME = os.environ.get("N5_DATASET_NAME", "cifar100")          # "cifar100" (canonical) | "imagenet100" (generalization study, not yet launched)
+EXPERIMENT_LABEL = os.environ.get("N5_EXPERIMENT_LABEL", "canonical")  # short family/purpose tag: "canonical", "generalization", etc. -- NOT a seed or dataset name
 RUN_NAME_BASE = f"clip_vit_lora_{DATASET_NAME}_4x25_{EXPERIMENT_LABEL}_seed{SEED}"
 RUN_NAME = f"{RUN_NAME_BASE}_{'FAST_RUN_DEBUG' if FAST_RUN else 'EPOCH3_MAIN'}"
 
@@ -5270,6 +5293,21 @@ def run_simple_avg_variant(method_name):
     del merged_model
     cleanup()
 
+
+# SETUP-ONLY IMPORT GUARD (2026-09-08, added for scripts/smoke_test_imagenet100.py):
+# every function/class/config/dataset object needed by that script (and by
+# any future lightweight cluster check) is already defined above this line.
+# Everything from here to end-of-file actually RUNS full training for every
+# active method and then generates reports/plots from the results -- exactly
+# what a smoke test must NOT trigger. See N5StopAfterSetup's own docstring.
+# No effect on `python vit_lora_cifar100_full5step_n5.py` (unchanged usage,
+# env var unset).
+if os.environ.get("N5_SKIP_TRAINING_DRIVER") == "1":
+    raise N5StopAfterSetup(
+        "N5_SKIP_TRAINING_DRIVER=1 -- stopping here, before any training runs. "
+        "All setup (config, dataset, model/trainer classes and functions) above "
+        "this point already executed and is available to the caller."
+    )
 
 simple_avg_execution_order = [cfg["method"] for cfg in ACTIVE_METHOD_CONFIGS if cfg["family"] == "simple_avg"]
 for method_name in simple_avg_execution_order:

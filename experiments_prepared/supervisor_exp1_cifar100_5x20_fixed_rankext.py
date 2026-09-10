@@ -213,21 +213,69 @@ FAST_RUN = False
 # 20260825_203830`, a fixed historical path, unaffected by any change here),
 # R6-16's, or a future seed's.
 #
-# RESTORED TO THE CANONICAL CIFAR-100 LITERAL (2026-09-10): a 2026-09-08 pass
-# had briefly parameterized this string over env-var-settable DATASET_NAME/
-# EXPERIMENT_LABEL constants to prepare a (now-postponed) ImageNet-100
-# generalization run on this same script -- see
-# thesis_agent/reports/imagenet100_generalization_preparation.md, now marked
-# POSTPONED. That parameterization, and the DATASET_REGISTRY/IMAGENET100_*
-# machinery it fed, has been removed from this active script per the
-# supervisor-followup restoration (thesis_agent/reports/
-# supervisor_cifar_followup_audit.md); ImageNet-100 remains a documented,
-# not-abandoned future direction, just no longer wired into the active
-# training path. Plain `python vit_lora_cifar100_full5step_n5.py` behaves
-# exactly as it did before that ImageNet-preparation pass.
-RUN_NAME_BASE = f"clip_vit_lora_cifar100_4x25_canonical_seed{SEED}"
+# EXPERIMENT 1 (supervisor-requested, prepared 2026-09-10, finalized
+# 2026-09-11, NOT LAUNCHED -- see
+# thesis_agent/reports/supervisor_cifar_followup_audit.md): "rerun the 5x20
+# scenario with fixed rank extension, same rank as before the fix."
+#
+# EXACT DESCRIPTION (per the 2026-09-11 audit addendum -- use this phrasing,
+# not "reproduces job 4904629"): a 5x20 RE-EVALUATION UNDER THE CURRENT FAIR/
+# CANONICAL PIPELINE, using the corrected RankExt implementation and the
+# historical RankExt cumulative schedule [16,32,48,64,80]. This is
+# deliberately NOT a byte-for-byte reproduction of job 4904629
+# (R6/results_4904629_light) -- that job's own SimpleAvg config (4 target
+# modules, "global" calibration) is an obsolete, since-fixed asymmetry (see
+# the PROVENANCE NOTE below) and is intentionally NOT restored here.
+#
+# This file is a dedicated copy of the restored canonical
+# vit_lora_cifar100_full5step_n5.py, with ONLY the protocol/rank/epoch
+# constants below changed: protocol=5x20, RankExt schedule
+# [16,32,48,64,80] (recovered from thesis_agent/sources/R6_catalog.md's 5x20
+# job-ID entries and independently corroborated by old/vit_lora_cifar100_
+# full5step_n5.py's embedded protocol-depth-validation comments -- NOT
+# guessed), LORA_R=80 (unchanged), epochs=9 (matching every historical 5x20
+# job). Every SimpleAvg/RankExt/KD/FactorOrth/calibration/classifier/
+# open-restricted-evaluation/BWT/forgetting/best-epoch-selection ALGORITHM is
+# reused UNCHANGED from current n5.py -- current n5.py is the sole authority
+# for all method definitions; nothing here reimplements or copies any
+# pre-fix RankExt code path.
+#
+# WHY A FULL COPY, NOT A THIN IMPORT WRAPPER: vit_lora_cifar100_full5step_n5.py
+# executes top-to-bottom as a converted notebook (not designed as an
+# importable module), and its one prior import-without-training mechanism
+# (N5StopAfterSetup / N5_SKIP_TRAINING_DRIVER) was deliberately removed
+# during the CIFAR-100 canonical restoration specifically because it was
+# ImageNet-smoke-test-only scaffolding with no other user -- see
+# thesis_agent/reports/supervisor_cifar_followup_audit.md. Re-adding an
+# import-time short-circuit purely to avoid this copy would reintroduce that
+# exact removed mechanism for a single one-off experiment. A dedicated copy
+# with only the constants below overridden is the lower-risk choice: current
+# n5.py itself is never modified, and every non-overridden line here is
+# byte-identical to it (diff-able at any time to prove no algorithm drifted).
+RUN_NAME_BASE = f"clip_vit_lora_cifar100_5x20_fixed_rankext_hist_schedule_seed{SEED}"
 RUN_NAME = f"{RUN_NAME_BASE}_{'FAST_RUN_DEBUG' if FAST_RUN else 'EPOCH3_MAIN'}"
 
+# PROVENANCE NOTE (2026-09-11, cross-checked against old/vit_lora_cifar100_
+# full5step_n5.py and R6/results_4904629_light -- see
+# thesis_agent/reports/supervisor_cifar_followup_audit.md "Old notebook
+# cross-check" addendum): the pre-fix 5x20 reference job (4904629, and its
+# duplicate results_fix2_20260721_light) ran simple_avg with 4 target modules
+# (q_proj/k_proj/v_proj/out_proj) and "global" calibration -- NOT the 2-module
+# (q_proj/v_proj)/"confidence_weighted_regime_grouped" config TARGET_MODULES_
+# BY_FAMILY and CALIBRATION_MODE_BY_FAMILY below actually have (inherited
+# unchanged from the restored canonical file). This is a REAL, confirmed
+# difference from the pre-fix reference, deliberately NOT reproduced here:
+# both the 4->2 module change and the calibration-consistency change are
+# part of the CURRENT CORRECTED METHODOLOGY (a cross-family fairness fix and
+# the fix for the R6-14-style calibration asymmetry, respectively), not part
+# of "the historical rank/protocol to preserve" -- reproducing job 4904629's
+# SimpleAvg config exactly would reintroduce the R6-14 calibration asymmetry
+# this project has already fixed. Only protocol (5x20), RankExt's own rank
+# schedule, and epoch count are matched to the pre-fix reference; SimpleAvg's
+# target-module count and both families' calibration algorithm intentionally
+# stay at their CURRENT (fixed) values. See the provenance table in the audit
+# report for the full reconciliation across all three sources (old notebook,
+# job 4904629 artifacts, current n5.py).
 MODEL_CHECKPOINT = "openai/clip-vit-base-patch16"
 
 NUM_CLASSES = 100
@@ -249,8 +297,10 @@ NUM_CLASSES = 100
 # scientific setting changes as a result of this edit alone -- see
 # RANKEXT_RANK_SCHEDULE below for the companion change needed to keep final
 # cumulative rank at 80 (not 320).
-NUM_STEPS = 4
-CLASSES_PER_STEP = 25
+# EXPERIMENT 1 OVERRIDE: 4x25 canonical -> 5x20 (the pre-fix reference
+# protocol -- see thesis_agent/reports/supervisor_cifar_followup_audit.md).
+NUM_STEPS = 5
+CLASSES_PER_STEP = 20
 
 # --- Epoch budget -----------------------------------------------------------
 # R3 (the EPOCH3 run, analysis in analysis_R3/reports/convergence_analysis_R3.txt)
@@ -304,19 +354,27 @@ CLASSES_PER_STEP = 25
 # already measured between nominally-identical historical reruns. EPOCHS=7
 # is chosen as the point that preserves that noise-floor-scale residual for
 # only the tail 1-2 epochs, not as a value with zero truncation risk.
-FULL_FT_EPOCHS = 7
-FULL_LORA_EPOCHS = 7
-FULL_JOINT_EPOCHS = 7
-FULL_ORTH_EPOCHS = 7
-FULL_RANKEXT_EPOCHS = 7
+# EXPERIMENT 1 OVERRIDE: canonical EPOCHS=7 (tuned for the 4x25 protocol) ->
+# 9, uniformly, matching every pre-fix AND fixed-iteration 5x20 job in
+# thesis_agent/sources/R6_catalog.md (all used epochs=9) -- this is the
+# "keep all other scientific settings as comparable as possible" requirement
+# for a pre-fix/post-fix 5x20 comparison, not a new tuning decision. Every
+# epoch-budget constant changed in lockstep, same convention as every prior
+# epoch-budget change in the canonical file's history (FT/JOINT/ORTH/SCRATCH
+# stay in lockstep even though disabled via METHODS_TO_RUN).
+FULL_FT_EPOCHS = 9
+FULL_LORA_EPOCHS = 9
+FULL_JOINT_EPOCHS = 9
+FULL_ORTH_EPOCHS = 9
+FULL_RANKEXT_EPOCHS = 9
 
-SCRATCH_EPOCHS = 7
+SCRATCH_EPOCHS = 9
 
-FT_EPOCHS = 7
-LORA_EPOCHS = 7
-JOINT_EPOCHS = 7
-ORTH_EPOCHS = 7
-RANKEXT_EPOCHS = 7
+FT_EPOCHS = 9
+LORA_EPOCHS = 9
+JOINT_EPOCHS = 9
+ORTH_EPOCHS = 9
+RANKEXT_EPOCHS = 9
 
 
 BATCH_FT = 8
@@ -1188,7 +1246,13 @@ RANKEXT_DIAGNOSTICS = True
 # purpose. Do NOT extend this to a 320-final-rank schedule (that would
 # confound protocol depth with a 4x capacity increase) and do NOT retune
 # the 0.8 ratio -- this is a controlled protocol-only change.
-RANKEXT_RANK_SCHEDULE = [20, 40, 60, 80]
+# EXPERIMENT 1 OVERRIDE: canonical 4x25 schedule [20,40,60,80] -> the
+# pre-fix 5x20 reference's OWN schedule [16,32,48,64,80] (recovered from
+# thesis_agent/sources/R6_catalog.md's 5x20 run-config field
+# "lora_rank_schedule (rankext) = [16,32,48,64,80]", not guessed). Final
+# cumulative rank stays 80, matching LORA_R=80 below -- this is the "same
+# rank as before the fix" the supervisor asked for.
+RANKEXT_RANK_SCHEDULE = [16, 32, 48, 64, 80]
 RANKEXT_ALPHA_PER_RANK = 2.0
 
 # ACCURACY-PUSH CANDIDATE (flag; now ON -- see "CAPACITY TEST" note below):
@@ -1260,7 +1324,11 @@ RANKEXT_ALPHA_PER_RANK = 2.0
 # entry), applied to the new 4-entry default RANKEXT_RANK_SCHEDULE
 # ([20,40,60,80] -> [40,80,120,160]). Not a new scientific setting -- still
 # never used while the flag stays False.
-RANKEXT_RANK_SCHEDULE_WIDE = [40, 80, 120, 160]
+# EXPERIMENT 1 OVERRIDE: resized to NUM_STEPS=5 entries (was 4, for 4x25) to
+# satisfy this file's unconditional length/monotonicity asserts below -- the
+# flag stays False, so this list is still dead code for training purposes.
+# Same "2x the active default schedule, elementwise" relationship as always.
+RANKEXT_RANK_SCHEDULE_WIDE = [32, 64, 96, 128, 160]
 # WIDE RANKEXT CAPACITY-SENSITIVITY EXPERIMENT (2026-09-02, supervisor-requested
 # control): flipped False -> True to activate the pre-existing wide schedule
 # [40,80,120,160] for the 4x25 protocol. This is a capacity-INCREASED /
@@ -1871,6 +1939,148 @@ assert float(RANKEXT_ALPHA_PER_RANK * RANKEXT_RANK_SCHEDULE[-1]) == float(LORA_A
 # active_rankext_lora_alpha() must equal ALPHA_PER_RANK * the active
 # schedule's own final rank, for both the default and the wide schedule.
 assert float(active_rankext_lora_alpha()) == float(RANKEXT_ALPHA_PER_RANK) * float(active_rankext_rank_schedule()[-1])
+
+# =============================================================================
+# EXPERIMENT 1 HARD ASSERTIONS + STARTUP DIAGNOSTICS (prepared 2026-09-10,
+# finalized 2026-09-11, see
+# thesis_agent/reports/supervisor_cifar_followup_audit.md). Fails fast,
+# before epoch 1, if this file's own required overrides above did not take
+# effect (e.g. an accidental merge/edit reverted one back to canonical, or a
+# stray env var interfered). Every check below is against LIVE state (the
+# actual resolved constants/objects at this point in module execution), not
+# against this file's own source text.
+# =============================================================================
+
+# --- dataset / no ImageNet contamination -------------------------------
+# (`dataset`/`LABEL_COL` do not exist yet at this point in module execution
+# -- the dataset-load cell runs later, further down this file; those two
+# checks are asserted there instead, right after `LABEL_COL` is set, still
+# well before any training starts -- see "DATASET IDENTITY CHECK" below.)
+assert NUM_CLASSES == 100, f"Experiment 1 requires 100 total classes, got {NUM_CLASSES}"
+for _leftover_imagenet_name in (
+    "DATASET_REGISTRY", "DATASET_NAME", "EXPERIMENT_LABEL", "IMAGENET_ROOT",
+    "IMAGENET100_SYNSETS", "IMAGENET100_CLASS_ORDER",
+    "IMAGENET100_SYNSETS_CMC_ALTERNATIVE", "IMAGENET100_WNID_TO_LABEL",
+    "N5StopAfterSetup", "N5_SKIP_TRAINING_DRIVER",
+):
+    assert _leftover_imagenet_name not in globals(), (
+        f"No ImageNet configuration must be active: found leftover name {_leftover_imagenet_name!r}"
+    )
+assert "imagenet" not in RUN_NAME_BASE.lower(), f"RUN_NAME_BASE must not mention imagenet: {RUN_NAME_BASE!r}"
+
+# --- protocol / seed ---------------------------------------------------------
+assert SEED == 42, f"Experiment 1 requires seed=42, got {SEED}"
+assert NUM_STEPS == 5 and CLASSES_PER_STEP == 20, (
+    f"Experiment 1 is the 5x20 protocol; got NUM_STEPS={NUM_STEPS}, "
+    f"CLASSES_PER_STEP={CLASSES_PER_STEP}"
+)
+assert NUM_STEPS * CLASSES_PER_STEP == NUM_CLASSES == 100
+assert "4x25" not in RUN_NAME_BASE, f"RUN_NAME_BASE must not mention 4x25: {RUN_NAME_BASE!r}"
+assert "seed123" not in RUN_NAME_BASE and "widerank40" not in RUN_NAME_BASE and "capacity_sensitivity" not in RUN_NAME_BASE, (
+    f"RUN_NAME_BASE must not contain stale replication/capacity-test wording: {RUN_NAME_BASE!r}"
+)
+
+# --- RankExt: schedule + "current fixed implementation" evidence -----------
+assert not USE_RANKEXT_RANK_SCHEDULE_WIDE, "Wide RankExt schedule (4x25 capacity ablation) must be OFF for Experiment 1"
+assert active_rankext_rank_schedule() == [16, 32, 48, 64, 80], (
+    f"Experiment 1 requires the historical 5x20 RankExt cumulative schedule "
+    f"[16,32,48,64,80] (same rank as before the fix), got {active_rankext_rank_schedule()}"
+)
+assert float(RANKEXT_ALPHA_PER_RANK) == 2.0, (
+    f"RankExt effective scaling must be 2.0 (constant at every step by construction), "
+    f"got RANKEXT_ALPHA_PER_RANK={RANKEXT_ALPHA_PER_RANK}"
+)
+# These four flags are the concrete, checkable markers of "the CURRENT fixed
+# RankExt implementation" (family-aware + confidence-weighted regime-grouped
+# calibration, new-block warmup, orth-lambda warmup) -- all landed AFTER the
+# pre-fix 5x20 reference (job 4904629) and are what "fixed" means throughout
+# thesis_agent/reports/supervisor_cifar_followup_audit.md. If any is False,
+# this is silently running the OLD, pre-fix RankExt behavior.
+assert RANKEXT_FAMILY_AWARE_CALIBRATION_ENABLED is True, "Current fixed RankExt requires family-aware calibration ON"
+assert RANKEXT_CONFIDENCE_WEIGHTED_CALIBRATION_ENABLED is True, "Current fixed RankExt requires confidence-weighted calibration ON"
+assert RANKEXT_NEW_BLOCK_WARMUP_ENABLED is True, "Current fixed RankExt requires new-block warmup ON"
+assert RANKEXT_ORTH_LAMBDA_WARMUP_ENABLED is True, "Current fixed RankExt requires orth-lambda warmup ON"
+
+# --- SimpleAvg (current canonical config, NOT job 4904629's obsolete one) --
+assert LORA_R == 80 and LORA_ALPHA == 160, (
+    f"Experiment 1's SimpleAvg config must stay at the current canonical "
+    f"rank=80/alpha=160, got LORA_R={LORA_R}, LORA_ALPHA={LORA_ALPHA}"
+)
+assert float(LORA_ALPHA) / float(LORA_R) == 2.0, "SimpleAvg effective scaling must be 2.0"
+assert TARGET_MODULES_BY_FAMILY["simple_avg"] == ["q_proj", "v_proj"], (
+    "SimpleAvg must use the CURRENT 2-module (q_proj/v_proj) config, NOT job 4904629's "
+    f"obsolete 4-module one, got {TARGET_MODULES_BY_FAMILY['simple_avg']}"
+)
+assert TARGET_MODULES_BY_FAMILY["rank_extension"] == ["q_proj", "v_proj"]
+
+# --- calibration: current, consistent across BOTH families -----------------
+assert CALIBRATION_MODE_BY_FAMILY["simple_avg"] == "confidence_weighted_regime_grouped", (
+    "SimpleAvg must use confidence_weighted_regime_grouped, NOT job 4904629's obsolete "
+    f"'global' mode, got {CALIBRATION_MODE_BY_FAMILY['simple_avg']!r}"
+)
+assert CALIBRATION_MODE_BY_FAMILY["rank_extension"] == "confidence_weighted_regime_grouped", (
+    f"got {CALIBRATION_MODE_BY_FAMILY['rank_extension']!r}"
+)
+assert CALIBRATION_ENABLED_FAMILIES["simple_avg"] is True and CALIBRATION_ENABLED_FAMILIES["rank_extension"] is True
+
+# --- KD: weight, T, T-squared, active from step 2, no KD-specific warmup ---
+assert KD_WEIGHT == 1.0 and KD_TEMPERATURES == [2.0], (
+    f"KD config must stay canonical (weight=1.0, T=2.0), got weight={KD_WEIGHT}, T={KD_TEMPERATURES}"
+)
+assert ACTIVE_METHOD_MAP["simple_avg_kd_T2"]["uses_kd"] is True
+assert float(ACTIVE_METHOD_MAP["simple_avg_kd_T2"]["kd_temperature"]) == 2.0
+assert ACTIVE_METHOD_MAP["rank_extension_kd_only_T2"]["uses_kd"] is True
+assert float(ACTIVE_METHOD_MAP["rank_extension_kd_only_T2"]["kd_temperature"]) == 2.0
+# "T-squared enabled" and "no KD-specific warmup" are structural properties of
+# IndependentLoraOrthTrainer/DeltaOrthRankExtensionTrainer's compute_loss
+# (`kd_loss = F.kl_div(...) * (self.kd_temperature ** 2)`, unconditional --
+# no separate KD-warmup flag/schedule exists anywhere in this file to check),
+# not tunable constants -- nothing to override or assert a value for beyond
+# confirming this file never modifies those trainer classes (it does not;
+# see the file-level provenance note above).
+
+# --- FactorOrth --------------------------------------------------------------
+assert LAMBDA_ORTH == 50.0, f"FactorOrth lambda must stay canonical (50), got {LAMBDA_ORTH}"
+assert ACTIVE_METHOD_MAP["rank_extension_orth_factor_lam_50_kd_T2"]["uses_factor_orth"] is True
+
+# --- method set: exact 8-name match, not just the family-flag set ----------
+_EXPECTED_EXP1_METHOD_NAMES = {
+    "simple_avg", "simple_avg_kd_T2", "simple_avg_factor_orth", "simple_avg_factor_orth_kd_T2",
+    "rank_extension", "rank_extension_kd_only_T2", "rank_extension_orth_factor_lam_50",
+    "rank_extension_orth_factor_lam_50_kd_T2",
+}
+assert set(ACTIVE_METHOD_NAMES) == _EXPECTED_EXP1_METHOD_NAMES, (
+    "Experiment 1 must run exactly these 8 methods -- mismatch: "
+    f"{set(ACTIVE_METHOD_NAMES)} != {_EXPECTED_EXP1_METHOD_NAMES}"
+)
+assert len(ACTIVE_METHOD_NAMES) == 8
+assert set(ENABLED_METHOD_FAMILIES) == EXPECTED_ENABLED_METHOD_FAMILIES
+
+print("=" * 80)
+print("EXPERIMENT 1 STARTUP DIAGNOSTICS -- 5x20 re-evaluation under the current fair/")
+print("canonical pipeline, corrected RankExt implementation, historical RankExt schedule")
+print("=" * 80)
+print(f"  dataset               = cifar100 (label_col={LABEL_COL!r})")
+print(f"  protocol              = {NUM_STEPS}x{CLASSES_PER_STEP} ({NUM_CLASSES} total classes)")
+print(f"  seed                  = {SEED}")
+print(f"  method_set            = {sorted(ACTIVE_METHOD_NAMES)} ({len(ACTIVE_METHOD_NAMES)} methods)")
+print(f"  simple_avg_rank       = {LORA_R}")
+print(f"  simple_avg_alpha      = {LORA_ALPHA}")
+print(f"  simple_avg_scaling    = {float(LORA_ALPHA) / float(LORA_R)}")
+print(f"  simple_avg_targets    = {TARGET_MODULES_BY_FAMILY['simple_avg']}")
+print(f"  rankext_schedule      = {active_rankext_rank_schedule()}")
+print(f"  rankext_scaling       = {RANKEXT_ALPHA_PER_RANK}")
+print(f"  rankext_fixed_flags   = family_aware={RANKEXT_FAMILY_AWARE_CALIBRATION_ENABLED}, "
+      f"confidence_weighted={RANKEXT_CONFIDENCE_WEIGHTED_CALIBRATION_ENABLED}, "
+      f"new_block_warmup={RANKEXT_NEW_BLOCK_WARMUP_ENABLED}, "
+      f"orth_lambda_warmup={RANKEXT_ORTH_LAMBDA_WARMUP_ENABLED}")
+print(f"  kd_weight / kd_T      = {KD_WEIGHT} / {KD_TEMPERATURES}")
+print(f"  factororth_lambda     = {LAMBDA_ORTH}")
+print(f"  epochs (lora/rankext) = {LORA_EPOCHS} / {RANKEXT_EPOCHS}")
+print(f"  calibration_mode      = {CALIBRATION_MODE_BY_FAMILY}")
+print(f"  run_name_base         = {RUN_NAME_BASE!r}")
+print("EXPERIMENT 1 hard assertions PASSED.")
+print("=" * 80)
 # ACCURACY-PUSH CHANGE 1: pinned set updated from ["q_proj", "v_proj"] to include
 # k_proj/out_proj. This is now the simple_avg-family value specifically (see
 # TARGET_MODULES_BY_FAMILY REVERT note above) -- keep this assert in sync with
@@ -2283,6 +2493,21 @@ dataset = load_dataset("cifar100")
 
 LABEL_COL = "fine_label" if "fine_label" in dataset["train"].column_names else "label"
 IMAGE_COL = "img" if "img" in dataset["train"].column_names else "image"
+
+# DATASET IDENTITY CHECK (deferred from the EXPERIMENT 1 HARD ASSERTIONS
+# block above -- `dataset`/`LABEL_COL` do not exist until this point). Still
+# runs well before any training starts.
+assert LABEL_COL == "fine_label", f"Expected CIFAR-100's fine_label column, got {LABEL_COL!r}"
+assert "fine_label" in dataset["train"].column_names and "coarse_label" in dataset["train"].column_names, (
+    "Loaded dataset does not look like CIFAR-100 (missing fine_label/coarse_label columns) -- "
+    f"got columns: {dataset['train'].column_names}"
+)
+assert dataset["train"].num_rows == 50000 and dataset["test"].num_rows == 10000, (
+    "Loaded dataset does not match CIFAR-100's known split sizes (train=50000, test=10000) -- "
+    f"got train={dataset['train'].num_rows}, test={dataset['test'].num_rows}"
+)
+print(f"EXPERIMENT 1 dataset identity check PASSED: CIFAR-100, "
+      f"train={dataset['train'].num_rows}, test={dataset['test'].num_rows}, label_col={LABEL_COL!r}")
 
 # PROTOCOL-DEPTH VALIDATION (2026-08-24): was a hardcoded 5-entry literal
 # ([range(0,20), range(20,40), ...]) -- the one genuinely protocol-specific

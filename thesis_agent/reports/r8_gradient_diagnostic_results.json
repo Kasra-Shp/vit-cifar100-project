@@ -1,0 +1,40 @@
+{
+  "measurements": {
+    "simple_avg": {
+      "family": "simple_avg",
+      "step_used": 2,
+      "n_batches": 5,
+      "ce_mean": 2.209580326080322,
+      "grad_ce_norm_mean": 6.299781703948975,
+      "grad_orth_norm_mean": 0.01799134723842144,
+      "grad_orth_norm_std": 0.0,
+      "cos_g_ce_g_orth_mean": -0.02291293181478977,
+      "ratio_at_lambda1_mean": 0.002874737404305653
+    },
+    "rank_extension": {
+      "family": "rank_extension",
+      "step_used": 2,
+      "n_batches": 5,
+      "ce_mean": 3.2273914337158205,
+      "grad_ce_norm_mean": 0.2995805680751801,
+      "grad_orth_norm_mean": 0.0023394941817969084,
+      "grad_orth_norm_std": 0.0,
+      "cos_g_ce_g_orth_mean": 0.0015722376992926002,
+      "ratio_at_lambda1_mean": 0.007870838464657717
+    }
+  },
+  "candidate_lambdas_by_family": {
+    "simple_avg": [
+      17.0,
+      37.0,
+      81.0,
+      170.0
+    ],
+    "rank_extension": [
+      6.4,
+      14.0,
+      29.0,
+      64.0
+    ]
+  }
+}

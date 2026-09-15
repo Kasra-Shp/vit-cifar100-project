@@ -2223,9 +2223,26 @@ for base_method, temps in kd_method_temperature_map.items():
     assert sorted(temps) == sorted(KD_TEMPERATURES), f"KD sweep mismatch for {base_method}: {temps}"
 
 
-ROOT_RESULTS_DIR = "results"
+# COLAB/CLUSTER SHARED INFRASTRUCTURE (implementation-only, not a scientific
+# change -- see thesis_agent/reports/supervisor_exp2_colab_sync_audit.md).
+# Both overridable via environment variables, both falling back to today's
+# exact cluster behavior (relative "results", fresh timestamp) when unset --
+# zero effect on any cluster job that does not opt in.
+#
+# ROOT_RESULTS_DIR: lets the Colab runner point this at a persistent Google
+# Drive path instead of the ephemeral /content-relative "results" directory,
+# without touching any training/eval code below (only where outputs land).
+ROOT_RESULTS_DIR = os.environ.get("EXP2_RESULTS_ROOT", "results")
 
-RUN_TAG = datetime.now().strftime("%Y%m%d_%H%M%S")
+# RUN_TAG: normally a fresh timestamp every process launch, which is fine for
+# one uninterrupted cluster job but means a relaunched process would
+# otherwise always get a brand-new, empty BASE_OUTPUT_DIR -- making the
+# method-level resume mechanism below (which detects a completed method by
+# looking for a file already sitting in THIS run's own output directory)
+# meaningless across a Colab disconnect/reconnect. The Colab runner sets
+# EXP2_RUN_TAG once per logical experiment attempt and reuses it on every
+# reconnect so BASE_OUTPUT_DIR is the SAME path across relaunches.
+RUN_TAG = os.environ.get("EXP2_RUN_TAG") or datetime.now().strftime("%Y%m%d_%H%M%S")
 
 BASE_OUTPUT_DIR = os.path.join(
     ROOT_RESULTS_DIR,
@@ -2238,6 +2255,10 @@ REPORTS_DIR = os.path.join(BASE_OUTPUT_DIR, "reports")
 LOGS_DIR = os.path.join(BASE_OUTPUT_DIR, "logs")
 CONFIGS_DIR = os.path.join(BASE_OUTPUT_DIR, "configs")
 MODELS_DIR = os.path.join(BASE_OUTPUT_DIR, "models")
+# Method-level result persistence (resume infrastructure) -- see the
+# "COLAB/CLUSTER SHARED INFRASTRUCTURE: method-level result persistence"
+# block just above the simple_avg execution loop, further down this file.
+METHOD_RESULTS_DIR = os.path.join(BASE_OUTPUT_DIR, "method_results")
 
 os.makedirs(TABLES_DIR, exist_ok=True)
 os.makedirs(PLOTS_DIR, exist_ok=True)
@@ -2245,6 +2266,7 @@ os.makedirs(REPORTS_DIR, exist_ok=True)
 os.makedirs(LOGS_DIR, exist_ok=True)
 os.makedirs(CONFIGS_DIR, exist_ok=True)
 os.makedirs(MODELS_DIR, exist_ok=True)
+os.makedirs(METHOD_RESULTS_DIR, exist_ok=True)
 
 all_results = []
 method_summary_rows = []
@@ -5263,11 +5285,198 @@ def run_simple_avg_variant(method_name):
     cleanup()
 
 
+# =============================================================================
+# COLAB/CLUSTER SHARED INFRASTRUCTURE: method-level result persistence +
+# resume (implementation-only, not a scientific change -- see
+# thesis_agent/reports/supervisor_exp2_colab_sync_audit.md). Exists purely so
+# a Colab disconnect mid-run does not force an already-completed method
+# (still exactly reproducible, given SEED=42 and unchanged training code) to
+# be retrained from scratch. On a fresh run with nothing yet persisted (the
+# only behavior any cluster job sees today, since no cluster job sets
+# EXP2_RUN_TAG), _resume_try_load_method_result() always returns None and
+# _resume_run_method_or_skip() simply calls run_fn() exactly as the bare
+# call used to -- this changes NOTHING about set_seed(), model/optimizer
+# construction, data order, or any method's training math.
+#
+# Every list below is populated STRICTLY within one method's own
+# run_simple_avg_variant()/run_rank_extension_variant() call (verified by
+# reading every append/extend call site feeding it -- none is touched
+# between methods, and both execution-order loops call exactly one method at
+# a time, sequentially), so a length-snapshot-before/diff-after around each
+# call captures EXACTLY -- and only -- the rows that one method contributed.
+# rank_extension_stepwise_accuracy_by_method is a dict keyed by method_name,
+# so its own top-level key is grabbed directly, no diffing needed.
+_RESUMABLE_LIST_ACCUMULATOR_NAMES = [
+    "all_results", "method_summary_rows", "train_diagnostic_rows", "epoch_loss_rows",
+    "best_epoch_selection_rows", "per_step_accuracy_rows", "per_step_accuracy_restricted_rows",
+    "classifier_row_norm_diagnostic_rows", "classifier_confidence_calibration_diagnostic_rows",
+    "rankext_bias_diagnostic_rows", "rankext_feature_alignment_diagnostic_rows",
+    "rankext_new_block_warmup_diagnostic_rows", "orth_kd_eval_rows",
+]
+_RESUMABLE_DICT_ACCUMULATOR_NAMES = ["rank_extension_stepwise_accuracy_by_method"]
+# Guards against double-counting rows if _resume_run_method_or_skip is ever
+# called twice for the same method_name within ONE process (e.g. a Colab
+# cell/loop re-entered without restarting the runtime) -- without this, a
+# second call would replay a persisted result on top of rows already sitting
+# in the accumulators from the first call. Not needed for the normal path
+# (each of the 8 methods is called exactly once per process, by construction
+# of simple_avg_execution_order/rank_extension_execution_order), so this is a
+# pure safety net with no effect on normal single-pass execution.
+_RESUME_METHODS_LOADED_THIS_PROCESS = set()
+
+
+def _resume_config_fingerprint():
+    """Everything that must match EXACTLY for a persisted method result to be
+    safe to reuse. If any of this differs from the run that produced the
+    persisted file (different seed, different rank/schedule, an edited
+    config), the file is treated as stale and the method is retrained rather
+    than silently reusing a result computed under different settings."""
+    return {
+        "run_name_base": RUN_NAME_BASE,
+        "seed": SEED,
+        "num_steps": NUM_STEPS,
+        "classes_per_step": CLASSES_PER_STEP,
+        "lora_r": LORA_R,
+        "lora_alpha": LORA_ALPHA,
+        "rankext_rank_schedule": list(RANKEXT_RANK_SCHEDULE),
+        "rankext_alpha_per_rank": float(RANKEXT_ALPHA_PER_RANK),
+        "target_modules_by_family": {k: list(v) for k, v in TARGET_MODULES_BY_FAMILY.items()},
+        "kd_weight": KD_WEIGHT,
+        "kd_temperatures": list(KD_TEMPERATURES),
+        "lambda_orth": LAMBDA_ORTH,
+        "calibration_mode_by_family": dict(CALIBRATION_MODE_BY_FAMILY),
+        "active_method_names": sorted(ACTIVE_METHOD_NAMES),
+    }
+
+
+def _resume_json_default(o):
+    if isinstance(o, np.floating):
+        return None if np.isnan(o) else float(o)
+    if isinstance(o, np.integer):
+        return int(o)
+    if isinstance(o, np.ndarray):
+        return o.tolist()
+    if isinstance(o, np.bool_):
+        return bool(o)
+    raise TypeError(f"Object of type {type(o)} is not JSON serializable: {o!r}")
+
+
+def _resume_method_result_path(method_name):
+    safe_name = "".join(c if (c.isalnum() or c in "_-") else "_" for c in str(method_name))
+    return os.path.join(METHOD_RESULTS_DIR, f"{safe_name}.json")
+
+
+def _resume_snapshot_accumulators():
+    snap = {"lists": {}, "dicts": {}}
+    for name in _RESUMABLE_LIST_ACCUMULATOR_NAMES:
+        obj = globals().get(name)
+        if isinstance(obj, list):
+            snap["lists"][name] = len(obj)
+    for name in _RESUMABLE_DICT_ACCUMULATOR_NAMES:
+        obj = globals().get(name)
+        if isinstance(obj, dict):
+            snap["dicts"][name] = set(obj.keys())
+    return snap
+
+
+def _resume_persist_method_result(method_name, pre_snapshot):
+    payload = {
+        "schema_version": 1,
+        "status": "complete",
+        "method_name": method_name,
+        "config_fingerprint": _resume_config_fingerprint(),
+        "saved_at": datetime.now().isoformat(),
+        "lists": {},
+        "dicts": {},
+    }
+    for name, pre_len in pre_snapshot["lists"].items():
+        obj = globals().get(name)
+        if isinstance(obj, list) and len(obj) > pre_len:
+            payload["lists"][name] = obj[pre_len:]
+    for name, pre_keys in pre_snapshot["dicts"].items():
+        obj = globals().get(name)
+        if isinstance(obj, dict) and method_name in obj and method_name not in pre_keys:
+            payload["dicts"].setdefault(name, {})[method_name] = obj[method_name]
+    final_path = _resume_method_result_path(method_name)
+    tmp_path = final_path + f".tmp{os.getpid()}"
+    with open(tmp_path, "w") as f:
+        json.dump(payload, f, default=_resume_json_default, indent=2)
+    # Atomic same-directory replace: a crash/disconnect before this line
+    # leaves only the .tmp file (never picked up as complete); a crash after
+    # this line leaves either the old complete file or the new one, never a
+    # half-written final_path -- so a partially completed method can never be
+    # mistaken for a completed one.
+    os.replace(tmp_path, final_path)
+    print(f"[resume] persisted method result: {method_name} -> {final_path}")
+
+
+def _resume_try_load_method_result(method_name):
+    path = _resume_method_result_path(method_name)
+    if not os.path.exists(path):
+        return None
+    try:
+        with open(path, "r") as f:
+            payload = json.load(f)
+    except (json.JSONDecodeError, OSError) as e:
+        print(f"[resume] WARNING: could not read {path} ({e}); treating {method_name} as NOT completed.")
+        return None
+    if payload.get("status") != "complete":
+        print(f"[resume] {path} is not marked complete; treating {method_name} as NOT completed.")
+        return None
+    if payload.get("method_name") != method_name:
+        print(f"[resume] WARNING: {path} method_name mismatch (expected {method_name}, "
+              f"found {payload.get('method_name')!r}); ignoring.")
+        return None
+    if payload.get("config_fingerprint") != _resume_config_fingerprint():
+        print(f"[resume] WARNING: {path} was produced under a DIFFERENT scientific "
+              f"configuration than this run; ignoring and retraining {method_name} "
+              f"instead of reusing a stale/mismatched result.")
+        return None
+    return payload
+
+
+def _resume_replay_method_result(method_name, payload):
+    for name, rows in payload.get("lists", {}).items():
+        if name not in globals() or not isinstance(globals()[name], list):
+            globals()[name] = []
+        globals()[name].extend(rows)
+    for name, method_map in payload.get("dicts", {}).items():
+        if name not in globals() or not isinstance(globals()[name], dict):
+            globals()[name] = {}
+        globals()[name].update(method_map)
+    print(f"[resume] SKIPPED training for {method_name} -- reloaded a previously completed, "
+          f"config-matched result from {_resume_method_result_path(method_name)}.")
+
+
+def _resume_run_method_or_skip(method_name, run_fn):
+    """Runs run_fn() (which must train+evaluate exactly one method and append
+    its rows to the module-global accumulators, exactly as it did before this
+    infrastructure existed) unless a valid, config-matched, complete result
+    for method_name is already persisted on disk -- in which case training is
+    skipped and the persisted rows are replayed into those same accumulators
+    instead. This function only decides WHETHER to call run_fn(); it never
+    changes how run_fn() trains."""
+    if method_name in _RESUME_METHODS_LOADED_THIS_PROCESS:
+        print(f"[resume] {method_name} already loaded into this process's in-memory "
+              f"accumulators; skipping duplicate call (prevents double-counting rows "
+              f"if this loop is ever re-entered without a fresh process).")
+        return
+    cached = _resume_try_load_method_result(method_name)
+    if cached is not None:
+        _resume_replay_method_result(method_name, cached)
+        _RESUME_METHODS_LOADED_THIS_PROCESS.add(method_name)
+        return
+    pre = _resume_snapshot_accumulators()
+    run_fn()
+    _resume_persist_method_result(method_name, pre)
+    _RESUME_METHODS_LOADED_THIS_PROCESS.add(method_name)
+
+
 simple_avg_execution_order = [cfg["method"] for cfg in ACTIVE_METHOD_CONFIGS if cfg["family"] == "simple_avg"]
 for method_name in simple_avg_execution_order:
     base_method = ACTIVE_METHOD_MAP[method_name]["base_method"]
     if METHODS_TO_RUN.get(base_method, False):
-        run_simple_avg_variant(method_name)
+        _resume_run_method_or_skip(method_name, lambda _mn=method_name: run_simple_avg_variant(_mn))
     else:
         print(f"Skipping {method_name} because {base_method} is disabled")
 
@@ -7335,24 +7544,29 @@ for method_name in rank_extension_execution_order:
         print(f"Skipping {method_name} because {base_method} is disabled")
         continue
 
-    run_rank_extension_variant(
-        method_name=method_name,
-        replay_per_class=0,
-        use_orth=bool(method_cfg["uses_delta_trace"] or method_cfg["uses_factor_orth"]),
-        orth_mode=(
-            "delta_trace"
-            if method_cfg["uses_delta_trace"]
-            else ("factor_orth" if method_cfg["uses_factor_orth"] else None)
-        ),
-        lambda_orth=float(method_cfg["lambda_orth"]),
-        zero_old_merge=False,
-        use_kd=bool(method_cfg["uses_kd"]),
-        kd_weight=float(method_cfg["kd_weight"]),
-        kd_temperature=float(method_cfg["kd_temperature"]),
-        orth_eval_records=orth_kd_eval_rows,
-        orth_train_records=orth_kd_train_rows,
-        orth_summary_records=orth_kd_summary_rows,
-    )
+    def _run_this_rank_extension_variant(_mn=method_name, _cfg=method_cfg):
+        run_rank_extension_variant(
+            method_name=_mn,
+            replay_per_class=0,
+            use_orth=bool(_cfg["uses_delta_trace"] or _cfg["uses_factor_orth"]),
+            orth_mode=(
+                "delta_trace"
+                if _cfg["uses_delta_trace"]
+                else ("factor_orth" if _cfg["uses_factor_orth"] else None)
+            ),
+            lambda_orth=float(_cfg["lambda_orth"]),
+            zero_old_merge=False,
+            use_kd=bool(_cfg["uses_kd"]),
+            kd_weight=float(_cfg["kd_weight"]),
+            kd_temperature=float(_cfg["kd_temperature"]),
+            orth_eval_records=orth_kd_eval_rows,
+            orth_train_records=orth_kd_train_rows,
+            orth_summary_records=orth_kd_summary_rows,
+        )
+
+    # See the "COLAB/CLUSTER SHARED INFRASTRUCTURE" block above the
+    # simple_avg execution loop for what this does and why.
+    _resume_run_method_or_skip(method_name, _run_this_rank_extension_variant)
 
 if len(orth_kd_train_rows) > 0:
     print(f"[rank_extension] accumulated training-loss rows: {len(orth_kd_train_rows)}")

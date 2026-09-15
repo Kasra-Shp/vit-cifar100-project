@@ -6118,9 +6118,15 @@ def evaluate_arm_with_merge(training_method, merge_method, step_states, speciali
     # under tagged_name -- mirrors RankExt's finalize_rank_extension_arm()
     # (which already computes this). No metric computation changes; this is
     # purely reading an already-computed value into the result table.
+    # BUGFIX (found via local FAST_RUN_DEBUG sanity run): the actual column
+    # name per_step_accuracy_restricted_rows uses is "accuracy_restricted",
+    # not "accuracy" -- confirmed by reading evaluate_per_step_accuracy()'s
+    # own row-construction code (L3997-4003). The original "accuracy" key
+    # never existed and would KeyError on the very first arm's finalization
+    # in BOTH Phase 1 and Phase 2 (this is not a debug-only bug).
     _sa_restricted_rows_this_arm = [r for r in per_step_accuracy_restricted_rows if r.get("method") == tagged_name]
     _sa_restricted_mean = (
-        float(np.mean([r["accuracy"] for r in _sa_restricted_rows_this_arm]))
+        float(np.mean([r["accuracy_restricted"] for r in _sa_restricted_rows_this_arm]))
         if len(_sa_restricted_rows_this_arm) > 0 else np.nan
     )
 
@@ -8733,9 +8739,14 @@ def finalize_rank_extension_arm(
 
     # JOINT PACK ADDITION: restricted mean, from the module-global accumulator
     # evaluate_per_step_accuracy() just populated for this method_name.
+    # BUGFIX (found via local FAST_RUN_DEBUG sanity run): the correct column
+    # name is "accuracy_restricted" (see evaluate_per_step_accuracy()'s row
+    # construction, L3997-4003) -- "accuracy" never existed in this
+    # accumulator and would KeyError here on every RankExt arm's
+    # finalization, in both Phase 1 and Phase 2.
     restricted_rows_this_method = [r for r in per_step_accuracy_restricted_rows if r.get("method") == method_name]
     restricted_mean = (
-        float(np.mean([r["accuracy"] for r in restricted_rows_this_method]))
+        float(np.mean([r["accuracy_restricted"] for r in restricted_rows_this_method]))
         if len(restricted_rows_this_method) > 0 else np.nan
     )
 

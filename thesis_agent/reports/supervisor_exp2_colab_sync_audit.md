@@ -1,7 +1,141 @@
 # Supervisor Experiment 2 -- Colab/Cluster Equivalence Audit
 
-**Date:** 2026-09-15
-**Status:** PREPARED, NOT LAUNCHED (no training run in preparing this notebook)
+**Date:** 2026-09-15 (updated same day: Colab launch-failure fix, see below)
+**Status:** PREPARED, NOT LAUNCHED (no training run in preparing this notebook or its fix)
+
+## UPDATE 2026-09-15: Colab launch-failure fix (dataset id + false exit code 0)
+
+The first real Colab launch (`EXP2_RUN_TAG=20260915_115630`) trained **zero**
+methods. Two independent infrastructure bugs were found and fixed, both
+implementation-only -- no scientific Exp2 setting changed.
+
+### Bug 1: `load_dataset("cifar100")` rejected by Colab's HF stack
+
+**Symptom:**
+```
+HfUriError: Repository id must be 'namespace/name', got 'cifar100'
+```
+Colab's currently-installed `datasets`/`huggingface_hub` stack rejects the
+legacy bare (non-namespaced) dataset id `"cifar100"`. The current official
+repository for the same dataset is `uoft-cs/cifar100`.
+
+**Verified (not assumed) that this is a repository-id/mirror difference
+only, never a dataset-content difference**, via the HF `datasets-server`
+`/info` API (no dataset download):
+
+| | `cifar100` (legacy) | `uoft-cs/cifar100` (current) |
+|---|---|---|
+| train rows | 50000 | 50000 |
+| test rows | 10000 | 10000 |
+| feature columns | `img`, `fine_label`, `coarse_label` | `img`, `fine_label`, `coarse_label` |
+| `fine_label` classes | 100 | 100 (confirmed same canonical order, e.g. apple/aquarium_fish/baby/bear/beaver...) |
+| `coarse_label` classes | 20 | 20 |
+
+**Fix:** the dataset id is now read from an environment variable, exactly as
+requested:
+```python
+CIFAR100_DATASET_ID = os.environ.get("CIFAR100_DATASET_ID", "cifar100")
+dataset = load_dataset(CIFAR100_DATASET_ID)
+```
+Unset (every cluster job today): **identical** to before -- literal
+`"cifar100"`. The Colab notebook's dataset/caching cell (Section 6) now sets
+`os.environ["CIFAR100_DATASET_ID"] = "uoft-cs/cifar100"` before Exp2 runs.
+
+**No column-name alias/compatibility shim was needed or added.** The
+script's existing column-resolution logic --
+```python
+LABEL_COL = "fine_label" if "fine_label" in dataset["train"].column_names else "label"
+IMAGE_COL = "img" if "img" in dataset["train"].column_names else "image"
+```
+-- already checks for `"fine_label"`/`"img"` FIRST, which is exactly what
+`uoft-cs/cifar100` exposes (confirmed via the schema check above), so both
+ternaries resolve identically to the legacy mirror. This is squarely the "if
+the existing script already expects these names, make no further changes"
+case from the request, confirmed by live schema inspection rather than
+assumed. The existing "DATASET IDENTITY CHECK" asserts (train=50000,
+test=10000, `fine_label`/`coarse_label` present) are schema/size checks, not
+repository-id checks, so they pass unmodified against either id. Train/val
+split semantics (downstream of `dataset`/`LABEL_COL`/`IMAGE_COL`, keyed
+purely on column names and class ids) are untouched.
+
+### Bug 2: false "Exit code 0" on a Python crash
+
+**Root cause:** the launch cell used `os.system('python ... 2>&1 | tee LOG')`,
+which runs under `/bin/sh` (dash on Colab). Dash has no `pipefail`, so a
+pipeline's exit status is that of its **last** command (`tee`, which
+virtually always succeeds) rather than `python`'s. Empirically reproduced
+locally: a Python process that prints output then calls `sys.exit(1)`,
+piped through `sh -c "... | tee LOG"`, reports exit code `0` -- exactly the
+observed bug.
+
+**Fix:** the launch cell now runs the pipeline through `bash` explicitly
+(required -- `PIPESTATUS` is a bash-only array, not available in dash) with
+`pipefail` set, and reports Python's own status:
+```python
+bash_command = (
+    "set -o pipefail; "
+    f'python -u "{SCRIPT_PATH}" 2>&1 | tee "{log_path}"; '
+    'exit "${PIPESTATUS[0]}"'
+)
+result = subprocess.run(["bash", "-c", bash_command])
+exit_code = result.returncode
+```
+Empirically re-verified locally with the same reproduction: this pipeline
+now reports exit code `1` for the crashing process (was `0` before the fix).
+
+### Not a resume case: run `20260915_115630` completed zero methods
+
+The crash occurred at `dataset = load_dataset(...)`, which executes at a
+single, fixed point early in the script (before the CLIP model class, both
+training loops, and every call to `_resume_persist_method_result` -- the
+*only* code path that ever writes a `method_results/<method>.json` file).
+Since this is one long top-to-bottom script with no reordering or retry
+logic, it is **structurally impossible** for any method-level result to have
+been persisted before this crash: execution never reached the
+`simple_avg_execution_order`/`rank_extension_execution_order` loops (or
+their `_resume_run_method_or_skip` calls) at all. `METHOD_RESULTS_DIR`
+itself may have been created (it's `os.makedirs(..., exist_ok=True)`'d
+earlier, alongside `TABLES_DIR`/`PLOTS_DIR`/etc., well before the crash
+point) but would contain **no `.json` files** -- there is no code path that
+could have written one this early. This repo has no access to the user's
+Google Drive to confirm the directory's contents directly; the guarantee
+here is structural (from reading the script's fixed execution order), not
+from inspecting the actual failed run's output folder. The user can confirm
+directly: `ls "$EXPERIMENT_ROOT/results/*_20260915_115630*/method_results/"`
+should be empty or absent.
+
+No completed-method marker was created, none should be, and none was
+touched by this fix. The user may reuse `EXP2_RUN_TAG=20260915_115630` (it
+correctly has nothing to resume -- all 8 methods will train) or set
+`FORCE_NEW_RUN_ID = True` once to start a clean tag; either is correct.
+
+### Validation performed for this fix
+
+1. `python -m py_compile` on the updated script -- **PASS**.
+2. Live HF `datasets-server` `/info` API query for `uoft-cs/cifar100` (no
+   dataset download) -- confirmed schema/split-size/class-count equivalence
+   to the legacy `cifar100` mirror, as tabulated above.
+3. Mocked dataset-load dry-run: the script (through the dataset identity
+   check) was executed twice -- once with `CIFAR100_DATASET_ID` unset
+   (cluster default) and once with it set to `uoft-cs/cifar100` -- against a
+   mocked `load_dataset` returning the exact schema confirmed in step 2 (no
+   network, no real download). Both runs printed `EXPERIMENT 2 dataset
+   identity check PASSED: CIFAR-100, train=50000, test=10000,
+   label_col='fine_label'`, and the mock asserted the resolved id was
+   correctly threaded through in both cases.
+4. `nbformat.validate()` on the updated notebook -- **PASS**; every code
+   cell's source re-verified with `compile()` -- **PASS** (all cells use
+   plain `subprocess`/`os` calls, not IPython magics, so this is a complete
+   syntax check).
+5. Empirical local reproduction of both the pre-fix bug (`sh`-piped crash ->
+   reported exit 0) and the post-fix behavior (`bash -o pipefail`-piped
+   crash -> reported exit 1) using a real Python subprocess, not just code
+   reading.
+6. Confirmed via direct code-order reading that no method-level persistence
+   code executes before the dataset-load line that crashed.
+
+No dataset was downloaded, no CLIP model was built, and no training was run
+while preparing this fix.
 
 ## Summary
 
@@ -125,7 +259,7 @@ the request, and both optional / additive.
 
 | Component | Cluster Exp2 | Colab Exp2 | Verdict |
 |---|---|---|---|
-| Dataset | CIFAR-100 | CIFAR-100 | MATCH |
+| Dataset | CIFAR-100 (`cifar100` repo id) | CIFAR-100 (`uoft-cs/cifar100` repo id, via `CIFAR100_DATASET_ID`) | MATCH (repo-id-only difference, verified schema-identical -- see the 2026-09-15 update above) |
 | Protocol | 5x20 | 5x20 | MATCH |
 | Seed | 42 | 42 (REPLICATION_SEED explicitly unset in the launch cell, matching the sbatch's own `unset REPLICATION_SEED` convention) | MATCH |
 | Epochs | 9 | 9 | MATCH |

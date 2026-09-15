@@ -2610,8 +2610,34 @@ print("Disabled methods/flags for this run:", disabled_methods)
 # In[ ]:
 
 
-dataset = load_dataset("cifar100")
+# COLAB COMPATIBILITY FIX (2026-09-15, IMPLEMENTATION-ONLY -- see
+# thesis_agent/reports/supervisor_exp2_colab_sync_audit.md): the legacy HF
+# Hub dataset id "cifar100" (a bare, non-namespaced id) is rejected by the
+# Hugging Face `datasets` stack Colab currently ships
+# (HfUriError: "Repository id must be 'namespace/name', got 'cifar100'").
+# The current official repository is the identical CIFAR-100 dataset under
+# "uoft-cs/cifar100" (verified via the HF datasets-server /info API before
+# this change: same 50000 train / 10000 test rows, same img/fine_label/
+# coarse_label feature names, fine_label has the same 100 canonical classes
+# in the same order, e.g. apple/aquarium_fish/baby/bear/beaver... -- a
+# repository-id/mirror difference only, not a different dataset). Making the
+# id overridable via CIFAR100_DATASET_ID and defaulting to the unchanged
+# literal "cifar100" preserves EXACT existing cluster behavior when the
+# environment variable is unset; the Colab notebook sets it to
+# "uoft-cs/cifar100" before launching this script. Every downstream line
+# (LABEL_COL/IMAGE_COL resolution, the "DATASET IDENTITY CHECK" asserts just
+# below, class_splits, train/val/test construction) reads only column NAMES
+# and split SIZES from whatever `dataset` this loads -- none of it is
+# specific to which repository id produced that object, so no other line
+# needs to change for this fix.
+CIFAR100_DATASET_ID = os.environ.get("CIFAR100_DATASET_ID", "cifar100")
+dataset = load_dataset(CIFAR100_DATASET_ID)
 
+# Both branches already existed before this fix (not new): "img"/"fine_label"
+# are checked FIRST and are exactly what "uoft-cs/cifar100" exposes (verified
+# above), so no legacy-alias compatibility shim is needed here -- this is the
+# "if the existing script already expects these names, make no further
+# changes" case, confirmed, not assumed.
 LABEL_COL = "fine_label" if "fine_label" in dataset["train"].column_names else "label"
 IMAGE_COL = "img" if "img" in dataset["train"].column_names else "image"
 

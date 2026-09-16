@@ -41,10 +41,9 @@
 # already-completed arms on resubmission (resubmitting would re-run the
 # preflight too, which is cheap -- a few minutes -- not a concern).
 #
-# No conda/module activation line is added here: neither of this project's
-# prior successful sbatch files (exp1_5x20_fixed_rankext_seed42.sbatch,
-# exp2_5x20_rank32_capacity_seed42.sbatch) contains one -- `python` is
-# resolved from the submitting shell's own environment on this cluster.
+# No conda/module activation line is added here: the python interpreter is
+# invoked via its absolute path (CLUSTER_PYTHON below), so no shell env
+# activation step is needed to put the right interpreter on PATH.
 # =============================================================================
 #SBATCH --job-name=simpleavg_rankext_singlejob_improvement_pack_5x20
 #SBATCH --partition=allgroups
@@ -56,18 +55,33 @@
 # final-readiness report Section 28 -- 9 arms x 6 epochs vs. Exp1's 8 methods
 # x 9 epochs (~6h04m observed) scales to ~6h04m x (9x6)/(8x9) ~= 4.55h, plus
 # extra SimpleAvg do_merge evaluation passes, serialization, and diagnostics.
-# Conservative estimate ~5-5.5h for Phase 2. Requested walltime is generous
-# margin over Phase1+Phase2 combined, given this may be the only available
-# cluster slot.
-#SBATCH --time=08:00:00
+# Conservative estimate ~5-5.5h for Phase 2. FINAL-AUDIT FIX: walltime raised
+# to the specified 12h (was 08:00:00) -- this is the single available cluster
+# GPU allocation and the ~5-5.5h estimate has real variance (queueing/data-
+# loading/eval overhead not included in the point estimate); 12h keeps ample
+# margin over Phase1+Phase2 combined without meaningfully increasing queueing
+# risk on this partition.
+#SBATCH --time=12:00:00
 #SBATCH --output=simpleavg_rankext_singlejob_improvement_pack_5x20_%j.out
 #SBATCH --error=simpleavg_rankext_singlejob_improvement_pack_5x20_%j.err
 
 set -euo pipefail
 
+# FINAL-AUDIT FIX: explicit, absolute repo path -- do NOT derive it from
+# `dirname "$0"`. SLURM may execute a COPY of this script from a spool
+# directory (e.g. /var/spool/slurm/...), in which case `dirname "$0"` resolves
+# to that spool directory, not this repo, and every relative path below it
+# would silently point at the wrong (nonexistent, or worse, wrong-version)
+# location. `cd` explicitly into the known cluster repo path instead, then
+# reference every script by its repo-relative path.
+CLUSTER_REPO_DIR="/nfsd/lttm4/tesisti/shahrampour/vit-cifar100-project"
+CLUSTER_PYTHON="/nfsd/lttm4/tesisti/shahrampour/conda_envs/my_env_clean/bin/python"
+cd "$CLUSTER_REPO_DIR"
+
 echo "================================================================================"
 echo "SIMPLEAVG + RANKEXT JOINT SINGLE-JOB IMPROVEMENT PACK -- 5x20, seed 42"
 echo "Job ID: ${SLURM_JOB_ID:-<local>}   Node: $(hostname)   Start: $(date -Is)"
+echo "Repo:   $(pwd)   Python: $CLUSTER_PYTHON"
 echo "================================================================================"
 
 # --- Safety: refuse to run if this has been edited into a different config ---
@@ -78,9 +92,13 @@ echo "==========================================================================
 # log header before Python even starts. Epoch checks match the FAST_RUN-
 # conditional expressions now in the script, not a bare literal -- the
 # script itself still hard-asserts "FAST_RUN or epochs==6" at runtime.)
-TARGET_SCRIPT="$(dirname "$0")/../simpleavg_rankext_singlejob_improvement_pack_5x20.py"
+TARGET_SCRIPT="experiments_prepared/simpleavg_rankext_singlejob_improvement_pack_5x20.py"
 if [ ! -f "$TARGET_SCRIPT" ]; then
-    echo "FATAL: $TARGET_SCRIPT not found." >&2
+    echo "FATAL: $TARGET_SCRIPT not found under $CLUSTER_REPO_DIR." >&2
+    exit 1
+fi
+if [ ! -x "$CLUSTER_PYTHON" ]; then
+    echo "FATAL: $CLUSTER_PYTHON not found or not executable." >&2
     exit 1
 fi
 grep -q "^NUM_STEPS = 5$" "$TARGET_SCRIPT" || { echo "FATAL: NUM_STEPS != 5 in $TARGET_SCRIPT" >&2; exit 1; }
@@ -119,7 +137,7 @@ mkdir -p results_debug_preflight
 
 export FAST_RUN_DEBUG=1
 set +e
-python -u "$TARGET_SCRIPT"
+"$CLUSTER_PYTHON" -u "$TARGET_SCRIPT"
 PREFLIGHT_EXIT_CODE=$?
 set -e
 unset FAST_RUN_DEBUG
@@ -146,7 +164,7 @@ fi
 echo "Preflight result CSV: $PREFLIGHT_CSV"
 
 set +e
-python3 - "$PREFLIGHT_CSV" <<'PYEOF'
+"$CLUSTER_PYTHON" - "$PREFLIGHT_CSV" <<'PYEOF'
 import sys
 import pandas as pd
 
@@ -227,8 +245,8 @@ echo "PHASE 2: REAL EXPERIMENT -- 9 training arms, 14 evaluated configurations, 
 echo "Start: $(date -Is)"
 echo "================================================================================"
 
-echo "Launching: python -u $TARGET_SCRIPT"
-python -u "$TARGET_SCRIPT"
+echo "Launching: $CLUSTER_PYTHON -u $TARGET_SCRIPT"
+"$CLUSTER_PYTHON" -u "$TARGET_SCRIPT"
 
 echo "================================================================================"
 echo "SIMPLEAVG + RANKEXT JOINT SINGLE-JOB IMPROVEMENT PACK finished. End: $(date -Is)"

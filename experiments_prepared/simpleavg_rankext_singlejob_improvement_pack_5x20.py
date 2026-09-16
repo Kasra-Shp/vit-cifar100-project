@@ -5903,6 +5903,49 @@ def _arm_checkpoint_paths(method_name):
     return ckpt_path, marker_path
 
 
+def compute_method_config_fingerprint(method_name):
+    """FINAL-AUDIT FIX (persistence safety): a checkpoint on disk is keyed
+    only by method_name under a SEED-derived CHECKPOINTS_DIR (stable across
+    restarts of this job by design -- see CHECKPOINTS_DIR's own comment).
+    That means a checkpoint saved by an OLDER edit of this script (different
+    epochs/rank/schedule/lambda/KD settings for the same method_name) would
+    otherwise be silently reloaded and treated as valid for the CURRENT
+    config on any later resubmission -- the specialist/state fingerprints
+    above only prove a reload is byte-identical to what was SAVED, never that
+    what was saved matches what THIS run's config actually wants. This
+    fingerprint covers every field that affects training for `method_name`
+    (epochs, rank/schedule, orth mode+lambda, KD scope/weight/temperature/
+    warmup, target modules, seed, protocol shape) and is stored alongside
+    each checkpoint; load_arm_checkpoint_if_present/load_rankext_checkpoint_
+    if_present reject (and force a retrain of) any checkpoint whose stored
+    fingerprint does not match the CURRENT config's fingerprint for that
+    method, rather than silently reusing stale/incompatible state."""
+    method_cfg = ACTIVE_METHOD_MAP[method_name]
+    family = str(method_cfg["family"])
+    fingerprint_fields = {
+        "family": family,
+        "rank": int(method_cfg["rank"]),
+        "epochs": int(RANKEXT_EPOCHS if family == "rank_extension" else LORA_EPOCHS),
+        "uses_kd": bool(method_cfg["uses_kd"]),
+        "kd_class_scope": str(method_cfg.get("kd_class_scope", "full")),
+        "kd_weight": float(method_cfg["kd_weight"]),
+        "kd_temperature": float(method_cfg["kd_temperature"]),
+        "kd_warmup_epochs": float(method_cfg.get("kd_warmup_epochs", 0.0)),
+        "uses_dense_orth": bool(method_cfg.get("uses_dense_orth", False)),
+        "uses_delta_trace": bool(method_cfg["uses_delta_trace"]),
+        "uses_factor_orth": bool(method_cfg["uses_factor_orth"]),
+        "lambda_orth": float(method_cfg["lambda_orth"]),
+        "target_modules": sorted(family_target_modules(family)),
+        "seed": int(SEED),
+        "num_steps": int(NUM_STEPS),
+        "classes_per_step": int(CLASSES_PER_STEP),
+        "rankext_schedule": (list(get_rank_extension_rank_schedule()) if family == "rank_extension" else None),
+    }
+    import hashlib
+    blob = json.dumps(fingerprint_fields, sort_keys=True).encode("utf-8")
+    return hashlib.sha256(blob).hexdigest()[:16]
+
+
 def save_arm_checkpoint_atomic(method_name, step_states, specialist_diagonal_accuracy):
     """Atomic, crash-safe persistence for one completed training arm. Writes
     to a temp file first, then os.replace()s it into place (atomic on both
@@ -5924,11 +5967,13 @@ def save_arm_checkpoint_atomic(method_name, step_states, specialist_diagonal_acc
     # so a later reload can prove (not just assume) the reloaded step_states
     # are byte-identical to what this training run actually produced.
     specialist_fingerprint = compute_step_states_fingerprint(step_states)
+    config_fingerprint = compute_method_config_fingerprint(method_name)
     payload = {
         "method_name": method_name,
         "step_states": step_states,
         "specialist_diagonal_accuracy": specialist_diagonal_accuracy,
         "specialist_fingerprint": specialist_fingerprint,
+        "config_fingerprint": config_fingerprint,
         "saved_at_utc": datetime.utcnow().isoformat(),
     }
     torch.save(payload, tmp_path)
@@ -5956,9 +6001,27 @@ def load_arm_checkpoint_if_present(method_name):
                 f"CHECKPOINT RELOAD INTEGRITY CHECK FAILED for {method_name}: "
                 f"reloaded fingerprint {reloaded_fp} != saved fingerprint {stored_fp}"
             )
+        # FINAL-AUDIT FIX (persistence safety): reject a checkpoint whose
+        # config_fingerprint does not match THIS run's current config for
+        # method_name (e.g. the script was edited -- epochs/rank/lambda/KD
+        # settings changed -- between the run that saved it and this one).
+        # A stale/incompatible checkpoint is treated as absent (forces a
+        # fresh retrain of just this arm), never silently reused. Checkpoints
+        # saved before this fix have no stored config_fingerprint (None) --
+        # also treated as stale/unverifiable rather than trusted blindly.
+        stored_cfg_fp = payload.get("config_fingerprint")
+        current_cfg_fp = compute_method_config_fingerprint(method_name)
+        if stored_cfg_fp != current_cfg_fp:
+            print(
+                f"[resume] REJECTING stale checkpoint for {method_name}: "
+                f"stored config_fingerprint={stored_cfg_fp} != current config_fingerprint={current_cfg_fp} "
+                "-- this method's config changed since the checkpoint was saved; retraining from scratch."
+            )
+            return None
         print(
             f"[resume] found completed checkpoint for {method_name} "
-            f"(saved_at_utc={payload.get('saved_at_utc')}, specialist_fingerprint={stored_fp}) -- skipping training."
+            f"(saved_at_utc={payload.get('saved_at_utc')}, specialist_fingerprint={stored_fp}, "
+            f"config_fingerprint={stored_cfg_fp}) -- skipping training."
         )
         return payload
     return None
@@ -6802,22 +6865,40 @@ def snapshot_protected_classifier_rows(model, trainable_classes):
 
 
 def restore_protected_classifier_rows(model, snapshot):
+    """FINAL-AUDIT FIX (root cause: PyTorch advanced-indexing semantics):
+    `tensor[long_tensor_index].copy_(value)` does NOT mutate `tensor` in
+    place -- indexing with a LongTensor is "advanced indexing" and
+    `__getitem__` returns a NEW (copied) tensor; `.copy_()` then writes into
+    that throwaway copy, which is immediately discarded. The previous version
+    of this function used exactly that pattern for both `weight` and `bias`,
+    making the "hard restoration" a complete, silent no-op every single time
+    it was called (both the per-CL-step call in train_rank_extension_arm()
+    and the per-BATCH-STEP call from ClassifierRowRestoreCallback.on_step_end
+    -- so protected classifier rows for old classes were never actually
+    restored, only gradient-masked, for the entire lifetime of this script,
+    including in the unmodified reference implementation this function was
+    ported from verbatim). Fixed by using `tensor[index] = value`
+    (`__setitem__`), which PyTorch implements as an in-place `index_put_` and
+    genuinely mutates the original parameter -- confirmed against a minimal
+    repro (`x[idx].copy_(v)` leaves `x` unchanged; `x[idx] = v` does not)
+    before applying this fix. Verified empirically via
+    classifier_protected_row_max_diff() (unaffected by this bug -- it reads
+    values directly, not through this indexing pattern), which is exactly the
+    diagnostic that should now report ~0.0 post-restore instead of a
+    nonzero/growing drift.
+    """
     rows = snapshot["rows"]
     if len(rows) == 0:
         return
     with torch.no_grad():
         row_idx = torch.tensor(rows, device=model.classifier.weight.device, dtype=torch.long)
-        model.classifier.weight[row_idx].copy_(
-            snapshot["weight"][rows].to(
-                device=model.classifier.weight.device,
-                dtype=model.classifier.weight.dtype,
-            )
+        model.classifier.weight[row_idx] = snapshot["weight"][rows].to(
+            device=model.classifier.weight.device,
+            dtype=model.classifier.weight.dtype,
         )
-        model.classifier.bias[row_idx].copy_(
-            snapshot["bias"][rows].to(
-                device=model.classifier.bias.device,
-                dtype=model.classifier.bias.dtype,
-            )
+        model.classifier.bias[row_idx] = snapshot["bias"][rows].to(
+            device=model.classifier.bias.device,
+            dtype=model.classifier.bias.dtype,
         )
 
 
@@ -8431,12 +8512,14 @@ def save_rankext_checkpoint_atomic(method_name, previous_rank_state, stepwise_ta
     ckpt_path, marker_path = _rankext_checkpoint_paths(method_name)
     tmp_path = ckpt_path + ".tmp"
     fingerprint = compute_rankext_state_fingerprint(previous_rank_state)
+    config_fingerprint = compute_method_config_fingerprint(method_name)
     payload = {
         "method_name": method_name,
         "previous_rank_state": previous_rank_state,
         "stepwise_task_accuracies": stepwise_task_accuracies,
         "forward_transfer_probe": forward_transfer_probe,
         "rankext_state_fingerprint": fingerprint,
+        "config_fingerprint": config_fingerprint,
         "saved_at_utc": datetime.utcnow().isoformat(),
     }
     torch.save(payload, tmp_path)
@@ -8457,9 +8540,22 @@ def load_rankext_checkpoint_if_present(method_name):
                 f"CHECKPOINT RELOAD INTEGRITY CHECK FAILED for {method_name}: "
                 f"reloaded fingerprint {reloaded_fp} != saved fingerprint {stored_fp}"
             )
+        # FINAL-AUDIT FIX (persistence safety) -- see compute_method_config_
+        # fingerprint()'s docstring / the SimpleAvg analog in
+        # load_arm_checkpoint_if_present() for the full rationale.
+        stored_cfg_fp = payload.get("config_fingerprint")
+        current_cfg_fp = compute_method_config_fingerprint(method_name)
+        if stored_cfg_fp != current_cfg_fp:
+            print(
+                f"[resume] REJECTING stale checkpoint for {method_name}: "
+                f"stored config_fingerprint={stored_cfg_fp} != current config_fingerprint={current_cfg_fp} "
+                "-- this method's config changed since the checkpoint was saved; retraining from scratch."
+            )
+            return None
         print(
             f"[resume] found completed checkpoint for {method_name} "
-            f"(saved_at_utc={payload.get('saved_at_utc')}, rankext_state_fingerprint={stored_fp}) -- skipping training."
+            f"(saved_at_utc={payload.get('saved_at_utc')}, rankext_state_fingerprint={stored_fp}, "
+            f"config_fingerprint={stored_cfg_fp}) -- skipping training."
         )
         return payload
     return None

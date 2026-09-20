@@ -7158,6 +7158,21 @@ def find_clip_target_linear_modules(model, target_modules=None):
 
 def get_rank_extension_rank_schedule():
     schedule = [int(v) for v in active_rankext_rank_schedule()]
+    # PROBE BUG FIX: active_rankext_rank_schedule() always returns the full
+    # canonical 5-entry [16,32,48,64,80] list (enforced elsewhere by hard
+    # assertions that must keep holding unchanged -- this function must not
+    # weaken those). This PROBE reduces NUM_STEPS to PROBE_NUM_STEPS (3) for
+    # the smoke test, so only the FIRST NUM_STEPS entries of that same
+    # canonical schedule are actually consumed here -- step 1 still gets
+    # rank 16, step 2 still gets rank 32, step 3 still gets rank 48, exactly
+    # the same per-step values as the full 5x20 run, just not continuing to
+    # steps 4/5. Without this slice, this call always raised (schedule had 5
+    # entries, NUM_STEPS=3, guaranteed ValueError on the very first RankExt
+    # arm) -- this affects the cluster probe identically (same code, same
+    # bug), not just this Colab copy; see the Colab readiness report for the
+    # cross-reference note.
+    if PROBE_NUM_STEPS < len(schedule):
+        schedule = schedule[:PROBE_NUM_STEPS]
     if len(schedule) != NUM_STEPS:
         raise ValueError(f"active rank schedule must have NUM_STEPS={NUM_STEPS} entries, got {schedule}")
     for i in range(1, len(schedule)):

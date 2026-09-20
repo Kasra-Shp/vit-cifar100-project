@@ -104,7 +104,13 @@ change any scientific hyperparameter.
 
 ## 7. Data-path policy
 
-`load_dataset("cifar100")` (HuggingFace `datasets`, unchanged call site) is left exactly as in the
+**UPDATE (2026-09-20): see Section 15 — the dataset-loading call site was changed post-readiness**
+(from the bare `"cifar100"` id to the namespaced `"uoft-cs/cifar100"` mirror) after this doc was
+originally written, because the claim below ("unchanged call site") turned out to break on Colab's
+actual library versions the first time this was really run. Section 15 has the full story; the rest
+of this section otherwise still holds.
+
+`load_dataset("cifar100")` (HuggingFace `datasets`) was originally left exactly as in the
 cluster probe. `HF_HOME` and `HF_DATASETS_CACHE` are set via `os.environ.setdefault(...)` to
 `/content/data/hf_home` and `/content/data/hf_datasets_cache` respectively, immediately after
 imports — `setdefault` means this is a no-op if either variable is already set (e.g. by the user, or
@@ -227,6 +233,54 @@ extended idle/runtime limits) accordingly; the resume/skip logic (Section 9) exi
 make a multi-session T4 run tractable if a single session isn't long enough.
 
 ---
+
+## 15. POST-READINESS CORRECTIONS (2026-09-20) — found via the first real Colab execution
+
+This readiness doc's static checks (Section 11) passed, but this was still the first time the
+Colab-adapted script was actually executed on a real GPU, and it surfaced two real bugs the static
+checks could not have caught (compile/grep/MD5 checks don't execute the training-driver code paths):
+
+**Bug 1 — dataset loading (`HfUriError`).** `load_dataset("cifar100")` failed on Colab's current
+`datasets`/`huggingface_hub` versions: their stricter HF-URI parser rejects the legacy un-namespaced
+single-segment repo id `"cifar100"` when resolving its revision-pinned config file
+(`HfUriError: Repository id must be 'namespace/name', got 'cifar100'`). This does not happen on the
+cluster (older, pinned library versions there), so the cluster probe was correctly left unchanged.
+**Fix:** switched to `"uoft-cs/cifar100"`, the actively-maintained namespaced Hub mirror — verified
+(via a live fetch of its dataset card) to have an identical schema (`img`/`fine_label`/`coarse_label`
+columns, train=50000/test=10000 rows), matching exactly what this script's own dataset-identity
+assertions require, so no downstream code changes were needed. A fallback to the bare `"cifar100"`
+id is kept in case the namespaced mirror is ever unavailable. Empirically confirmed working: the
+next run's stdout showed `Loaded dataset via namespaced Colab-safe mirror: uoft-cs/cifar100` followed
+by `EXPERIMENT 1 dataset identity check PASSED`.
+
+**Bug 2 — rank-schedule length mismatch (guaranteed crash, not Colab-specific).**
+`get_rank_extension_rank_schedule()` required `len(schedule) == NUM_STEPS`, but
+`active_rankext_rank_schedule()` always returns the full canonical 5-entry `[16, 32, 48, 64, 80]`
+list (correctly — hard assertions elsewhere require this), while this probe sets
+`NUM_STEPS = PROBE_NUM_STEPS = 3`. This mismatch was unconditional: it crashed the very first
+RankExt arm's training on the very first LR condition, with a real traceback:
+`ValueError: active rank schedule must have NUM_STEPS=3 entries, got [16, 32, 48, 64, 80]`.
+**This bug is identical in the cluster probe** (`experiments_prepared/rankext_headlr_small_probe.py`,
+same function/lines) — it was not Colab-specific, just first discovered here because this was the
+first environment where the script's training path actually executed. **Fix:** in both this Colab
+script and the cluster probe, `get_rank_extension_rank_schedule()` now slices the canonical schedule
+to `schedule[:PROBE_NUM_STEPS]` before the length check, preserving the exact same per-step rank
+values (step 1→16, step 2→32, step 3→48) as the full run — no rank/LoRA/KD/protect30/FactorOrth
+hyperparameter changed, only how many of the unchanged canonical schedule's entries this reduced
+probe consumes. See `R7/rankext_headlr_small_probe_readiness.md` Section 13a for the cluster-side
+fix record (MD5/compile-reverified there too).
+
+**Verification status of both fixes:**
+- Colab script: **Bug 1 empirically confirmed fixed** (real Colab T4 run, log excerpt above); Bug 2
+  fixed in the same file but not yet re-run end-to-end past that point at the time of this update
+  (the user's next Colab run will confirm it).
+- Cluster probe: both-equivalent fix applied and statically re-verified (`py_compile`,
+  `bash -n` on the launcher) — **not yet confirmed by an actual cluster run**, since this
+  environment still has no cluster/GPU access (Section 5/12 of the cluster readiness doc).
+
+Practical implication: the sweep may still hit further real-execution bugs neither static check
+could catch (this is the nature of a first real run of new reduced-scale code) — report any new
+traceback and it will be triaged the same way.
 
 # FINAL TERMINAL SUMMARY
 

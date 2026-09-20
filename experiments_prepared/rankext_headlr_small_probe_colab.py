@@ -182,11 +182,12 @@ except ImportError:
 # =============================================================================
 
 # --- Colab-safe HuggingFace dataset cache location (spec Section 7) --------
-# `load_dataset("cifar100")` (below, unchanged) reads these env vars at call
-# time; setting them here, before that call, redirects the download/cache
-# from the default `~/.cache/huggingface` to a Colab-conventional location
-# under /content without touching the dataset-loading call itself. Harmless
-# no-op on the cluster (never set there) or if the user pre-sets these vars.
+# The dataset-loading call below (now "uoft-cs/cifar100", see its own
+# COLAB FIX comment) reads these env vars at call time; setting them here,
+# before that call, redirects the download/cache from the default
+# `~/.cache/huggingface` to a Colab-conventional location under /content.
+# Harmless no-op on the cluster (never set there) or if the user pre-sets
+# these vars.
 os.environ.setdefault("HF_HOME", "/content/data/hf_home")
 os.environ.setdefault("HF_DATASETS_CACHE", "/content/data/hf_datasets_cache")
 
@@ -3214,7 +3215,25 @@ print("Disabled methods/flags for this run:", disabled_methods)
 # In[ ]:
 
 
-dataset = load_dataset("cifar100")
+# COLAB FIX: the bare, un-namespaced "cifar100" dataset id fails to load
+# under current huggingface_hub/datasets versions on Colab -- the library's
+# newer HF-URI parser rejects the legacy single-segment repo id when
+# resolving the dataset's revision-pinned .huggingface.yaml, raising
+# `HfUriError: Repository id must be 'namespace/name', got 'cifar100'`
+# (this does NOT happen on the cluster, which pins older library versions;
+# the canonical, unmodified cluster probe still uses the bare "cifar100" id
+# and must NOT be changed). "uoft-cs/cifar100" is the actively-maintained,
+# namespaced Hub mirror of the same dataset -- verified identical schema
+# (img/fine_label/coarse_label columns, train=50000/test=10000 rows), so no
+# downstream code changes are needed. Fall back to the bare id only if the
+# namespaced mirror is ever unavailable, so this still works in an
+# environment where the old id resolves fine.
+try:
+    dataset = load_dataset("uoft-cs/cifar100")
+    print("Loaded dataset via namespaced Colab-safe mirror: uoft-cs/cifar100")
+except Exception as e:
+    print(f"uoft-cs/cifar100 load failed ({e!r}); falling back to bare 'cifar100' id")
+    dataset = load_dataset("cifar100")
 
 LABEL_COL = "fine_label" if "fine_label" in dataset["train"].column_names else "label"
 IMAGE_COL = "img" if "img" in dataset["train"].column_names else "image"

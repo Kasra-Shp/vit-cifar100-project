@@ -1,0 +1,9 @@
+Method,CIFAR all-seen (%),CUB all-seen (%),CUB − CIFAR (pp)
+SimpleAvg,75.16,69.468,-5.692
+SimpleAvg + KD,75.21,68.692,-6.518
+SimpleAvg + DenseOrth,74.02,68.329,-5.691
+SimpleAvg + DenseOrth + KD,73.22,67.242,-5.978
+RankExt,34.99,20.262,-14.728
+RankExt KD+Protect,65.01,45.271,-19.739
+RankExt Normalized FactorOrth,41.00,20.815,-20.185
+RankExt Normalized KD+FactorOrth,70.76,63.428,-7.332

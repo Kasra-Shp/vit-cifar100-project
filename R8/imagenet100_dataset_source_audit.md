@@ -1,6 +1,27 @@
 # ImageNet-100 dataset source audit
 
-Status: the public source was inspected without authentication using a streaming Hugging Face load. No ImageNet archive was materialized in this code-preparation pass, and no benchmark was run.
+Status: production is finalized against the existing UniPD ImageNet-1K mount. No ImageNet archive was downloaded, copied, extracted, or benchmarked in this code-preparation pass.
+
+## Selected production source
+
+- Provider: UniPD shared filesystem.
+- Exact root: `/nfsd/lttm4/datasets/ImageNet-1k_torch`.
+- Layout: `train/<WNID>/...` and `val/<WNID>/...`.
+- Access: no login and no dataset network access from the cluster job.
+- Selection: exactly the 100 WNIDs from `tools/imagenet100_common.py`; the other 900 ImageNet-1K classes are ignored.
+- Protocol: existing deterministic seed-42 5×20 split; no runtime class resampling.
+- Validation policy: 25 selected `val/` images per class for calibration and the remainder for frozen test, using seed 42. No image files are copied.
+
+Cluster verification command:
+
+```bash
+python tools/verify_imagenet100_dataset.py \
+  --data-root /nfsd/lttm4/datasets/ImageNet-1k_torch \
+  --source-mode shared_imagenet1k \
+  --max-readable-checks 24
+```
+
+The verifier prints `TRAIN WNIDS FOUND: 100/100`, `VAL WNIDS FOUND: 100/100`, `PROJECT SUBSET MATCH: PASS`, and `VALIDATION/TEST DISJOINT: PASS` when run on the cluster root. The exact source paths and IDs used by production are saved as `logs/shared_imagenet1k_source_manifest.jsonl`.
 
 ## Public source inspected
 
@@ -16,7 +37,7 @@ Status: the public source was inspected without authentication using a streaming
 - WNID provenance: the source label order is the CMC `imagenet100.txt` order, retained in `tools/imagenet100_common.py` as `CLANE9_IMAGENET100_SYNSETS`.
 - Image representation: HF image objects; the dataset card states that mirror images were resized to a 160-pixel shorter side.
 
-## Required class-set gate
+## Required class-set gate and historical public audit
 
 The existing benchmark definition was not changed. It remains the PODNet/DER/DyTox first-100 sorted-WNID subset in `tools/imagenet100_common.py`.
 
@@ -37,24 +58,19 @@ python tools/download_imagenet100_external.py \
   --output-dir D:/datasets/imagenet100_prepared --seed 42 --inspect-only
 ```
 
-Because the sets differ, the downloader stops before creating or overwriting a prepared output. The public mirror is therefore not a valid source for the canonical thesis benchmark, and no public-source archive checksum exists. No alternate 100-class subset was substituted.
+Because the sets differ, the downloader stops before creating or overwriting a prepared output. The public mirror is therefore not a valid source for the project benchmark, and no public-source archive checksum exists. No alternate 100-class subset was substituted. The shared ImageNet-1K mount is the legitimate fallback because it contains the original WNID directories and permits exact filtering.
 
-## Canonical transformation when an exact source is available
+## Canonical transformation and production artifacts
 
-For an exact canonical source, the downloader preserves the WNIDs and deterministic repository class ordering, exports RGB JPEGs, and creates:
+The shared production loader preserves the WNIDs and deterministic repository class ordering without materializing a new dataset. It directly reads:
 
 ```text
-imagenet100_prepared/
-  train/<synset>/*.JPEG
-  calibration/<synset>/*.JPEG
-  test/<synset>/*.JPEG
-  metadata/classes.json
-  metadata/task_split.json
-  metadata/dataset_manifest.json
-  metadata/source.json
+ImageNet-1k_torch/
+  train/<synset>/*
+  val/<synset>/*
 ```
 
-The held-out source split is deterministically divided per class using seed 42: 25 images/class for calibration and the remaining held-out images for frozen test. The manifest stores sample IDs and relative paths; calibration and test are disjoint and the verifier rejects overlap.
+The held-out source split is deterministically divided per class using seed 42: 25 images/class for calibration and the remaining held-out images for frozen test. The production manifest stores exact source paths and stable sample IDs; calibration and test are disjoint and the verifier rejects overlap. Each method also saves validation/test logits, labels, task IDs, sample IDs, and classifier weights/biases for CPU-only calibration.
 
 Use `ILSVRC/imagenet-1k` only when its ImageNet terms/access have been accepted and normal HF authentication is available, or use a licensed local ImageNet-1k directory. The downloader does not bypass gating.
 
@@ -64,7 +80,7 @@ ImageNet terms and licensing restrictions remain applicable to any licensed Imag
 
 ## Checksum
 
-The final canonical prepared archive checksum is intentionally unfilled until a compatible local/gated source is prepared:
+No archive checksum is applicable to the preferred shared-root path. If an offline prepared copy is deliberately created, its checksum can be recorded with:
 
 ```bash
 python tools/package_imagenet100_for_cluster.py --data-root <prepared-root> --output imagenet100_prepared.tar.gz
@@ -73,4 +89,8 @@ sha256sum imagenet100_prepared.tar.gz
 
 ## Cluster network guarantee
 
-The cluster production script consumes only `IMAGENET100_ROOT` and local files. It does not resolve a Hub dataset, call Hub download helpers, use HTTP clients, use `wget`/`curl`, or enable torchvision downloads. The required CLIP checkpoint must already be present in the cluster environment cache.
+The cluster production script consumes only `IMAGENET100_ROOT` and local files. It does not resolve a Hub dataset, call Hub download helpers, use HTTP clients, use `wget`/`curl`, or enable torchvision downloads. The required CLIP checkpoint must already be present in the cluster environment cache. The intended audit result is:
+
+```text
+CLUSTER NETWORK DATASET ACCESS: NONE
+```

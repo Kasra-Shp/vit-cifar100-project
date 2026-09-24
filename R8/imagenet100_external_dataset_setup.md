@@ -1,10 +1,41 @@
-# ImageNet-100 external preparation and UniPD transfer workflow
+# ImageNet-100 shared-cluster setup and UniPD production workflow
 
-This workflow prepares the canonical thesis ImageNet-100 subset: the first 100 ImageNet WNIDs in sorted order, `n01440764` through `n01855672`. The cluster receives ordinary JPEG files and JSON metadata; it never accesses Hugging Face or the network for dataset files.
+The preferred production source is the ImageNet-1K directory already mounted on UniPD:
 
-## Public no-login source audit (default first step)
+```text
+/nfsd/lttm4/datasets/ImageNet-1k_torch/
+  train/<WNID>/...
+  val/<WNID>/...
+```
 
-The preferred public source is [clane9/imagenet-100](https://huggingface.co/datasets/clane9/imagenet-100). Its confirmed schema is:
+The project’s fixed 100 WNIDs in `tools/imagenet100_common.py` and the checked-in seed-42 class-order artifact are the only benchmark definition. The loader reads only those 100 directories, ignores the other 900 classes, creates deterministic calibration/test subsets from `val/`, and never copies or downloads image data.
+
+## Preferred cluster path: no download required
+
+Verify the shared root before submission:
+
+```bash
+python tools/verify_imagenet100_dataset.py \
+  --data-root /nfsd/lttm4/datasets/ImageNet-1k_torch \
+  --source-mode shared_imagenet1k \
+  --max-readable-checks 24
+```
+
+Expected source mode is `SHARED_IMAGENET1K_FILTERED`, with 1000 source WNID directories and an exact 100/100 project-subset match. The validation policy is seed 42, 25 images/class for calibration, and the remaining selected validation images as frozen test. Exact paths and stable sample IDs are saved by production in `logs/shared_imagenet1k_source_manifest.jsonl`.
+
+Submit the benchmark without any dataset preparation step:
+
+```bash
+cd /nfsd/lttm4/tesisti/shahrampour/vit-cifar100-project
+export IMAGENET100_ROOT=/nfsd/lttm4/datasets/ImageNet-1k_torch
+sbatch experiments_prepared/slurm/final_8method_imagenet100_5x20_job4971615_canonical_ep9.sbatch
+```
+
+The Slurm preflight prints the selected train/validation counts, all five groups of 20 WNIDs, the eight methods, seed 42, and nine epochs. It performs no download, extraction, or copying, and the cluster dataset path has no dataset network access.
+
+## Historical public-source audit
+
+The previously inspected public source was [clane9/imagenet-100](https://huggingface.co/datasets/clane9/imagenet-100). Its confirmed schema is:
 
 - splits: `train` and `validation`;
 - fields: `image` and `label`;
@@ -30,9 +61,9 @@ The command requires no `huggingface-cli login` and does not materialize image s
 python tools/download_imagenet100_external.py --source hf --dataset-name clane9/imagenet-100 --output-dir D:/datasets/imagenet100_prepared --seed 42
 ```
 
-## Canonical data preparation
+## Optional external preparation (not the cluster production path)
 
-For the current canonical benchmark, use a licensed/local ImageNet-1k directory or the gated HF mirror. The gated option requires normal access approval and authentication; never put a token in a command or repository file:
+If the shared cluster root is unavailable, a licensed local ImageNet-1K tree can still be prepared offline. The gated option requires normal access approval and authentication; never put a token in a command or repository file:
 
 ```bash
 huggingface-cli login
@@ -56,13 +87,13 @@ python tools/download_imagenet100_external.py \
 
 The local source must contain `train/<synset>/...` and `val/<synset>/...` for all canonical WNIDs. The default held-out policy is 25 calibration images/class and all remaining held-out images as frozen test images. HF caches are reusable/resumable and are never copied into the prepared output.
 
-## Local verification
+## Local prepared-layout verification
 
 ```bash
 python tools/verify_imagenet100_dataset.py --data-root D:/datasets/imagenet100_prepared
 ```
 
-This is offline. It validates the exact 100 WNIDs, seed-42 5x20 task artifact, all three splits, readable images, manifest identity, and split disjointness.
+This validates an already materialized prepared layout. For the cluster tree, use the shared-root command above.
 
 ## Packaging and checksum
 
@@ -100,27 +131,6 @@ scp imagenet100_prepared.tar.gz shahrampou@login:<cluster-target>/
 
 Do not hard-code passwords.
 
-## Cluster extraction and verification
-
-```bash
-mkdir -p /nfsd/lttm4/tesisti/shahrampour/datasets
-tar -xzf imagenet100_prepared.tar.gz -C /nfsd/lttm4/tesisti/shahrampour/datasets
-export IMAGENET100_ROOT=/nfsd/lttm4/tesisti/shahrampour/datasets/imagenet100_prepared
-python tools/verify_imagenet100_dataset.py --data-root "$IMAGENET100_ROOT"
-```
-
-The dataset stays outside Git. The verifier must pass before any Slurm submission.
-
-## Benchmark submission (not executed here)
-
-```bash
-cd /nfsd/lttm4/tesisti/shahrampour/vit-cifar100-project
-export IMAGENET100_ROOT=/nfsd/lttm4/tesisti/shahrampour/datasets/imagenet100_prepared
-sbatch experiments_prepared/slurm/final_8method_imagenet100_5x20_job4971615_canonical_ep9.sbatch
-```
-
-The wrapper verifies the dataset before training. This command was not executed in the preparation pass.
-
 ## Output and CPU analysis artifacts
 
-The production run writes timestamped results under `results/imagenet100_5x20_final_8method_canonical_job4971615_seed42_ep9_EPOCH9_MAIN_<timestamp>/` and checkpoints under the matching `_checkpoints` directory. Each method saves validation/test logits, labels, task IDs, sample IDs, classifier weights, and biases for later CPU-only calibration analysis.
+The production run writes timestamped results under `results/imagenet100_5x20_final_8method_canonical_job4971615_seed42_ep9_EPOCH9_MAIN_<timestamp>/` and checkpoints under the matching `_checkpoints` directory. Each method saves validation/test logits, labels, task IDs, sample IDs, classifier weights, and biases for later CPU-only calibration analysis, together with the shared-source manifest.

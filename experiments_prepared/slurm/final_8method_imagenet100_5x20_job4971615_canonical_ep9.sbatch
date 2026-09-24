@@ -17,7 +17,7 @@ PROJECT_ROOT=/nfsd/lttm4/tesisti/shahrampour/vit-cifar100-project
 PYTHON=/nfsd/lttm4/tesisti/shahrampour/conda_envs/my_env_clean/bin/python
 SCRIPT=experiments_prepared/final_8method_imagenet100_5x20_job4971615_canonical_ep9.py
 VERIFIER=tools/verify_imagenet100_dataset.py
-export IMAGENET100_ROOT="${IMAGENET100_ROOT:-/nfsd/lttm4/tesisti/shahrampour/datasets/imagenet100_prepared}"
+export IMAGENET100_ROOT="${IMAGENET100_ROOT:-/nfsd/lttm4/datasets/ImageNet-1k_torch}"
 export PYTHONUNBUFFERED=1
 
 fatal() { echo "FATAL: $*" >&2; exit 1; }
@@ -28,6 +28,8 @@ cd "$PROJECT_ROOT"
 [ -f "$VERIFIER" ] || fatal "dataset verifier missing: $VERIFIER"
 [ -n "${IMAGENET100_ROOT:-}" ] || fatal "IMAGENET100_ROOT is required"
 [ -d "$IMAGENET100_ROOT" ] || fatal "IMAGENET100_ROOT is not a directory: $IMAGENET100_ROOT"
+[ -d "$IMAGENET100_ROOT/train" ] || fatal "shared ImageNet-1K train directory missing: $IMAGENET100_ROOT/train"
+[ -d "$IMAGENET100_ROOT/val" ] || fatal "shared ImageNet-1K val directory missing: $IMAGENET100_ROOT/val"
 
 echo "======================================================================"
 echo "ImageNet-100 canonical job4971615-equivalent benchmark"
@@ -44,10 +46,16 @@ nvidia-smi --query-gpu=name,memory.total,driver_version --format=csv,noheader ||
 echo "======================================================================"
 
 # Full offline verification happens before importing the training script.
-"$PYTHON" "$VERIFIER" --data-root "$IMAGENET100_ROOT"
+"$PYTHON" "$VERIFIER" --data-root "$IMAGENET100_ROOT" --source-mode shared_imagenet1k --max-readable-checks 24
 
-# The experiment itself enforces IMAGENET100_ROOT, the prepared metadata, the
-# exact task partition, local-only model files, and the fixed 8-method set.
+echo "dataset source: shared ImageNet-1K filtered to the project 100 WNIDs"
+echo "dataset copy/download/extraction: NONE"
+echo "cluster network dataset access: NONE"
+echo "calibration/test policy: seed42, 25 validation images/class for calibration, remainder frozen test"
+
+# The experiment itself enforces IMAGENET100_ROOT, the shared WNID-filtered
+# source, the exact task partition, local-only model files, and the fixed
+# 8-method set.
 unset FAST_RUN_DEBUG || true
 unset REPLICATION_SEED || true
 "$PYTHON" -u "$SCRIPT"

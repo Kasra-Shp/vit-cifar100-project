@@ -260,7 +260,8 @@ import torch.nn.functional as F
 from datasets import concatenate_datasets
 from torchvision import transforms
 
-from tools.imagenet100_common import load_prepared_datasets
+from tools.imagenet100_common import IMAGENET100_SYNSETS, load_prepared_datasets, task_split
+from tools.imagenet100_shared import load_shared_imagenet1k_datasets, selected_train_stats, write_source_manifest
 
 IMAGENET100_ROOT = os.environ.get("IMAGENET100_ROOT")
 if not IMAGENET100_ROOT:
@@ -3212,22 +3213,11 @@ print("Disabled methods/flags for this run:", disabled_methods)
 
 
 # ============================================================================
-# IMAGENET-100 DATASET CONFIGURATION (new for this script -- see the
-# IMAGENET-100 ADAPTATION banner at the top of this file).
+# IMAGENET-100 DATASET CONFIGURATION. Production filters the fixed project
+# WNIDs directly from the shared ImageNet-1K ImageFolder tree.
 # ============================================================================
-# Verified reachable/ungated via a direct Hugging Face Hub API metadata call
-# performed during preparation of this script (GET
-# https://huggingface.co/api/datasets/clane9/imagenet-100 -> HTTP 200,
-# "gated": false, "private": false, "disabled": false; reported splits
-# historical mirror train/validation counts; features = an "image" column plus
-# a 100-way ClassLabel "label" column) -- see
-# R7/imagenet100_5x20_static_readiness.md for the full verification record,
-# including the raw class-name list this script's class-order artifact was
-# built from. This is historical provenance only; production reads local files.
-# from this desktop machine; it does NOT confirm reachability from the
-# actual cluster compute nodes that will run the real job -- re-verify
-# network access to huggingface.co from the compute node before submitting
-# (see the readiness report's "unresolved blocker" section).
+# The prepared local layout remains supported for compatibility, but is not
+# needed by the cluster production path and no network access is performed.
 IMAGENET100_DATASET_ID = "ImageNet-100/PODNet-DER-DyTox-first100-sorted-wnids"
 
 # No Hugging Face cache is consulted by this production script.
@@ -3238,15 +3228,40 @@ IMAGENET100_DATASET_ID = "ImageNet-100/PODNet-DER-DyTox-first100-sorted-wnids"
 # -- every one of the 9 method arms therefore sees an identical task
 # sequence, since this file loads it exactly once at module level, before
 # the per-method training loop.
-IMAGENET100_CLASS_ORDER_ARTIFACT_PATH = os.path.join(
-    IMAGENET100_ROOT, "metadata", "task_split.json"
+IMAGENET100_CLASS_ORDER_ARTIFACT_PATH = str(
+    _REPO_ROOT / "experiments_prepared" / "splits" / "imagenet100_class_order_seed42.json"
 )
 
 # The prepared package has disjoint train/calibration/test directories. Only
 # calibration is used for epoch selection; test is frozen final evaluation.
 FINAL_EVAL_SPLIT_NAME = "test"
 
-dataset = load_prepared_datasets(IMAGENET100_ROOT)
+_shared_imagenet1k_mode = (
+    os.path.isdir(os.path.join(IMAGENET100_ROOT, "train"))
+    and os.path.isdir(os.path.join(IMAGENET100_ROOT, "val"))
+)
+_shared_source_report = None
+if _shared_imagenet1k_mode:
+    dataset, _shared_source_report = load_shared_imagenet1k_datasets(IMAGENET100_ROOT, seed=SEED)
+    print("SOURCE MODE: SHARED_IMAGENET1K_FILTERED")
+    print(f"SOURCE CLASSES: {_shared_source_report['source_class_count']}")
+    print(f"SELECTED PROJECT CLASSES: {len(IMAGENET100_SYNSETS)}")
+    _train_stats = selected_train_stats(_shared_source_report)
+    print(f"SELECTED TRAIN IMAGES: {_train_stats['total']}")
+    print("SELECTED TRAIN IMAGES PER CLASS:")
+    for _synset in IMAGENET100_SYNSETS:
+        print(f"  {_synset}: {len(_shared_source_report['train_paths'][_synset])}")
+    print(
+        "SELECTED TRAIN IMAGES/CLASS MIN/MAX/MEAN: "
+        f"{_train_stats['min']}/{_train_stats['max']}/{_train_stats['mean']:.2f}"
+    )
+    write_source_manifest(
+        os.path.join(BASE_OUTPUT_DIR, "logs", "shared_imagenet1k_source_manifest.jsonl"),
+        _shared_source_report,
+    )
+    print("SOURCE MANIFEST: logs/shared_imagenet1k_source_manifest.jsonl")
+else:
+    dataset = load_prepared_datasets(IMAGENET100_ROOT)
 
 LABEL_COL = "label" if "label" in dataset["train"].column_names else (
     "fine_label" if "fine_label" in dataset["train"].column_names else "labels"
@@ -3282,16 +3297,20 @@ assert os.path.isfile(IMAGENET100_CLASS_ORDER_ARTIFACT_PATH), (
 with open(IMAGENET100_CLASS_ORDER_ARTIFACT_PATH, "r") as _f:
     IMAGENET100_CLASS_ORDER = json.load(_f)
 
-assert IMAGENET100_CLASS_ORDER["dataset_identifier"] == IMAGENET100_DATASET_ID, (
-    f"Class-order artifact was generated for {IMAGENET100_CLASS_ORDER['dataset_identifier']!r}, "
-    f"not the dataset this script loads ({IMAGENET100_DATASET_ID!r})"
-)
 assert IMAGENET100_CLASS_ORDER["seed"] == SEED, (
     f"Class-order artifact was generated for seed {IMAGENET100_CLASS_ORDER['seed']}, got SEED={SEED}"
 )
 assert IMAGENET100_CLASS_ORDER["num_classes"] == NUM_CLASSES == 100
 assert IMAGENET100_CLASS_ORDER["num_tasks"] == NUM_STEPS == 5
 assert IMAGENET100_CLASS_ORDER["classes_per_task"] == CLASSES_PER_STEP == 20
+_COMMON_TASK_SPLIT = task_split(SEED)
+assert IMAGENET100_CLASS_ORDER["new_id_to_original_id"] == _COMMON_TASK_SPLIT["new_id_to_original_id"], (
+    "the checked-in class-order artifact does not match the repository's seed-42 task permutation"
+)
+assert [task["new_class_ids"] for task in IMAGENET100_CLASS_ORDER["tasks"]] == [
+    task["new_class_ids"] for task in _COMMON_TASK_SPLIT["tasks"]
+], "the checked-in class-order artifact does not match the repository's 5x20 task split"
+print(f"PROJECT WNIDS: exact repository list loaded ({len(IMAGENET100_SYNSETS)}/100)")
 
 # original_id_to_new_id: the dataset's own ClassLabel index (as assigned by
 # the HF dataset builder) -> this benchmark's fixed, seed-42-shuffled,
@@ -3386,6 +3405,9 @@ print(f"  class_order_seed   = {IMAGENET100_CLASS_ORDER['seed']}")
 print(f"  artifact_path      = {IMAGENET100_CLASS_ORDER_ARTIFACT_PATH!r}")
 for i, cls in enumerate(class_splits, start=1):
     print(f"  Task {i}: new IDs {cls[0]}-{cls[-1]} (20 classes)")
+print("TASK WNIDS (seed 42):")
+for _task in _COMMON_TASK_SPLIT["tasks"]:
+    print(f"  Task {_task['task_number']}: {' '.join(_task['synsets'])}")
 print("  All 8 method arms load this exact same mapping (module-level, computed once).")
 
 def classes_for_step(step_idx):

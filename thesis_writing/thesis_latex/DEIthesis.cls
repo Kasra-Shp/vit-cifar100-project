@@ -146,6 +146,19 @@
 \fancyfoot[C]{\thepage}
 \renewcommand{\headrulewidth}{0pt}
 
+%% Chapter-opening pages use the `plain' style, which \maketitle empties for
+%% the front matter. From \mainmatter on, `plain' shows the page number at
+%% the bottom centre (no running header); explicit \thispagestyle{empty}
+%% pages (\blankpage) are unaffected.
+\g@addto@macro\mainmatter{%
+  \fancypagestyle{plain}{%
+    \fancyhf{}%
+    \fancyfoot[C]{\thepage}%
+    \renewcommand{\headrulewidth}{0pt}%
+    \renewcommand{\footrulewidth}{0pt}%
+  }%
+}
+
 %% Title Page
 \def\title#1{\gdef\@title{#1}}
 \def\author#1{\gdef\@author{#1}}

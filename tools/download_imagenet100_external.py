@@ -2,12 +2,18 @@
 """Prepare a transfer-ready ImageNet-100 directory outside the cluster.
 
 Supported sources:
-  * ``--source hf``: authenticated Hugging Face ILSVRC/imagenet-1k.
+  * ``--source hf``: Hugging Face datasets, including the public
+    ``clane9/imagenet-100`` mirror for schema/class-set inspection.
   * ``--source local``: an existing ImageNet-1k-style directory with train/val.
 
 This is intentionally the only new component allowed to perform network I/O.
 The output contains ordinary JPEG files and JSON metadata; cluster training
 does not need ``datasets`` or Hugging Face access to read it.
+
+The repository's canonical ImageNet-100 definition is deliberately checked
+before any full HF split is materialized.  ``clane9/imagenet-100`` is public
+and no-login, but it is the CMC random-100 subset; it must not be silently
+substituted for the thesis PODNet/DER/DyTox first-100 subset.
 """
 
 from __future__ import annotations
@@ -27,12 +33,29 @@ from typing import Any, Iterable
 from PIL import Image
 
 try:
-    from .imagenet100_common import IMAGENET100_SYNSETS, NUM_CLASSES, SEED, classes_metadata, task_split, write_json
+    from .imagenet100_common import (
+        CLANE9_IMAGENET100_SYNSETS,
+        IMAGENET100_SYNSETS,
+        NUM_CLASSES,
+        SEED,
+        classes_metadata,
+        task_split,
+        write_json,
+    )
 except ImportError:  # direct `python tools/download_imagenet100_external.py`
-    from imagenet100_common import IMAGENET100_SYNSETS, NUM_CLASSES, SEED, classes_metadata, task_split, write_json
+    from imagenet100_common import (
+        CLANE9_IMAGENET100_SYNSETS,
+        IMAGENET100_SYNSETS,
+        NUM_CLASSES,
+        SEED,
+        classes_metadata,
+        task_split,
+        write_json,
+    )
 
 
-DEFAULT_HF_DATASET = "ILSVRC/imagenet-1k"
+DEFAULT_HF_DATASET = "clane9/imagenet-100"
+PUBLIC_HF_DATASET = "clane9/imagenet-100"
 IMAGE_SUFFIXES = {".jpg", ".jpeg", ".png", ".webp", ".bmp"}
 
 
@@ -51,6 +74,11 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--eval-per-class", type=int, default=25, help="Calibration images/class; remaining held-out images become test")
     p.add_argument("--seed", type=int, default=SEED)
     p.add_argument("--overwrite", action="store_true")
+    p.add_argument(
+        "--inspect-only",
+        action="store_true",
+        help="Inspect HF schema/class compatibility with streaming and do not materialize images",
+    )
     return p.parse_args()
 
 
@@ -122,26 +150,122 @@ def write_collected(collected: dict[int, list[tuple[str, Any]]], split_name: str
             })
 
 
-def hf_split(dataset_name: str, config: str | None, split: str, revision: str, cache_dir: Path | None, token: str | None, selected_only: bool = True) -> tuple[dict[int, list[tuple[str, Any]]], list[str]]:
-    try:
-        from datasets import load_dataset
-    except ImportError as exc:
-        raise RuntimeError("HF source requires `pip install datasets pillow`; run this only on the external preparation machine") from exc
-    kwargs: dict[str, Any] = {"split": split, "revision": revision}
+def hf_kwargs(config: str | None, revision: str, cache_dir: Path | None, token: str | None, *, split: str | None = None, streaming: bool = False) -> dict[str, Any]:
+    kwargs: dict[str, Any] = {"revision": revision}
+    if split is not None:
+        kwargs["split"] = split
     if config:
         kwargs["name"] = config
     if cache_dir:
         kwargs["cache_dir"] = str(cache_dir)
+    if streaming:
+        kwargs["streaming"] = True
     auth = token or os.environ.get("HF_TOKEN")
     if auth:
         kwargs["token"] = auth
-    print(f"Loading HF dataset {dataset_name!r}, split={split!r}; this is the external/off-cluster network step.", flush=True)
+    return kwargs
+
+
+def hf_load(dataset_name: str, config: str | None, revision: str, cache_dir: Path | None, token: str | None, *, split: str | None = None, streaming: bool = False) -> Any:
     try:
-        ds = load_dataset(dataset_name, **kwargs)
+        from datasets import load_dataset
+    except ImportError as exc:
+        raise RuntimeError("HF source requires `pip install datasets pillow`; run this only on the external preparation machine") from exc
+    kwargs = hf_kwargs(config, revision, cache_dir, token, split=split, streaming=streaming)
+    split_text = "all splits" if split is None else f"split={split!r}"
+    print(f"Loading HF dataset {dataset_name!r}, {split_text}; this is the external/off-cluster network step.", flush=True)
+    try:
+        return load_dataset(dataset_name, **kwargs)
     except Exception as exc:
         raise RuntimeError(
             f"Could not access {dataset_name!r}. If this is ImageNet, accept its terms and run `huggingface-cli login` or set HF_TOKEN locally; never put the token in this repository. Original error: {exc}"
         ) from exc
+
+
+def public_synsets_for_dataset(dataset_name: str) -> list[str] | None:
+    if dataset_name == PUBLIC_HF_DATASET:
+        return list(CLANE9_IMAGENET100_SYNSETS)
+    if dataset_name == "ILSVRC/imagenet-1k":
+        # The canonical source uses the ImageNet-1k label ordering; the
+        # benchmark selects its first 100 sorted WNIDs.  Keep this explicit
+        # rather than inferring a WNID mapping from arbitrary HF label names.
+        return list(IMAGENET100_SYNSETS)
+    return None
+
+
+def class_set_report(public_synsets: list[str]) -> dict[str, Any]:
+    expected_set = set(IMAGENET100_SYNSETS)
+    public_set = set(public_synsets)
+    missing = [synset for synset in IMAGENET100_SYNSETS if synset not in public_set]
+    extra = [synset for synset in public_synsets if synset not in expected_set]
+    return {
+        "expected_count": len(IMAGENET100_SYNSETS),
+        "public_count": len(public_synsets),
+        "intersection_count": len(expected_set & public_set),
+        "missing_from_public": missing,
+        "extra_in_public": extra,
+        "match": not missing and not extra and len(public_synsets) == NUM_CLASSES,
+    }
+
+
+def print_class_set_report(report: dict[str, Any]) -> None:
+    print(f"EXPECTED WNIDS: {report['expected_count']}")
+    print(f"PUBLIC DATASET WNIDS: {report['public_count']}")
+    print(f"INTERSECTION: {report['intersection_count']}")
+    print("MISSING FROM PUBLIC: " + (", ".join(report["missing_from_public"]) if report["missing_from_public"] else "NONE"))
+    print("EXTRA IN PUBLIC: " + (", ".join(report["extra_in_public"]) if report["extra_in_public"] else "NONE"))
+    print("CLASS SET MATCH: " + ("PASS" if report["match"] else "FAIL"))
+
+
+def inspect_hf_source(dataset_name: str, config: str | None, revision: str, cache_dir: Path | None, token: str | None) -> dict[str, Any]:
+    """Inspect public/source schema without downloading image shards."""
+    ds_dict = hf_load(dataset_name, config, revision, cache_dir, token, streaming=True)
+    if not hasattr(ds_dict, "keys"):
+        raise RuntimeError(f"Expected a dataset with named splits; got {type(ds_dict).__name__}")
+    split_names = list(ds_dict.keys())
+    if not split_names:
+        raise RuntimeError("HF dataset has no named splits")
+    split_details: dict[str, Any] = {}
+    label_names: list[str] = []
+    for split_name in split_names:
+        ds = ds_dict[split_name]
+        columns = list(ds.features.keys()) if getattr(ds, "features", None) is not None else list(getattr(ds, "column_names", []))
+        label_column = "label" if "label" in columns else "labels" if "labels" in columns else None
+        image_column = "image" if "image" in columns else "img" if "img" in columns else None
+        if label_column is None or image_column is None:
+            raise RuntimeError(f"{dataset_name!r} split {split_name!r} must expose image/label fields; got {columns}")
+        feature = ds.features[label_column]
+        names = list(feature.names) if getattr(feature, "names", None) else []
+        if not label_names:
+            label_names = names
+        elif names != label_names:
+            raise RuntimeError(f"HF label mapping differs between splits: {split_name!r}")
+        first_row = next(iter(ds), None)
+        split_details[split_name] = {
+            "columns": columns,
+            "image_column": image_column,
+            "label_column": label_column,
+            "label_feature": type(feature).__name__,
+            "num_labels": len(names),
+            "first_label": None if first_row is None else int(first_row[label_column]),
+        }
+    public_synsets = public_synsets_for_dataset(dataset_name)
+    if public_synsets is None:
+        public_synsets = []
+    if len(label_names) != NUM_CLASSES and dataset_name == PUBLIC_HF_DATASET:
+        raise RuntimeError(f"{PUBLIC_HF_DATASET} must expose exactly 100 ClassLabel names; got {len(label_names)}")
+    report = class_set_report(public_synsets) if public_synsets else None
+    return {
+        "split_names": split_names,
+        "splits": split_details,
+        "label_names": label_names,
+        "public_synsets": public_synsets,
+        "class_set_report": report,
+    }
+
+
+def hf_split(dataset_name: str, config: str | None, split: str, revision: str, cache_dir: Path | None, token: str | None, selected_only: bool = True) -> tuple[dict[int, list[tuple[str, Any]]], list[str]]:
+    ds = hf_load(dataset_name, config, revision, cache_dir, token, split=split)
     label_column = "label" if "label" in ds.column_names else "labels"
     image_column = "image" if "image" in ds.column_names else "img"
     if label_column not in ds.column_names or image_column not in ds.column_names:
@@ -174,8 +298,38 @@ def main() -> int:
     if args.eval_per_class < 1:
         raise SystemExit("--eval-per-class must be positive")
     root = args.output_dir.resolve()
-    ensure_output(root, args.overwrite)
     manifest: list[dict[str, Any]] = []
+
+    # Inspect HF metadata and the source-specific label/WNID mapping before
+    # creating or overwriting the output directory.  In particular, this
+    # prevents clane9's public but incompatible subset from becoming a
+    # misleading canonical prepared dataset.
+    hf_inspection: dict[str, Any] | None = None
+    if args.source == "hf":
+        hf_inspection = inspect_hf_source(args.dataset_name, args.config, args.revision, args.cache_dir, args.token)
+        report = hf_inspection["class_set_report"]
+        if report is not None:
+            print_class_set_report(report)
+        print(json.dumps({"splits": hf_inspection["splits"], "label_names": hf_inspection["label_names"]}, indent=2))
+        if args.inspect_only:
+            if report is not None and not report["match"]:
+                print("INSPECTION RESULT: FAIL (public source is not the canonical thesis class set)")
+                return 2
+            print("INSPECTION RESULT: PASS")
+            return 0
+        if report is not None and not report["match"]:
+            raise RuntimeError(
+                f"Refusing to materialize {args.dataset_name!r}: its class set is not the canonical ImageNet-100 definition. "
+                "Use the canonical licensed/local source or change the benchmark definition explicitly in a separate study."
+            )
+        if "train" not in hf_inspection["split_names"] or "validation" not in hf_inspection["split_names"]:
+            raise RuntimeError(
+                f"HF source must provide train and validation splits for this workflow; got {hf_inspection['split_names']}"
+            )
+    elif args.inspect_only:
+        raise SystemExit("--inspect-only is supported only with --source hf")
+
+    ensure_output(root, args.overwrite)
     source_info: dict[str, Any] = {
         "provider": "Hugging Face" if args.source == "hf" else "user-provided local ImageNet directory",
         "dataset_identifier": args.dataset_name if args.source == "hf" else None,
@@ -190,9 +344,30 @@ def main() -> int:
     }
 
     if args.source == "hf":
+        assert hf_inspection is not None
         train_samples, label_names = hf_split(args.dataset_name, args.config, "train", args.revision, args.cache_dir, args.token)
         eval_samples, _ = hf_split(args.dataset_name, args.config, "validation", args.revision, args.cache_dir, args.token)
         display_names = [label_names[i] if i < len(label_names) else IMAGENET100_SYNSETS[i] for i in range(NUM_CLASSES)]
+        source_info.update({
+            "public_no_auth_source": args.dataset_name == PUBLIC_HF_DATASET,
+            "schema": hf_inspection["splits"],
+            "original_label_mapping": [
+                {
+                    "label_id": i,
+                    "class_name": name,
+                    "wnid": hf_inspection["public_synsets"][i] if i < len(hf_inspection["public_synsets"]) else None,
+                }
+                for i, name in enumerate(label_names)
+            ],
+            "class_set_compatibility": hf_inspection["class_set_report"],
+            "calibration_test_split_rule": {
+                "held_out_source_split": "validation",
+                "calibration_images_per_class": args.eval_per_class,
+                "test_images_per_class": "remaining held-out images",
+                "seed": args.seed,
+                "overlap": "none",
+            },
+        })
     else:
         if args.source_dir is None:
             raise SystemExit("--source-dir is required with --source local")

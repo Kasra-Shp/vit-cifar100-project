@@ -1,22 +1,47 @@
 # ImageNet-100 dataset source audit
 
-Status: preparation code and documentation complete; no ImageNet archive was downloaded in this code-preparation pass.
+Status: the public source was inspected without authentication using a streaming Hugging Face load. No ImageNet archive was materialized in this code-preparation pass, and no benchmark was run.
 
-## Source
+## Public source inspected
 
-- Provider: Hugging Face Hub, official `ILSVRC` organization.
-- Exact identifier: `ILSVRC/imagenet-1k`.
-- Source URL: <https://huggingface.co/datasets/ILSVRC/imagenet-1k>
-- Configuration: default/main unless overridden explicitly by the downloader.
-- Authentication: gated. The repository requires the user to accept ImageNet terms and authenticate normally (`huggingface-cli login` or local `HF_TOKEN`). No credentials are stored here and no access restriction is bypassed.
-- Original source splits: `train` and `validation`.
-- Alternative supported source: a user-provided licensed ImageNet-1k directory with `train/<synset>/` and `val/<synset>/`.
+- Provider: Hugging Face Hub.
+- Exact identifier: `clane9/imagenet-100`.
+- Source URL: <https://huggingface.co/datasets/clane9/imagenet-100>.
+- Public/no-auth access: PASS. Metadata and a first streaming record were accessible without `HF_TOKEN` or `huggingface-cli login`.
+- Configuration: default.
+- Confirmed splits: `train`, `validation`.
+- Confirmed fields: `image`, `label`.
+- Confirmed label representation: 100-entry `ClassLabel`; labels are integer IDs and the feature carries human-readable class names.
+- Confirmed counts: train 126,689; validation 5,000.
+- WNID provenance: the source label order is the CMC `imagenet100.txt` order, retained in `tools/imagenet100_common.py` as `CLANE9_IMAGENET100_SYNSETS`.
+- Image representation: HF image objects; the dataset card states that mirror images were resized to a 160-pixel shorter side.
 
-## Selected subset and transformation
+## Required class-set gate
 
-The selected subset is the existing repository definition documented in `thesis_agent/reports/imagenet100_generalization_preparation.md` and verified by `scripts/verify_imagenet100_local.py`: the first 100 sorted ImageNet WNIDs, `n01440764` through `n01855672`. This is the PODNet/DER/DyTox-compatible subset, not the separate CMC/clane9 100-class subset.
+The existing benchmark definition was not changed. It remains the PODNet/DER/DyTox first-100 sorted-WNID subset in `tools/imagenet100_common.py`.
 
-The downloader selects source label IDs 0–99, retains WNID identity, converts images to RGB JPEGs, and writes deterministic filenames and a manifest. It creates:
+```text
+EXPECTED WNIDS: 100
+PUBLIC DATASET WNIDS: 100
+INTERSECTION: 8
+MISSING FROM PUBLIC: 92 WNIDs
+EXTRA IN PUBLIC: 92 WNIDs
+CLASS SET MATCH: FAIL
+```
+
+The exact machine-printed lists are produced by:
+
+```bash
+python tools/download_imagenet100_external.py \
+  --source hf --dataset-name clane9/imagenet-100 \
+  --output-dir D:/datasets/imagenet100_prepared --seed 42 --inspect-only
+```
+
+Because the sets differ, the downloader stops before creating or overwriting a prepared output. The public mirror is therefore not a valid source for the canonical thesis benchmark, and no public-source archive checksum exists. No alternate 100-class subset was substituted.
+
+## Canonical transformation when an exact source is available
+
+For an exact canonical source, the downloader preserves the WNIDs and deterministic repository class ordering, exports RGB JPEGs, and creates:
 
 ```text
 imagenet100_prepared/
@@ -29,25 +54,23 @@ imagenet100_prepared/
   metadata/source.json
 ```
 
-The official held-out split is deterministically divided per class using seed 42: 25 images/class for calibration and the remaining held-out images for frozen test. The manifest records every sample ID and relative path, and the verifier rejects overlap.
+The held-out source split is deterministically divided per class using seed 42: 25 images/class for calibration and the remaining held-out images for frozen test. The manifest stores sample IDs and relative paths; calibration and test are disjoint and the verifier rejects overlap.
 
-Expected PODNet-lineage counts are approximately 129,395 selected training images and 5,000 held-out images before the 2,500/2,500 calibration/test split; the downloader records actual counts and fails if any selected class is absent.
+Use `ILSVRC/imagenet-1k` only when its ImageNet terms/access have been accepted and normal HF authentication is available, or use a licensed local ImageNet-1k directory. The downloader does not bypass gating.
 
 ## License and access
 
-ImageNet terms and licensing restrictions remain applicable to the downloaded files. The preparation tools are distribution/transfer helpers, not a new license grant. Do not commit images, archives, caches, credentials, checkpoints, or logits.
+ImageNet terms and licensing restrictions remain applicable to any licensed ImageNet files. Preparation tools do not grant redistribution rights. Do not commit images, archives, caches, credentials, checkpoints, or logits.
 
 ## Checksum
 
-The final prepared archive checksum is intentionally not filled in until the real local preparation occurs. Generate it with:
+The final canonical prepared archive checksum is intentionally unfilled until a compatible local/gated source is prepared:
 
 ```bash
 python tools/package_imagenet100_for_cluster.py --data-root <prepared-root> --output imagenet100_prepared.tar.gz
 sha256sum imagenet100_prepared.tar.gz
 ```
 
-Record the resulting SHA256 here after packaging the real data.
-
 ## Cluster network guarantee
 
-The cluster production script consumes only `IMAGENET100_ROOT` and local metadata/files. It does not resolve a Hub dataset, call Hub download helpers, use HTTP clients, use `wget`/`curl`, or enable torchvision downloads. CLIP processor/model loading is `local_files_only=True`; the required CLIP checkpoint must already be present in the cluster environment cache.
+The cluster production script consumes only `IMAGENET100_ROOT` and local files. It does not resolve a Hub dataset, call Hub download helpers, use HTTP clients, use `wget`/`curl`, or enable torchvision downloads. The required CLIP checkpoint must already be present in the cluster environment cache.

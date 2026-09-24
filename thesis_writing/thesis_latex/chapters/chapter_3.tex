@@ -350,11 +350,13 @@ It is not put forward as a methodological contribution of this thesis.
 \label{sec:ch3-rankext}
 
 RankExt organises the same low-rank adaptation mechanism differently.
-Rather than training a fresh adapter at every step, it maintains one
-persistent model across the entire sequence. At each step, every low-rank
-block learned at a previous step is retained and kept frozen, and exactly
-one new block is appended and trained; the pretrained base weight $W_0$
-remains frozen throughout, as it does for SimpleAvg.
+Rather than training a fresh adapter at every step, it maintains a
+persistent adapter state across the sequence. At each step, the model is
+reconstructed from the pretrained backbone and the cumulative adapter state
+carried forward from the previous step; previously learned blocks are
+reinstated as frozen, active components, and one new trainable rank block
+is appended. The pretrained base weight $W_0$ remains frozen throughout, as
+it does for SimpleAvg.
 
 Write the cumulative rank reached after step $t$ as $R_t$ (with $R_0=0$),
 and the block of factors learned at step $k$ as $A_k, B_k$, of incremental
@@ -382,9 +384,10 @@ $R_t=[16,32,48,64,80]$ for $t=1,\dots,5$, corresponding to an increment of
 rank 16 at each step. This is the schedule against which RankExt is
 compared to SimpleAvg in the main results of this thesis; it is a
 configurable property of the architecture, not a consequence of the
-general formulation above. A different partition of the same class set would require a
-correspondingly adjusted schedule; no such alternative is evaluated in this
-thesis. A previously learned block's parameters have zero gradient from
+general formulation above. A secondary $4\times25$ protocol diagnostic
+uses an adjusted schedule $[20,40,60,80]$ so that the final cumulative rank
+remains 80; that experiment is described in Chapter~\ref{ch:results} and is
+not treated as a controlled single-factor protocol-depth study. A previously learned block's parameters have zero gradient from
 the step after it was learned onward, contribute to the forward pass
 exactly as before, and are verified to remain unchanged for the remainder
 of training; freezing is total, not partial. A newly appended block's $A$
@@ -501,12 +504,12 @@ Section~\ref{sec:ch3-simpleavg} --- the same combination rule, evaluated over a 
 of the sequence rather than the complete one, and rebuilt from scratch at
 the start of each subsequent step because it is not itself stored between
 steps. This training-time snapshot is distinct from the single merge
-performed once after the complete sequence, described in Section~\ref{sec:ch3-simpleavg}. RankExt, by contrast, already maintains one persistent,
-complete model at every point in the sequence, so its teacher is simply
-that model as it stood at the end of the previous step, before the current
+performed once after the complete sequence, described in Section~\ref{sec:ch3-simpleavg}. RankExt, by contrast, carries a complete adapter and classifier state
+forward at every point in the sequence, so its teacher is simply the model
+defined by that state at the end of the previous step, before the current
 step's new block is added: no separate merge-and-stitch operation is
-needed to construct it, because RankExt's own architecture already
-supplies a directly usable checkpoint at every step boundary.
+needed to construct it, because RankExt's own state already defines a
+directly usable model at every step boundary.
 
 This mechanism should not be described as replay: no raw example from an
 earlier step is stored or reused, only the current step's own images are
@@ -615,7 +618,7 @@ whenever they are active. The exact variant-specific loss composition,
 auxiliary stabilisation terms, and warmup schedules used in the experiments
 are specified in Chapter~\ref{ch:experimental-setup}.
 
-\section{Classifier Construction and Calibration}
+\section{Classifier Construction and Rescaling}
 \label{sec:ch3-classifier-calibration}
 
 Representation integration, as defined in Section~\ref{sec:ch3-integration-strategies}, and the classifier
@@ -656,10 +659,11 @@ independent of the
 dense-delta averaging described in Section~\ref{sec:ch3-simpleavg}: the two are combined into one
 final model, but neither is derived from the other.
 
-For RankExt, one classifier instance persists across the entire sequence,
-as already noted in Section~\ref{sec:ch3-rankext}, mirroring the persistence of the
-low-rank blocks themselves: neither the classifier nor the adapter is ever
-rebuilt from scratch after the first step. Rows belonging to classes
+For RankExt, the classifier state is carried forward across the entire
+sequence, as already noted in Section~\ref{sec:ch3-rankext}, mirroring the
+persistence of the low-rank blocks themselves: when the model is
+reconstructed at each step, both the classifier weights and the adapter
+factors learned so far are reinstated rather than reinitialised. Rows belonging to classes
 introduced at earlier steps are carried forward unchanged into every later
 step, and only the rows for the current step's classes receive gradient at
 that step. The implementation enforces this guarantee redundantly ---
@@ -668,13 +672,13 @@ protected rows afterward --- but the property that matters methodologically
 is simply stated: old class rows are preserved exactly, and only new class
 rows are trained.
 
-\subsection{Calibration}
+\subsection{Classifier Rescaling}
 \label{sec:ch3-calibration}
 
 After training is complete, and before either evaluation mode introduced
 in Section~\ref{sec:ch3-open-restricted} is computed, the final classifier's weight rows are
 rescaled by a post-hoc procedure applied identically to both strategies.
-Calibration is not part of gradient-based training, does not touch the
+Classifier rescaling is not part of gradient-based training, does not touch the
 backbone or the low-rank adaptation parameters, and never modifies the
 bias vector $b$ --- only the weight rows $W_{cls}[c,:]$ are rescaled, based on
 their own $\ell_2$ norm, $n_c=\lVert W_{cls}[c,:]\rVert_2$. The rescaling is
@@ -686,7 +690,7 @@ This family of rescaling rules is conceptually related to the norm-balancing
 principle of Weight Aligning \parencite{zhao2020maintaining}, which observes
 that later-trained class rows tend to have larger norms than earlier ones
 and corrects for it by rescaling the new-class rows toward the old classes'
-mean norm. The calibration used in this thesis is not a direct
+mean norm. The classifier rescaling used in this thesis is not a direct
 implementation of Weight Aligning: several target-norm variants are
 implemented, differing in how the target norm for a step is chosen and
 whether it is adjusted by that step's own training convergence; their exact
@@ -696,7 +700,7 @@ rather than part of the methodological definition given here.
 
 Because every variant rescales an entire step's block of rows by one
 common positive factor, and does so identically regardless of which
-evaluation mode will later be applied, the calibrated classifier is what
+evaluation mode will later be applied, the rescaled classifier is what
 both open and restricted evaluation are computed from. Section~\ref{sec:ch3-open-restricted}
 returns to this property once both evaluation modes have been defined.
 
@@ -780,26 +784,26 @@ headline metric, and should never be read as recovering a model's ``true''
 or ``actual'' retention --- it reports accuracy once one specific source of
 competition has been removed, nothing more.
 
-This diagnostic role connects directly to the calibration mechanism of
+This diagnostic role connects directly to the classifier rescaling of
 Section~\ref{sec:ch3-calibration}. Because the same positive factor is
-applied to all weight rows within a step, calibration does not alter their
-relative weight-vector scaling. However, classifier biases are left
-unchanged, so restricted accuracy is not mathematically guaranteed to
+applied to all weight rows within a step, classifier rescaling does not
+alter their relative weight-vector scaling. However, classifier biases are
+left unchanged, so restricted accuracy is not mathematically guaranteed to
 remain invariant under the rescaling. Open accuracy is more directly
-exposed to calibration, since its argmax compares logits across groups that
-calibration may have scaled differently.
+exposed to classifier rescaling, since its argmax compares logits across
+groups that the rescaling may have scaled differently.
 
 \section{Method Variants and Overall Continual-Learning Procedure}
 \label{sec:ch3-method-variants}
 
 The components defined in Sections~\ref{sec:ch3-integration-strategies}--\ref{sec:ch3-open-restricted} --- the two integration
 strategies, knowledge distillation, orthogonality regularisation, classifier
-construction and calibration, and the open/restricted evaluation
+construction and rescaling, and the open/restricted evaluation
 protocols --- are instantiated as a controlled set of eight method variants.
 Their purpose is to separate the contribution of the continual integration
 strategy from that of the two stabilisation mechanisms while holding the
 rest of the pipeline --- the backbone, the classifier mechanism, the
-calibration procedure, and the evaluation protocols --- fixed across all
+classifier rescaling, and the evaluation protocols --- fixed across all
 eight. This section assembles those variants, describes the end-to-end
 procedure each family follows, and defines the two continual-learning
 metrics this thesis reports; it does not compare their outcomes.
@@ -810,8 +814,8 @@ metrics this thesis reports; it does not compare their outcomes.
 Within each integration strategy, knowledge distillation and FactorOrth
 regularisation are switched on or off, giving four variants per family and
 eight in total. Every variant shares the same frozen backbone, the same
-target modules, the same classifier mechanism, the same calibration
-procedure, and the same evaluation protocols (Sections~\ref{sec:ch3-lora-framework}, \ref{sec:ch3-classifier-calibration}, \ref{sec:ch3-open-restricted}).
+target modules, the same classifier mechanism, the same classifier
+rescaling, and the same evaluation protocols (Sections~\ref{sec:ch3-lora-framework}, \ref{sec:ch3-classifier-calibration}, \ref{sec:ch3-open-restricted}).
 The variants are organised conceptually as a two-by-two KD/FactorOrth
 grid within each integration family, but variant-specific warmups and
 RankExt-specific auxiliary protection mechanisms mean that the complete
@@ -912,10 +916,11 @@ single final model produced once, after training, and used for evaluation.
 \begin{enumerate}
 \item Receive $D_t$ and $C_t$; as for SimpleAvg, no raw example from any
    earlier step is available.
-\item Configure the current adaptation state: continue the single persistent
-   model carried over from step $t-1$ --- the base weight remains frozen,
-   every previously learned rank block remains frozen, and one new
-   trainable block is appended (Section~\ref{sec:ch3-rankext}).
+\item Reconstruct the current model from the pretrained backbone and the
+   persistent adapter and classifier state carried forward from step
+   $t-1$ --- the base weight remains frozen, every previously learned rank
+   block is reinstated as frozen and active, and one new trainable block is
+   appended (Section~\ref{sec:ch3-rankext}).
 \item Update the classifier state for this step: rows for classes already
    introduced remain frozen, and rows for $C_t$ are unmasked and become
    trainable (Section~\ref{sec:ch3-classifier-construction}).
@@ -924,13 +929,13 @@ single final model produced once, after training, and used for evaluation.
    (Section~\ref{sec:ch3-stabilization}) --- the distillation term against
    the frozen previous-step model and/or the FactorOrth term against the
    frozen accumulated prior blocks, each computed exactly as defined there.
-\item At the end of the step, the persistent model itself --- now including the
-   newly trained block and the newly trained classifier rows --- is carried
-   forward as the retained state for step $t+1$; no separate extraction or
-   reconstruction is needed, and no raw example of $D_t$ is kept.
+\item At the end of the step, the adapter and classifier state --- now
+   including the newly trained block and the newly trained classifier rows
+   --- is carried forward as the retained state for step $t+1$; no raw
+   example of $D_t$ is kept.
 \end{enumerate}
 
-Because the persistent model produced by this loop already is the model at
+Because the persistent state produced by this loop defines the model at
 every point in the sequence, RankExt has no separate final-merge step
 analogous to SimpleAvg's dense-averaging reconstruction; the model at the
 end of step $T$ is the final model.
@@ -970,8 +975,8 @@ later training left a group's accuracy higher than it was at its own
 diagonal reference; a negative value indicates the opposite. The two
 families do not supply this diagonal reference in the same way, and the
 difference must be stated plainly rather than treated as a detail. For
-RankExt, $a_{j,j}$ is a genuine checkpoint: the persistent model exactly as
-it existed immediately after step $j$, evaluated on $C_j$. For SimpleAvg,
+RankExt, $a_{j,j}$ is a genuine checkpoint: the model defined by the
+persistent state immediately after step $j$, evaluated on $C_j$. For SimpleAvg,
 no single evolving model exists to checkpoint (Section~\ref{sec:ch3-simpleavg}), so
 $a_{j,j}$ is substituted with step $j$'s own independently-trained
 specialist's accuracy on $C_j$, at that specialist's best epoch, measured

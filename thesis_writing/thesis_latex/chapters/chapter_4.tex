@@ -58,7 +58,7 @@ images and 10,000 test images, loaded in its native (unshuffled) label
 order. Unless stated otherwise, every dataset-specific setting in this
 chapter refers to CIFAR-100.
 
-\textbf{CUB-200-2011} (Caltech-UCSD Birds-200-2011) provides a second-dataset
+\textbf{CUB-200-2011} (Caltech-UCSD Birds-200-2011) \parencite{wah2011cub} provides a second-dataset
 supporting evaluation. It has 200 bird-species classes and is loaded through
 the dataset identifier \texttt{Donghyun99/\allowbreak CUB-200-2011}. The official split
 is retained: the 5,994 images of the official training split are the
@@ -214,14 +214,14 @@ best snapshot is reloaded once that step's training completes, before that
 step's evaluation runs. This selection rule is identical across every method
 variant and every experiment referenced in Chapter~\ref{ch:results}.
 
-\textbf{Calibration.} The confidence-weighted, regime-grouped row-norm
-calibration mode of Section~\ref{sec:ch3-calibration} is applied,
+\textbf{Classifier rescaling.} The confidence-weighted, regime-grouped
+row-norm rescaling mode of Section~\ref{sec:ch3-calibration} is applied,
 identically, to every method variant's final classifier before evaluation,
 with confidence exponent $\gamma=0.65$ and per-step scaling factors clipped
 to $[0.85, 1.30]$. As already established in
 Section~\ref{sec:ch3-calibration}, this rescaling is post-hoc, touches only
 the classifier's weight rows (the bias vector $b$ is never modified), and
-the same calibrated classifier is used for both open and restricted
+the same rescaled classifier is used for both open and restricted
 evaluation.
 
 \subsection{Variant-Specific Loss Composition}
@@ -248,8 +248,8 @@ restricted to the previously seen classes, and the distillation weight is
 ramped linearly from zero over the first epoch of each step. Teacher
 construction is as defined in Section~\ref{sec:ch3-kd}: for SimpleAvg, a
 frozen running merged prefix snapshot over the steps already trained; for
-RankExt, the frozen persistent model as it stood at the end of the previous
-step.
+RankExt, a frozen copy of the model defined by the persistent adapter and
+classifier state at the end of the previous step.
 
 \textbf{FactorOrth.} The FactorOrth configuration is family-specific
 (Section~\ref{sec:ch3-factororth}). SimpleAvg's FactorOrth variants use

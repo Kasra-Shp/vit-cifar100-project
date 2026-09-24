@@ -20,7 +20,7 @@ generalisation -- is deferred to Chapter~\ref{ch:discussion-conclusion}.
 \label{sec:ch5-protocol}
 
 The primary results of this chapter are obtained on \textbf{CIFAR-100}
-under a \textbf{5-task, 20-class-per-task} class-incremental protocol
+under a \textbf{5-step, 20-class-per-step} class-incremental protocol
 ($5\times20$), evaluated at \textbf{seed 42}; a supporting second-dataset
 evaluation on CUB-200-2011 ($5\times40$, seed 42) is reported in
 Section~\ref{sec:ch5-cub}. The metric definitions below apply to both. The
@@ -30,24 +30,24 @@ not restated here; this section recaps only the metric definitions needed to
 read the tables and figures that follow.
 
 \textbf{All-seen (open) accuracy} is the primary continual-learning metric
-throughout this chapter: accuracy on a task's own test images, evaluated
+throughout this chapter: accuracy on a step's own test images, evaluated
 against the full, task-agnostic output space of every class introduced up to
-and including the current task. Unless stated otherwise, ``accuracy'' in
+and including the current step. Unless stated otherwise, ``accuracy'' in
 this chapter means all-seen accuracy.
 
 \textbf{Restricted (task-oracle) accuracy} evaluates the same predictions
-against only the current task's own class subset (20 classes on
+against only the current step's own class subset (20 classes on
 CIFAR-100, 40 on CUB-200-2011) --- a diagnostic upper
-bound on within-task discrimination, not a replacement headline metric.
+bound on within-step discrimination, not a replacement headline metric.
 Restricted accuracy is never described in this chapter as a method's
 ``true'' or ``actual'' accuracy; it isolates one specific factor
-(within-task discriminability) from the task-competition effects that
+(within-step discriminability) from the cross-step competition effects that
 all-seen accuracy also reflects, and the two are reported side by side
 precisely because they can diverge substantially (Section~\ref{sec:ch5-stability}).
 
 \textbf{Classifier rescaling.} After training is complete, the classifier
-weight rows associated with each task are rescaled by a positive
-task-specific factor to reduce scale imbalance across tasks
+weight rows associated with each step are rescaled by a positive
+step-specific factor to reduce scale imbalance across steps
 (Section~\ref{sec:ch3-calibration}). The backbone, LoRA parameters, and
 classifier biases remain unchanged. The same rescaled classifier is then
 used for both open and restricted evaluation, and the same classifier
@@ -55,27 +55,30 @@ rescaling is applied to all eight methods. Because the biases are
 unchanged, restricted accuracy is not mathematically guaranteed to be
 invariant to this rescaling.
 
-\textbf{First-task final accuracy} and \textbf{later-tasks mean accuracy}
-report, respectively, the open accuracy on task 1 and the mean open accuracy
-on tasks 2--5, both measured after the full five-task sequence has
-completed. Together they indicate whether a method's aggregate accuracy is
-limited by early-task retention, later-task acquisition, or both.
+\textbf{First-step accuracy} is the open accuracy of the final model on
+the classes introduced at step 1. \textbf{Later-steps accuracy} is the open
+accuracy of the final model over the pooled union of evaluation examples
+from steps 2--5; it is a single accuracy over that pooled set, not an
+arithmetic mean of separately computed step-level accuracies. Both are
+measured after the full five-step sequence has completed, and together
+they indicate whether a method's aggregate accuracy is limited by
+early-step retention, later-step acquisition, or both.
 
 \textbf{Backward transfer (BWT)} follows the standard definition
-\parencite{lopezpaz2017gradient}: the mean, over tasks 1 through 4, of the
-difference between a task's accuracy at the end of the full sequence and its
+\parencite{lopezpaz2017gradient}: the mean, over steps 1 through 4, of the
+difference between a step's accuracy at the end of the full sequence and its
 accuracy immediately after it was first learned. In the reported values,
-the end-of-sequence term is the task's open accuracy in the final model
+the end-of-sequence term is the step's open accuracy in the final model
 \emph{after} classifier rescaling, while the ``immediately after learning''
-term is evaluated during training, at the end of that task's own training
+term is evaluated during training, at the end of that step's own training
 (from its best-validation checkpoint), \emph{before} any classifier
 rescaling. A structural caveat applies
 specifically to this thesis's two method families and is stated once, here,
-rather than repeated at every table: \textbf{RankExt is a single, persistent
-model}, trained sequentially, so its BWT has the standard interpretation --
-a genuine measurement of how later training affects earlier-learned tasks in
-the same evolving model. \textbf{SimpleAvg is not a single evolving model};
-each task is trained as an independent specialist and the five specialists
+rather than repeated at every table: \textbf{RankExt carries a single, persistent
+adapter state}, trained sequentially, so its BWT has the standard
+interpretation -- a genuine measurement of how later training affects
+earlier-learned steps in the same evolving adapter state. \textbf{SimpleAvg is not a single evolving model};
+each step is trained as an independent specialist and the five specialists
 are combined only once, at the end, by an arithmetic merge
 (Chapter~\ref{ch:methodology}). SimpleAvg's reported BWT therefore uses each
 specialist's own accuracy, immediately after its independent training, as
@@ -86,10 +89,10 @@ column for compactness but are \textbf{not structurally equivalent} and
 should not be read as directly comparable to one another.
 
 \textbf{Forgetting} \parencite{chaudhry2018riemannian} is reported only for
-RankExt, where it is well-defined (the mean, over tasks 1--4, of each task's
+RankExt, where it is well-defined (the mean, over steps 1--4, of each step's
 best-ever observed accuracy minus its accuracy at the end of the sequence).
 Unlike BWT, forgetting is computed entirely from the in-training
-evaluations made after each task, before classifier rescaling --- the same
+evaluations made after each step, before classifier rescaling --- the same
 values that form the $R_{i,j}$ matrices of Section~\ref{sec:ch5-rankext}.
 It is structurally undefined for SimpleAvg, which has no sequential model to
 forget from, and is reported as ``---'' for every SimpleAvg row --- never as
@@ -151,7 +154,7 @@ canonical methods, coloured by family, zero-based axis. Source:
 \end{figure}
 
 The extended version of Table~\ref{tab:ch5-main-compact}, additionally
-reporting first-task accuracy, later-tasks-mean accuracy, BWT, and
+reporting first-step accuracy, later-steps accuracy, BWT, and
 forgetting for all eight methods, is given as
 Table~\ref{tab:ch5-main-extended} in Section~\ref{sec:ch5-summary}.
 
@@ -170,7 +173,8 @@ but should not be read as a significance test.
 \begin{figure}[htbp]
 \centering
 \includegraphics[width=0.55\textwidth]{figures/chapter5/cifar100_best_per_family.pdf}
-\caption[Best result per family]{Best observed all-seen accuracy per family:
+\caption[Highest observed result per family]{Highest observed all-seen
+accuracy per family in the primary run:
 SimpleAvg + KD (75.21\%) versus RankExt + FactorOrth + KD + Protect
 (70.76\%). A single-seed headline comparison, not a statistical significance
 test.}
@@ -301,14 +305,14 @@ SimpleAvg, FactorOrth is applied to the reconstructed dense updates
 factor space ($\lambda=50$) (Section~\ref{sec:ch3-factororth}).
 
 Table~\ref{tab:ch5-simpleavg} reports each SimpleAvg variant's delta from
-plain SimpleAvg (75.16\%), alongside first-task and later-tasks-mean
+plain SimpleAvg (75.16\%), alongside first-step and later-steps
 accuracy.
 
 \begin{table}[htbp]
 \centering
 \begin{tabularx}{\textwidth}{@{}>{\raggedright\arraybackslash}X r r r r r@{}}
 \toprule
-\textbf{Method} & \shortstack[r]{\textbf{All-seen}\\\textbf{(\%)}} & \shortstack[r]{\textbf{$\Delta$ vs.\ plain}\\\textbf{(pp)}} & \shortstack[r]{\textbf{First-task}\\\textbf{(\%)}} & \shortstack[r]{\textbf{Later-tasks}\\\textbf{mean (\%)}} & \shortstack[r]{\textbf{Restricted}\\\textbf{(\%)}} \\
+\textbf{Method} & \shortstack[r]{\textbf{All-seen}\\\textbf{(\%)}} & \shortstack[r]{\textbf{$\Delta$ vs.\ plain}\\\textbf{(pp)}} & \shortstack[r]{\textbf{First-step}\\\textbf{(\%)}} & \shortstack[r]{\textbf{Later-steps}\\\textbf{(\%)}} & \shortstack[r]{\textbf{Restricted}\\\textbf{(\%)}} \\
 \midrule
 SimpleAvg (plain) & 75.16 & --- & 77.75 & 74.51 & 92.28 \\
 SimpleAvg + KD & 75.21 & +0.05 & 68.25 & 76.95 & 92.86 \\
@@ -317,7 +321,7 @@ SimpleAvg + FactorOrth + KD & 73.22 & $-$1.94 & 57.55 & 77.14 & 92.96 \\
 \bottomrule
 \end{tabularx}
 \caption[SimpleAvg family results]{SimpleAvg family: all-seen accuracy,
-delta from plain, first-task, later-tasks mean, and restricted accuracy.}
+delta from plain, first-step, later-steps, and restricted accuracy.}
 \label{tab:ch5-simpleavg}
 \end{table}
 
@@ -338,53 +342,53 @@ deviation from plain among the four SimpleAvg variants. None of the three
 auxiliary configurations produces a clear all-seen improvement over the
 plain baseline.
 
-The near-tied all-seen numbers mask a larger redistribution across tasks.
-SimpleAvg + KD's first-task accuracy (68.25\%) is 9.50 percentage points
-below plain SimpleAvg's (77.75\%), while its later-tasks mean (76.95\%) is
+The near-tied all-seen numbers mask a larger redistribution across steps.
+SimpleAvg + KD's first-step accuracy (68.25\%) is 9.50 percentage points
+below plain SimpleAvg's (77.75\%), while its later-steps accuracy (76.95\%) is
 2.44 points above plain's (74.51\%); restricted accuracy is also higher for
 the KD variant (92.86\% vs.\ 92.28\%). SimpleAvg + FactorOrth + KD shows the
-same direction at a larger magnitude --- first-task accuracy 57.55\% (20.20
-points below plain), later-tasks mean 77.14\% (the highest later-tasks value
+same direction at a larger magnitude --- first-step accuracy 57.55\% (20.20
+points below plain), later-steps accuracy 77.14\% (the highest later-steps value
 among the four SimpleAvg variants), restricted accuracy 92.96\% (also the
 highest of the four). SimpleAvg + FactorOrth alone, without KD, does not show
-this redistribution: its first-task accuracy (76.60\%) and later-tasks mean
+this redistribution: its first-step accuracy (76.60\%) and later-steps accuracy
 (73.38\%) both stay close to plain's. This chapter reports the
-redistribution as a factual pattern --- accuracy moves from the first task
-toward later tasks whenever KD is present, roughly in proportion to how it
+redistribution as a factual pattern --- accuracy moves from the first step
+toward later steps whenever KD is present, roughly in proportion to how it
 is combined --- without attributing a cause to it;
 Chapter~\ref{ch:discussion-conclusion} addresses why.
 
 \begin{figure}[htbp]
 \centering
 \includegraphics[width=0.75\textwidth]{figures/chapter5/cifar100_sa_per_task_final_open.pdf}
-\caption[SimpleAvg per-task final open accuracy]{Final (post-sequence) open
-accuracy for each of the five tasks, per SimpleAvg variant.}
-\label{fig:ch5-sa-per-task-open}
+\caption[SimpleAvg per-step final open accuracy]{Final (post-sequence) open
+accuracy for each of the five steps, per SimpleAvg variant.}
+\label{fig:ch5-sa-per-step-open}
 \end{figure}
 
 \begin{figure}[htbp]
 \centering
 \includegraphics[width=0.75\textwidth]{figures/chapter5/cifar100_sa_per_task_restricted.pdf}
-\caption[SimpleAvg per-task restricted accuracy]{Restricted (task-oracle)
-accuracy for each of the five tasks, per SimpleAvg variant.}
-\label{fig:ch5-sa-per-task-restricted}
+\caption[SimpleAvg per-step restricted accuracy]{Restricted (task-oracle)
+accuracy for each of the five steps, per SimpleAvg variant.}
+\label{fig:ch5-sa-per-step-restricted}
 \end{figure}
 
-Per-task detail (Figures~\ref{fig:ch5-sa-per-task-open}
-and~\ref{fig:ch5-sa-per-task-restricted}) shows this redistribution is not
-uniform across the four non-final tasks: for both KD-bearing variants, task
-1's open accuracy is the most affected, while tasks 2--4 move by smaller and
+Per-step detail (Figures~\ref{fig:ch5-sa-per-step-open}
+and~\ref{fig:ch5-sa-per-step-restricted}) shows this redistribution is not
+uniform across the four non-final steps: for both KD-bearing variants, step
+1's open accuracy is the most affected, while steps 2--4 move by smaller and
 less consistent amounts. At the aggregate level, restricted accuracy
 across the four SimpleAvg variants spans only 0.99 percentage points, from
-91.97\% to 92.96\%. The per-task restricted results
-(Figure~\ref{fig:ch5-sa-per-task-restricted}) provide the corresponding
-task-level detail.
+91.97\% to 92.96\%. The per-step restricted results
+(Figure~\ref{fig:ch5-sa-per-step-restricted}) provide the corresponding
+step-level detail.
 
 \section{RankExt Analysis}
 \label{sec:ch5-rankext}
 
 This section reports how RankExt's four variants perform relative to plain
-RankExt, and presents the per-step, per-task retention trajectory underlying
+RankExt, and presents the per-step retention trajectory underlying
 the aggregate numbers.
 
 Table~\ref{tab:ch5-rankext} reports each RankExt variant's all-seen accuracy
@@ -433,21 +437,21 @@ isolation.
 
 \textbf{$R_{i,j}$ trajectories.} For a sequentially-trained, persistent
 model such as RankExt, this chapter additionally reports the full retention
-matrix $R_{i,j}$: the open (all-seen) accuracy on task $j$, evaluated after
-training has completed sequentially through task $i$ ($j \le i$). Each row
-$i$ of $R_{i,j}$ is evaluated during training, immediately after task $i$
+matrix $R_{i,j}$: the open (all-seen) accuracy on step $j$, evaluated after
+training has completed sequentially through step $i$ ($j \le i$). Each row
+$i$ of $R_{i,j}$ is evaluated during training, immediately after step $i$
 has been trained (from its best-validation checkpoint), before classifier
 rescaling, with predictions taken over the full 100-way classifier output;
 at $i=5$ this coincides with evaluation over all seen classes. The final
 row of $R_{i,j}$ therefore describes the model before classifier rescaling,
 whereas the final accuracies reported in Table~\ref{tab:ch5-main-extended}
 describe the same weights after it. The two are not interchangeable: for
-plain RankExt, for example, task 1 reaches 6.40\% in the final row of
+plain RankExt, for example, step 1 reaches 6.40\% in the final row of
 $R_{i,j}$ and 11.70\% after classifier rescaling.
 
 Figure~\ref{fig:ch5-rij-comparison} shows the four RankExt matrices together
 with the SimpleAvg family, on one shared 0--100\% colour scale. Beneath
-each RankExt matrix, a separate ``Final'' row gives the per-task open
+each RankExt matrix, a separate ``Final'' row gives the per-step open
 accuracy of the final model after classifier rescaling. SimpleAvg does not
 maintain a persistent merged model at intermediate steps, so it has no
 $R_{i,j}$ trajectory; its panels show only the corresponding ``Final'' row
@@ -457,29 +461,29 @@ the RankExt panels.
 \begin{figure}[htbp]
 \centering
 \includegraphics[width=\textwidth]{figures/chapter5/cifar100_retention_rankext_Rij_simpleavg_final.pdf}
-\caption[Retention matrices and final per-task accuracy]{Open (all-seen)
-accuracy per task group, shared 0--100\% colour scale. Top row: for
+\caption[Retention matrices and final per-step accuracy]{Open (all-seen)
+accuracy per step group, shared 0--100\% colour scale. Top row: for
 RankExt, the panels show the sequential $R_{i,j}$ trajectory (accuracy on
-task $j$ after training through task $i$, evaluated before classifier
+step $j$ after training through step $i$, evaluated before classifier
 rescaling), followed by a separate ``Final'' row for the final model after
 classifier rescaling. Bottom row: because SimpleAvg does not maintain a
 persistent merged model at intermediate steps, the SimpleAvg panels report
-only final merged-model per-task accuracies, after classifier rescaling.}
+only final merged-model per-step accuracies, after classifier rescaling.}
 \label{fig:ch5-rij-comparison}
 \end{figure}
 
-Plain RankExt's matrix shows every task's own diagonal accuracy above 93\%
+Plain RankExt's matrix shows every step's own diagonal accuracy above 93\%
 at the step it was learned (95.40\%, 95.70\%, 94.05\%, 93.90\%, 97.05\% for
-tasks 1--5 respectively), while its off-diagonal, older-task cells decline
-steeply as later tasks are trained: task 1's open accuracy, for example,
-falls from 95.40\% (its own diagonal) to 43.50\% after task 2 is trained,
-20.75\% after task 3, 12.10\% after task 4, and 6.40\% after task 5. The
+steps 1--5 respectively), while its off-diagonal, older-step cells decline
+steeply as later steps are trained: step 1's open accuracy, for example,
+falls from 95.40\% (its own diagonal) to 43.50\% after step 2 is trained,
+20.75\% after step 3, 12.10\% after step 4, and 6.40\% after step 5. The
 combined configuration's matrix shows the same qualitative decline in
-direction but at a markedly smaller magnitude: task 1's open accuracy after
-task 5 is 66.40\%, compared with plain RankExt's 6.40\% at the same matrix
-position. The KD+Protect configuration's matrix (task 1 at 60.10\% after
-task 5) and the FactorOrth-only configuration's matrix (task 1 at 1.95\%
-after task 5, the lowest value observed at that matrix position among the
+direction but at a markedly smaller magnitude: step 1's open accuracy after
+step 5 is 66.40\%, compared with plain RankExt's 6.40\% at the same matrix
+position. The KD+Protect configuration's matrix (step 1 at 60.10\% after
+step 5) and the FactorOrth-only configuration's matrix (step 1 at 1.95\%
+after step 5, the lowest value observed at that matrix position among the
 four configurations) sit, respectively, close to and below the combined
 configuration's retention level. These are reported here as factual
 trajectory observations; a mechanistic account of what specifically differs
@@ -510,7 +514,7 @@ observed in all-seen accuracy among the four RankExt variants alone
 \centering
 \includegraphics[width=0.85\textwidth]{figures/chapter5/cifar100_open_restricted_gap.pdf}
 \caption[Open--restricted gap]{Restricted-minus-open accuracy gap per
-method --- a diagnostic indicator of cross-task competition, not a direct
+method --- a diagnostic indicator of cross-step competition, not a direct
 measure of catastrophic forgetting.}
 \label{fig:ch5-open-restricted-gap}
 \end{figure}
@@ -519,7 +523,7 @@ The open/restricted gap (restricted minus all-seen,
 Figure~\ref{fig:ch5-open-restricted-gap}) is comparatively small and
 narrow-ranging for every SimpleAvg variant (17.12 to 19.74 percentage
 points, widening somewhat for the KD-bearing variants because of the
-first-task redistribution described in Section~\ref{sec:ch5-simpleavg}) and
+first-step redistribution described in Section~\ref{sec:ch5-simpleavg}) and
 substantially larger for the two RankExt variants without KD+Protect:
 plain RankExt's restricted accuracy (91.03\%) exceeds its
 all-seen accuracy (34.99\%) by \textbf{56.04 percentage points}, the largest
@@ -529,12 +533,12 @@ include KD+Protect show substantially smaller gaps: RankExt + KD + Protect
 (94.10\% $-$ 65.01\% = 29.09 points) and the combined configuration (94.78\%
 $-$ 70.76\% = 24.02 points).
 
-The gap indicates that within-task discrimination is substantially stronger
+The gap indicates that within-step discrimination is substantially stronger
 than task-agnostic discrimination across all seen classes, for every
 RankExt configuration measured in this benchmark, and most severely for the
 two configurations without KD+Protect. This is reported here as an observed
-pattern. Restricted evaluation removes cross-task class competitors from the
-decision rule and therefore provides a diagnostic view of within-task
+pattern. Restricted evaluation removes cross-step class competitors from the
+decision rule and therefore provides a diagnostic view of within-step
 discrimination; it does not identify the cause of the open-accuracy
 shortfall, possible readings of which are examined in
 Chapter~\ref{ch:discussion-conclusion}.
@@ -542,20 +546,20 @@ Chapter~\ref{ch:discussion-conclusion}.
 \begin{figure}[htbp]
 \centering
 \includegraphics[width=0.85\textwidth]{figures/chapter5/cifar100_first_vs_later_tasks.pdf}
-\caption[First-task vs.\ later-tasks accuracy]{First-task and later-tasks
-mean accuracy for all eight methods.}
+\caption[First-step vs.\ later-steps accuracy]{First-step and later-steps
+accuracy (pooled over steps 2--5) for all eight methods.}
 \label{fig:ch5-first-vs-later}
 \end{figure}
 
-Figure~\ref{fig:ch5-first-vs-later} presents first-task and later-tasks-mean
+Figure~\ref{fig:ch5-first-vs-later} presents first-step and later-steps
 accuracy for all eight methods together, consolidating the per-family
 patterns already reported in Sections~\ref{sec:ch5-simpleavg}
-and~\ref{sec:ch5-rankext}: SimpleAvg's KD-bearing variants trade first-task
-accuracy for later-tasks accuracy at roughly constant all-seen accuracy.
+and~\ref{sec:ch5-rankext}: SimpleAvg's KD-bearing variants trade first-step
+accuracy for later-steps accuracy at roughly constant all-seen accuracy.
 Within RankExt, the KD+Protect-bearing configurations substantially increase
-both first-task and later-tasks accuracy relative to plain RankExt, whereas
-FactorOrth alone increases later-tasks accuracy (48.79\% vs.\ 40.81\%) but
-not first-task accuracy (9.85\% vs.\ 11.70\%)
+both first-step and later-steps accuracy relative to plain RankExt, whereas
+FactorOrth alone increases later-steps accuracy (48.79\% vs.\ 40.81\%) but
+not first-step accuracy (9.85\% vs.\ 11.70\%)
 (Table~\ref{tab:ch5-main-extended}).
 
 \section{Parameter and Rank Efficiency}
@@ -570,13 +574,13 @@ headline comparison is not accuracy-only.
 Both families target the same 24 LoRA modules (\texttt{q\_proj} and
 \texttt{v\_proj} in each of the 12 CLIP ViT-B/16 vision-encoder layers,
 hidden size 768). SimpleAvg trains a fixed rank-80 adapter independently for
-each of the five tasks; RankExt trains a cumulative adapter that grows by a
-fixed rank-16 increment at each task, reaching a cumulative rank of 80 only
-at the fifth and final task (Figure~\ref{fig:ch5-rank-growth}). The two rank
+each of the five steps; RankExt trains a cumulative adapter that grows by a
+fixed rank-16 increment at each step, reaching a cumulative rank of 80 only
+at the fifth and final step (Figure~\ref{fig:ch5-rank-growth}). The two rank
 trajectories reach the same final value by construction, but represent
-structurally different histories: SimpleAvg's rank-80 at every task is a
+structurally different histories: SimpleAvg's rank-80 at every step is a
 \emph{new, independent} specialist, not an accumulation; RankExt's rank-80
-at task 5 is the sum of five smaller, sequentially-added, never-retrained
+at step 5 is the sum of five smaller, sequentially-added, never-retrained
 blocks. At the final training step, the SimpleAvg specialist rank and the
 RankExt cumulative active rank are both 80; this does not imply that
 SimpleAvg's final averaged dense update is itself rank-80 constrained.
@@ -584,9 +588,9 @@ SimpleAvg's final averaged dense update is itself rank-80 constrained.
 \begin{figure}[htbp]
 \centering
 \includegraphics[width=0.8\textwidth]{figures/chapter5/cifar100_rank_growth.pdf}
-\caption[LoRA rank growth]{LoRA rank used by each family across the 5-task
+\caption[LoRA rank growth]{LoRA rank used by each family across the 5-step
 sequence. SimpleAvg's rank-80 is a new, independent specialist at every
-task, not cumulative history in the same sense as RankExt's growing
+step, not cumulative history in the same sense as RankExt's growing
 adapter.}
 \label{fig:ch5-rank-growth}
 \end{figure}
@@ -599,9 +603,9 @@ Table~\ref{tab:ch5-param-efficiency} summarises the comparison.
 \toprule
 \textbf{Property} & \textbf{SimpleAvg} & \textbf{RankExt} \\
 \midrule
-Rank behaviour & Fixed rank 80, fresh independent specialist per task & Growing cumulative rank: $16{\to}32{\to}48{\to}64{\to}80$ \\
-New trainable LoRA params, per task & 2{,}949{,}120 (constant) & 589{,}824 (constant) \\
-LoRA parameter volume touched across all 5 tasks & 14{,}745{,}600 (5 independent adapters) & 2{,}949{,}120 (5 blocks, each trained once) \\
+Rank behaviour & Fixed rank 80, fresh independent specialist per step & Growing cumulative rank: $16{\to}32{\to}48{\to}64{\to}80$ \\
+New trainable LoRA params, per step & 2{,}949{,}120 (constant) & 589{,}824 (constant) \\
+LoRA parameter volume touched across all 5 steps & 14{,}745{,}600 (5 independent adapters) & 2{,}949{,}120 (5 blocks, each trained once) \\
 Final deployed LoRA overhead & 0 if the averaged delta is fused into the base model, or 14{,}155{,}776 if the dense delta is instead stored separately & 2{,}949{,}120 (kept in low-rank, additive form) \\
 Final deployed classifier & 76{,}900 & 76{,}900 \\
 \bottomrule
@@ -614,16 +618,16 @@ efficiency comparison, SimpleAvg vs.\ RankExt, the primary benchmark.}
 \begin{figure}[htbp]
 \centering
 \includegraphics[width=0.8\textwidth]{figures/chapter5/cifar100_trainable_lora_params_per_task.pdf}
-\caption[New trainable LoRA parameters per task]{New trainable LoRA
-parameters introduced at each task, both families.}
+\caption[New trainable LoRA parameters per step]{New trainable LoRA
+parameters introduced at each step, both families.}
 \label{fig:ch5-trainable-params}
 \end{figure}
 
-At every task, RankExt trains fewer new parameters than SimpleAvg (589{,}824
-vs.\ 2{,}949{,}120, both constant across tasks,
+At every step, RankExt trains fewer new parameters than SimpleAvg (589{,}824
+vs.\ 2{,}949{,}120, both constant across steps,
 Figure~\ref{fig:ch5-trainable-params}). Summed across the training
 sequence, RankExt's cumulative adapter reaches 2{,}949{,}120 parameters by
-the final task, exactly matching its own final active rank (80), because
+the final step, exactly matching its own final active rank (80), because
 each of its five blocks is trained exactly once and never retrained.
 SimpleAvg's five specialists, trained independently, together comprise
 14{,}745{,}600 LoRA parameters over the training sequence; this is a
@@ -724,9 +728,9 @@ primary benchmark (Table~\ref{tab:ch5-rankext}) --- decreases, from 70.76\%
 to 67.92\%, a change of $-$2.84 percentage points. This is reported here as
 an observed, single-seed result, not as evidence that the $\times2$ setting
 is worse in general: the combined configuration's other metrics move in
-mixed directions at $\times2$ (first-task accuracy rises from 60.70\% to
+mixed directions at $\times2$ (first-step accuracy rises from 60.70\% to
 67.75\%; BWT improves from $-$0.1584 to $-$0.0532; forgetting improves from
-0.2474 to 0.1289; later-tasks-mean accuracy falls from 73.28\% to 67.96\%),
+0.2474 to 0.1289; later-steps accuracy falls from 73.28\% to 67.96\%),
 a pattern reported factually here and interpreted in
 Chapter~\ref{ch:discussion-conclusion}. This chapter does not claim that a
 classifier-head learning-rate multiplier of $\times2$ is globally better
@@ -734,9 +738,9 @@ than $\times1$ for RankExt; the evidence is mixed across the four
 configurations tested.
 
 The $\times2$ setting was chosen after a small, reduced-scale local probe
-of the combined RankExt configuration (2 tasks, 2 epochs per task, 10--15
+of the combined RankExt configuration (2 steps, 2 epochs per step, 10--15
 images per class) favoured it; this probe is not benchmark evidence. Its
-preference did not fully transfer to the full five-task continual
+preference did not fully transfer to the full five-step continual
 benchmark, where the strongest combined RankExt configuration regressed
 (Chapter~\ref{ch:discussion-conclusion}).
 
@@ -788,7 +792,7 @@ configurations.
 \centering
 \begin{tabularx}{\textwidth}{@{}X r r r r r r@{}}
 \toprule
-\textbf{Method} & \textbf{All-seen} & \textbf{First-task} & \textbf{Later-tasks} & \textbf{Restricted} & \textbf{BWT} & \textbf{Forgetting} \\
+\textbf{Method} & \textbf{All-seen} & \textbf{First-step} & \textbf{Later-steps} & \textbf{Restricted} & \textbf{BWT} & \textbf{Forgetting} \\
 \midrule
 SimpleAvg & 75.16 & 77.75 & 74.51 & 92.28 & $-$0.2122 & --- \\
 SimpleAvg + KD & 75.21 & 68.25 & 76.95 & 92.86 & $-$0.2001 & --- \\
@@ -817,7 +821,7 @@ combined configuration reaches the highest observed RankExt result in this
 run (70.76\%), 4.45 percentage points below the highest observed SimpleAvg
 result in this run (75.21\%). RankExt's restricted accuracy remains high
 (91.03\%--94.78\%) across all four configurations even where all-seen
-accuracy is low, indicating that within-task discrimination is retained
+accuracy is low, indicating that within-step discrimination is retained
 more consistently than task-agnostic discrimination
 (Section~\ref{sec:ch5-stability}). Parameter-efficiency accounting
 (Section~\ref{sec:ch5-efficiency}) shows the two families reach comparably
@@ -845,7 +849,7 @@ observations; no confidence intervals or statistical-significance claims
 are made. Differences reported here, including the 4.45-percentage-point
 SimpleAvg-vs-RankExt gap and the RankExt combined arm's $-$2.84-point change
 under the head-learning-rate refinement, are this run's observed outcome.
-Best-epoch selection (by validation cross-entropy, per method and per task)
+Best-epoch selection (by validation cross-entropy, per method and per step)
 means that ``final'' accuracy in this chapter is not uniformly the literal
 last-epoch checkpoint for every method. The forgetting values are
 reproduced exactly from the $R_{i,j}$ matrices of

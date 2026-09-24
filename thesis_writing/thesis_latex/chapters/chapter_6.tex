@@ -94,8 +94,8 @@ full performance difference solely to integration architecture.
 
 SimpleAvg + KD reaches 75.21\% against 75.16\% for plain SimpleAvg, a
 difference too small to support an improvement claim from this single-seed
-experiment. The aggregate hides a redistribution: first-task accuracy
-falls by 9.50 percentage points, the later-tasks mean rises by 2.44 points,
+experiment. The aggregate hides a redistribution: first-step accuracy
+falls by 9.50 percentage points, later-steps accuracy rises by 2.44 points,
 and restricted accuracy rises by 0.58 points
 (Section~\ref{sec:ch5-simpleavg}).
 
@@ -243,14 +243,14 @@ SimpleAvg variant (41.00\% against at least 73.22\%).
 \section{Stability--Plasticity Trade-off}
 \label{sec:ch6-stability-plasticity}
 
-The first-task, later-tasks, BWT, and forgetting values, the $R_{i,j}$
+The first-step, later-steps, BWT, and forgetting values, the $R_{i,j}$
 trajectories, and the head-learning-rate refinement together describe a
 stability--plasticity pattern
 \parencite{kirkpatrick2017overcoming,delange2022continual}: mechanisms that
 improve retention of earlier steps can reduce accuracy on later ones, and
 the balance depends on how strongly and in which combination they are
-applied. SimpleAvg's KD-bearing variants trade first-task accuracy for
-later-task accuracy at roughly unchanged all-seen accuracy
+applied. SimpleAvg's KD-bearing variants trade first-step accuracy for
+later-step accuracy at roughly unchanged all-seen accuracy
 (Section~\ref{sec:ch6-kd-simpleavg}). Within RankExt, the KD+Protect-bearing
 configurations substantially increase both first-step and later-step
 accuracy relative to plain RankExt, whereas FactorOrth alone increases
@@ -262,9 +262,9 @@ configuration-dependent: increasing the multiplier to $\times2$ improves
 three RankExt variants but changes the balance between earlier- and
 later-step performance unfavourably for the combined configuration, whose
 all-seen accuracy falls from 70.76\% to 67.92\%. For that configuration,
-first-task accuracy rises from 60.70\% to 67.75\%, BWT improves from
+first-step accuracy rises from 60.70\% to 67.75\%, BWT improves from
 $-0.1584$ to $-0.0532$, and forgetting improves from 0.2474 to 0.1289, while
-the later-tasks mean falls from 73.28\% to 67.96\%. In this run, the shift
+later-steps accuracy falls from 73.28\% to 67.96\%. In this run, the shift
 toward earlier steps outweighs the gain in retention for the configuration
 with the most retention mechanisms active. Neither learning-rate setting is
 therefore globally preferable for RankExt.
@@ -282,7 +282,7 @@ that short, reduced-scale probes need not extrapolate reliably to a longer
 continual sequence, particularly when several retention mechanisms
 interact.
 
-\section{Open versus Restricted Performance and Cross-Task Competition}
+\section{Open versus Restricted Performance and Cross-Step Competition}
 \label{sec:ch6-open-restricted}
 
 The open/restricted divergence is the most consistent pattern across the

@@ -813,8 +813,8 @@ rule, the other a learned correction that consumes labelled data. Because
 both act only on the output layer, they can rebalance which class wins the
 argmax but cannot recover a representation that has genuinely drifted.
 
-The calibration applied in this thesis belongs to the Weight Aligning
-family and is used only as a partial remedy discussed alongside the third
+The classifier rescaling applied in this thesis belongs to the Weight
+Aligning family and is used only as a partial remedy discussed alongside the third
 research question, not as one of the thesis's contributions. Its basic form
 generalises Weight Aligning from a two-group correction---old classes
 versus new---to a per-step rescaling in which every step's block of rows,
@@ -978,10 +978,10 @@ classifier-competition contribution to apparent forgetting, rather than as a
 definitive causal decomposition of it---is not identified in the literature
 reviewed here; the closest prior study of task-recency bias \parencite{liang2023new}
 diagnoses the effect differently and reports a single evaluation
-mode. This paired diagnostic is the distinctive element. The post-hoc
-classifier calibration the thesis also applies is a generalisation of
-Weight Aligning \parencite{zhao2020maintaining} and is treated as a partial remedy, not
-as a contribution.
+mode. This paired diagnostic is the distinctive element. The classifier
+rescaling used in this thesis is related to Weight Aligning
+\parencite{zhao2020maintaining} and is treated as a supporting
+inference-time mechanism rather than as a contribution.
 
 
 

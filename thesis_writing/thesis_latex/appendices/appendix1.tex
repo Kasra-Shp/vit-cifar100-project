@@ -28,7 +28,7 @@ Projected feature-protection term & --- & Weight 30, KD-bearing RankExt arms onl
 Epochs per step & \multicolumn{2}{l}{Maximum 9 (plain SimpleAvg: early stopping, 5--8)} \\
 Optimizer / scheduler & \multicolumn{2}{l}{AdamW, cosine schedule, 10\% warmup ratio} \\
 Replay & \multicolumn{2}{l}{None (rehearsal-free)} \\
-Calibration & \multicolumn{2}{l}{Confidence-weighted, regime-grouped row-norm calibration only} \\
+Classifier rescaling & \multicolumn{2}{l}{Confidence-weighted, regime-grouped row-norm rescaling} \\
 Seed & \multicolumn{2}{l}{42} \\
 \bottomrule
 \end{tabularx}
@@ -74,7 +74,7 @@ Table~\ref{tab:appA-lr-probe} reports the reduced-scale local decision
 probe discussed in Section~\ref{sec:ch6-lr-probe}, which tested the
 combined RankExt configuration (FactorOrth + full KD + projected feature
 protection) at
-2 tasks, 2 epochs per task, and 10--15 images per class, across two seeds
+2 steps, 2 epochs per step, and 10--15 images per class, across two seeds
 (42 and 123). These figures are explicitly non-benchmark, reduced-scale
 diagnostic evidence, reported here in full only because
 Section~\ref{sec:ch6-lr-probe} refers to them by summary; they are never
@@ -92,8 +92,8 @@ $\times2.0$ & $3.1455 \pm 0.0168$ & $36.50\% \pm 4.24$ & $52.00\%$ \\
 \bottomrule
 \end{tabularx}
 \caption[Local head-LR decision probe]{Local, reduced-scale head-LR
-decision probe on the combined RankExt configuration (2 seeds; 2 tasks, 2
-epochs/task, 10--15 images/class). Non-benchmark diagnostic evidence.}
+decision probe on the combined RankExt configuration (2 seeds; 2 steps, 2
+epochs/step, 10--15 images/class). Non-benchmark diagnostic evidence.}
 \label{tab:appA-lr-probe}
 \end{table}
 
@@ -106,10 +106,10 @@ trajectories shown in the top row of Figure~\ref{fig:ch5-rij-comparison},
 for readers who want precise numbers rather than a colour scale. These are
 in-training evaluations made before classifier rescaling. The ``Final''
 rows of that figure, and its SimpleAvg panels, correspond to the final
-per-task accuracies after classifier rescaling; SimpleAvg has no
-intermediate merged model and therefore no $R_{i,j}$ table. $R_{i,j}$ is the accuracy on task $j$ after
-training has completed through task $i$ ($j \le i$); empty cells are
-structurally undefined (a task cannot be evaluated before it is trained).
+per-step accuracies after classifier rescaling; SimpleAvg has no
+intermediate merged model and therefore no $R_{i,j}$ table. $R_{i,j}$ is the accuracy on step $j$ after
+training has completed through step $i$ ($j \le i$); empty cells are
+structurally undefined (a step cannot be evaluated before it is trained).
 
 \begin{table}[htbp]
 \centering

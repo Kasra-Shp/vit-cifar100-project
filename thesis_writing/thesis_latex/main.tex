@@ -37,25 +37,25 @@
 \begin{document}
 
 % ---- Front matter order ----------------------------------------------------
-% Title page / Abstract / blank / Acknowledgements / Contents / List of
-% Figures / List of Tables / Preface / Chapter 1. Each \blankpage
-% (DEIthesis.cls) is a single page with no header, footer, or printed page
-% number. The Declaration of Originality (frontmatter/declaration.tex) is
-% intentionally not included for now; its wording is pending the author's
-% decision.
+% Title page / blank (physical page 2) / Abstract / Acknowledgements /
+% Preface / Contents / List of Figures / List of Tables / Chapter 1. Each
+% \blankpage (DEIthesis.cls) is a single page with no header, footer, or
+% printed page number. The Declaration of Originality
+% (frontmatter/declaration.tex) is intentionally not included for now; its
+% wording is pending the author's decision.
 \frontmatter
 \maketitle
-
-\input{frontmatter/abstract}
 \blankpage
 
+\input{frontmatter/abstract}
+
 \input{frontmatter/thanks}
+
+\input{frontmatter/preface}
 
 \tableofcontents
 \listoffigures
 \listoftables
-
-\input{frontmatter/preface}
 
 \mainmatter
 
@@ -79,7 +79,7 @@
 % the acknowledgments (frontmatter/thanks.tex), then switches to \appendix.
 \backmatter
 
-\chapter{Appendix 1}
+\chapter{Experimental Details and Supplementary Results}
 \label{app:appendix1}
 \input{appendices/appendix1}
 

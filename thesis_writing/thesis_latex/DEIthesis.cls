@@ -164,6 +164,8 @@
 \def\author#1{\gdef\@author{#1}}
 \def\studentId#1{\gdef\@studentId{#1}}
 \def\advisor#1{\gdef\@advisor{#1}}
+\def\coadvisor#1{\gdef\@coadvisor{#1}}
+\gdef\@coadvisor{}
 \def\university#1{\gdef\@university{#1}}
 \def\department#1{\gdef\@department{#1}}
 \def\mastername#1{\gdef\@mastername{#1}}
@@ -240,6 +242,10 @@
       {\setstretch{1}\textbf{\Large \@author}} \\[0.4cm] \raggedright \large Student ID: \@studentId &
       \raggedleft {\setstretch{1}\large Advisor} \\
       \raggedleft \textbf{\Large \@advisor}
+      \ifx\@coadvisor\@empty\else
+        \\[0.4cm] \raggedleft {\setstretch{1}\large Co-supervisor} \\
+        \raggedleft \textbf{\Large \@coadvisor}
+      \fi
     \end{tabular}
   \end{center}
 

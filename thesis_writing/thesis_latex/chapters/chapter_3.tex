@@ -332,7 +332,7 @@ classifier is assembled by copying, for every class, the weight row and
 bias from the step that introduced it, so that classifier assembly is, by
 construction, a separate operation from the LoRA-delta averaging described
 above. The full classifier mechanism, including how these rows interact
-with calibration, is developed in Section~\ref{sec:ch3-classifier-calibration}.
+with classifier rescaling, is developed in Section~\ref{sec:ch3-classifier-calibration}.
 
 A configured rank of 80 describes a single SimpleAvg adapter, not the
 final combined update: the final dense merged update is not constrained to
@@ -419,7 +419,7 @@ As with SimpleAvg, the classifier is not folded into the low-rank update:
 a single classifier persists across the whole sequence, with rows for
 previously introduced classes carried forward unchanged and only the rows
 for the current step's classes updated at that step. The full row-training
-and calibration mechanism is again deferred to Section~\ref{sec:ch3-classifier-calibration}. Growing-rank,
+and classifier-rescaling mechanism is again deferred to Section~\ref{sec:ch3-classifier-calibration}. Growing-rank,
 persistent low-rank adaptation of this kind is not introduced by this
 thesis; it instantiates a design already present in the continual-LoRA
 literature discussed in Section~\ref{sec:lora-cl}. What this thesis contributes is the
@@ -431,8 +431,8 @@ To summarise the contrast that runs through the remainder of this thesis:
 SimpleAvg learns independently at each step, reconstructs a dense update
 per step, and averages these updates once after the full sequence has been
 trained; RankExt instead retains every previously learned block, freezes
-it permanently, appends one new trainable block per step, and persists a
-single evolving model throughout the sequence. Both strategies are, in
+it permanently, appends one new trainable block per step, and carries
+forward a single evolving adapter state throughout the sequence. Both strategies are, in
 Section~\ref{sec:ch3-stabilization}, paired with additional stabilisation mechanisms that act on
 top of this base architecture.
 
@@ -710,7 +710,7 @@ returns to this property once both evaluation modes have been defined.
 For any fixed checkpoint and test example, open and restricted evaluation
 use the same model, forward pass, and logits; only the set of logits
 eligible for the final argmax differs. The paired open/restricted headline
-diagnostic reported for the completed model uses the final calibrated model
+diagnostic reported for the completed model uses the final model after classifier rescaling
 (Section~\ref{sec:ch3-classifier-calibration}). Trajectory-based
 measurements --- backward transfer and forgetting
 (Section~\ref{sec:ch3-bwt-forgetting}) --- additionally require

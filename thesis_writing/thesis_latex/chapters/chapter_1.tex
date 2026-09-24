@@ -197,13 +197,13 @@ step: new rank capacity is appended for the incoming classes, while
 previously learned rank blocks remain active and are hard-frozen, so that
 only the newly appended capacity is trained. Within this comparison,
 SimpleAvg provides a reference based on independently trained per-step
-adaptations, while RankExt tests how closely a single persistent model
-whose adaptation capacity is introduced incrementally can approach that
+adaptations, while RankExt tests how closely a persistent, growing-rank
+adapter with incrementally introduced capacity can approach that
 reference. Combining independently trained components after the fact, and
 extending a single adaptation's capacity over time, both build on broader
 ideas in the literature reviewed in Chapter~\ref{ch:literature}; this
-thesis examines the retention--plasticity behaviour each produces under one
-shared rehearsal-free protocol. Figure~\ref{fig:ch1-integration-strategies}
+thesis examines the retention--plasticity behaviour each produces within a
+shared rehearsal-free experimental framework. Figure~\ref{fig:ch1-integration-strategies}
 summarises the two strategies.
 
 \begin{figure}[htbp]
@@ -268,8 +268,8 @@ low-rank adaptation is maintained throughout, and its cumulative rank grows
 over the sequence: previously learned rank blocks are retained and
 hard-frozen while new rank capacity is appended at each step. Within this
 comparison, SimpleAvg provides a reference based on independently trained
-per-step adaptations, while RankExt tests how closely a single persistent
-model whose adaptation capacity is introduced incrementally can approach
+per-step adaptations, while RankExt tests how closely a persistent,
+growing-rank adapter with incrementally introduced capacity can approach
 that reference. The precise mechanics of both families are given in
 Chapter~\ref{ch:methodology}.
 
@@ -338,8 +338,8 @@ Chapter~\ref{ch:literature} differ in architecture, training procedure,
 evaluation protocol, or deployment assumptions, preventing a direct
 like-for-like comparison of the two strategies considered here. This
 comparison is especially informative for RankExt, since it asks how
-closely a single persistent model whose adaptation capacity is introduced
-incrementally can approach the reference provided by independently trained
+closely a persistent, growing-rank adapter with incrementally introduced
+capacity can approach the reference provided by independently trained
 per-step adaptations and post-hoc averaging.
 
 The second component concerns stabilisation within the persistent RankExt
@@ -394,8 +394,8 @@ dense-update averaging (SimpleAvg) compare in their trade-off between
 old-class retention and new-class plasticity?
 
 SimpleAvg provides the independent per-step reference for this
-comparison, while RankExt tests how closely a persistent model with
-incrementally introduced adaptation capacity can approach that reference
+comparison, while RankExt tests how closely a persistent, growing-rank
+adapter with incrementally introduced capacity can approach that reference
 and what retention--plasticity trade-off accompanies doing so. RQ1 does
 not presuppose a numerical outcome in favour of either family. Because the
 two families are not matched in effective adaptation capacity, supporting
@@ -444,7 +444,7 @@ controlled. The main contributions of this thesis are:
    (SimpleAvg), which serves as the independent-per-step reference, with
    persistent rank extension (RankExt), in which a single adaptation grows
    incrementally while previously learned rank blocks remain frozen and
-   active, within a common protocol using the same backbone, class
+   active, within the primary controlled CIFAR-100 protocol, using the same backbone, class
    partition, and evaluation framework. The contribution is the resulting
    characterisation of how each strategy trades old-class retention against
    new-class plasticity, and of how closely the persistent RankExt design

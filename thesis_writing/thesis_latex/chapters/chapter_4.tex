@@ -53,7 +53,7 @@ interprets what those settings produced.
 \label{sec:ch4-datasets}
 
 Two datasets are used. \textbf{CIFAR-100} \parencite{krizhevsky2009learning}
-is the primary benchmark: 100 fine-grained object classes, 50,000 training
+is the primary benchmark: 100 object classes, 50,000 training
 images and 10,000 test images, loaded in its native (unshuffled) label
 order. Unless stated otherwise, every dataset-specific setting in this
 chapter refers to CIFAR-100.
@@ -319,7 +319,7 @@ classes, not an average of separately computed per-step accuracies.
 from the same model's logits on the same examples; open accuracy competes
 every seen class, restricted accuracy masks to one step's own class group.
 Both open and restricted class-group accuracies are reported using the
-final calibrated model.
+final model after classifier rescaling.
 \item \textbf{Backward transfer (BWT)} and \textbf{forgetting} --- computed
 exactly as defined in Section~\ref{sec:ch3-bwt-forgetting}. BWT is reported
 for both integration strategies (with SimpleAvg's diagonal reference

@@ -1,0 +1,80 @@
+% ============================================================================
+%  Appendix B -- Core Implementation Listings
+% ----------------------------------------------------------------------------
+%  The two listings are presentation copies kept in code/. Their executable
+%  statements were checked (AST comparison, comments/docstrings ignored)
+%  against the canonical production script used for the primary CIFAR-100
+%  run; only comments, docstrings, and whitespace differ.
+% ============================================================================
+
+\lstdefinestyle{appendixListing}{
+  style=codeSnippet,
+  language=Python,
+  basicstyle=\ttfamily\footnotesize,
+  numberstyle=\scriptsize\color{numColor},
+  numbers=left,
+  numbersep=6pt,
+  xleftmargin=2.2em,
+  framexleftmargin=2.2em,
+  breaklines=true,
+  breakatwhitespace=true,
+  postbreak=\mbox{\ensuremath{\hookrightarrow}\space},
+  showstringspaces=false,
+  columns=fullflexible,
+  keepspaces=true,
+  upquote=true
+}
+
+The listings in this appendix reproduce the core implementation logic
+underlying the two integration strategies compared in this thesis. Only the
+integration-specific code is shown; data loading, training loops, logging,
+plotting, diagnostics, and experiment orchestration are omitted. The
+executable logic is extracted from the production implementation used for
+the primary experiment; comments and docstrings have been lightly cleaned
+for readability, and some long statements re-wrapped.
+
+\section{SimpleAvg Dense-Update Merge}
+\label{sec:appB-simpleavg}
+
+SimpleAvg trains one independent LoRA specialist per incremental step, each
+starting from the pretrained backbone. At the end of every step,
+\texttt{extract\_lora\_state} represents the specialist's low-rank update as
+a dense weight delta $s\,BA$ for every adapted module and stores it together
+with the specialist's classifier. At final assembly,
+\texttt{simple\_average\_\allowbreak deltas} averages the stored dense deltas
+module-wise, and \texttt{apply\_deltas\_\allowbreak to\_base} adds the averaged deltas to
+a fresh pretrained backbone and copies each class's classifier row from the
+specialist that trained that class. The LoRA factors $A$ and $B$ are never
+averaged.
+
+\lstinputlisting[
+  style=appendixListing,
+  caption={[SimpleAvg dense-update merge]Core SimpleAvg implementation:
+    arithmetic averaging of independently learned dense LoRA updates
+    followed by fusion into a fresh pretrained backbone and class-wise
+    classifier-row assembly.},
+  label={lst:simpleavg-merge}
+]{code/simpleavg_merge.py}
+
+\section{RankExt Persistent Rank Extension}
+\label{sec:appB-rankext}
+
+RankExt maintains a single persistent LoRA adaptation across the
+incremental sequence. At each step, \texttt{build\_rank\_\allowbreak extension\_\allowbreak model}
+wraps every target projection in a \texttt{Growing\allowbreak RankLoRA\allowbreak Linear} module
+whose frozen slice holds all factors learned at earlier steps and whose new
+slice is a freshly initialised rank-16 block, so that the cumulative rank
+follows $[16,32,48,64,80]$. The earlier blocks are retained, remain active
+in the forward pass, and are frozen; among the LoRA parameters, only the
+newly appended block is optimised, and the backbone stays frozen. At the end
+of each step, \texttt{extract\_rank\_\allowbreak extension\_\allowbreak state} concatenates the
+frozen and new factors into the persistent state from which the next step's
+model is built.
+
+\lstinputlisting[
+  style=appendixListing,
+  caption={[RankExt persistent rank extension]Core RankExt implementation:
+    persistent LoRA capacity growth by appending new rank blocks while
+    retaining previously learned blocks as frozen, active components.},
+  label={lst:rankext-extension}
+]{code/rankext_extension.py}

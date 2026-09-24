@@ -1,0 +1,41 @@
+\chapter*{Abstract}
+\addcontentsline{toc}{chapter}{Abstract}
+
+Rehearsal-free class-incremental learning with parameter-efficient
+fine-tuning asks how a low-rank-adapted model can absorb a sequence of new
+classes without storing past data and without catastrophically forgetting
+what it already knows. This thesis studies two ways of organising LoRA
+adaptation across such a sequence on a frozen CLIP ViT-B/16 backbone.
+\emph{SimpleAvg} trains an independent, fixed-rank (rank-80) LoRA
+specialist for each step and merges all specialists once, at the end, into
+a single dense weight update; it is treated throughout as a strong
+reference baseline rather than as a proposed contribution. \emph{RankExt}
+instead grows one persistent, cumulative low-rank adapter across the
+incremental sequence, adding a new rank block at each step while all earlier blocks
+remain frozen but active, so that adaptation capacity is introduced
+incrementally rather than specialist by specialist. Both strategies are
+evaluated, with and without knowledge distillation and orthogonality-based
+stabilisation, under a common five-step/twenty-class-per-step
+class-incremental protocol on CIFAR-100, using paired task-agnostic (open)
+and task-oracle (restricted) evaluation to help distinguish what a model
+still discriminates from what it can still express under output-space
+competition with later steps.
+
+SimpleAvg is unexpectedly strong on its own, reaching 75.16\% all-seen
+accuracy with no auxiliary mechanism. Plain RankExt is far weaker, at
+34.99\%, despite retaining high restricted accuracy, suggesting that
+cross-step output-space competition contributes substantially to its poor
+open performance while within-step discrimination remains comparatively
+strong. This divergence between
+restricted and open performance, which persists even where open accuracy
+is poor, is a central diagnostic finding of this thesis. Auxiliary
+stabilisation recovers most of RankExt's gap: combining knowledge
+distillation with projected feature protection and a factor-space
+orthogonality penalty brings its best configuration to 70.76\% all-seen
+accuracy, within 4.45 percentage points of SimpleAvg's best result. The
+comparison is not framed as a single winner-take-all contest: the central
+question is how closely a persistent strategy that grows its adaptation
+capacity incrementally can approach a strong, independently-trained
+reference, and at what retention--plasticity cost. All reported results
+are single-seed; multi-seed replication is identified as a priority for
+confirming these findings.

@@ -1,0 +1,1016 @@
+% ============================================================================
+%  Chapter 3 -- Methodology
+% ----------------------------------------------------------------------------
+%  FORMAT CONVERSION of thesis_writing/chapter_3/chapter_3_full_v2.md
+%  (frozen, scientifically approved draft; source files, in order:
+%  sections_3_1_3_2_v2.md, section_3_3_v2.md, section_3_4_v1.md,
+%  section_3_5_v2.md, section_3_6_v1.md, section_3_7_v1.md). Scientific
+%  prose, wording, equations, notation, tables, method names and caveats are
+%  preserved; only changes required for valid LaTeX have been made (math
+%  delimiters, citation commands, cross-references, list/table environments,
+%  labels). This is a FORMAT CONVERSION, not a rewrite -- see
+%  thesis_latex/ch2_ch3_latex_integration_audit.md Part 10 for the explicit
+%  content-preservation diff against the .md source.
+%
+%  Source editorial history (metadata, not chapter prose; relocated here
+%  from the .md source's own per-section headers, exactly as Chapter 2's own
+%  conversion relocated its assembly note):
+%   - 3.1/3.2 (v2): grounding citation added to the opening sentence
+%     (De Lange et al., 2022); "independent-per-step integration strategy" /
+%     "persistent, growing-rank strategy" replaced by the names SimpleAvg /
+%     RankExt, matching Chapter 2 Section~\ref{sec:lora-cl}'s naming.
+%   - 3.3 (v2): two precision/editorial corrections to the SimpleAvg
+%     rank-interpretation paragraph and the RankExt schedule-attribution
+%     sentence (section_3_3_audit_v1.md).
+%   - 3.5 (v2): the classifier weight matrix, previously bare $W$, is
+%     written $W_{cls}$ throughout, to avoid colliding with Section 3.2's
+%     bare $W$ (the LoRA-adapted target-layer weight, $W=W_0+\Delta W$) --
+%     chapter_3_full_audit.md's notation-collision table.
+%   - No fact, equation, or citation was changed by either v1->v2 pass in
+%     any section.
+%
+%  CITATION SYSTEM: same as Chapter 2 (biblatex, style=authoryear,
+%    backend=biber). All citation keys used here already exist in
+%    references.bib and are already cited in Chapter 2 -- no new
+%    bibliography entries were required for Chapter 3.
+%
+%  LABELS: semantic, ch3- prefixed, mirroring Chapter 2's sec:/fig:/tab:
+%    convention. The chapter label is \label{ch:methodology} -- kept
+%    identical to the placeholder already used by every existing
+%    \ref{ch:methodology} in Chapter 2 (and to the ch:introduction /
+%    ch:experimental-setup / ch:results / ch:discussion-conclusion pattern
+%    used by every other chapter placeholder) rather than introducing a
+%    differently-prefixed chap:methodology, which would require renaming
+%    ~15 already-correct Chapter 2 cross-references for no functional gain.
+%    See ch2_ch3_latex_integration_audit.md Part 9 for this decision.
+%
+%  PROCEDURES (3.7.2): rendered as enumerate lists, matching the source's
+%    own numbered-step prose exactly. No algorithm/algorithmic package was
+%    added -- the source is a sequential procedure description, not
+%    pseudocode with loops/conditionals, so a numbered list is the least
+%    intrusive faithful representation.
+% ============================================================================
+
+\chapter{Methodology}
+\label{ch:methodology}
+
+\section{Problem Formulation and Rehearsal-Free CIL Setting}
+\label{sec:ch3-problem-formulation}
+
+This thesis studies class-incremental learning as a sequence of $T$
+incremental steps, $t = 1, \dots, T$ \parencite{delange2022continual}. At step $t$,
+the learner is given a training set $D_t$ containing labelled examples for
+a set of classes $C_t$ introduced at that step; classes are disjoint across
+steps, so $C_i \cap C_j = \emptyset$ for $i \neq j$, and the cumulative
+label set observed up to and including step $t$ is $C_{1:t} = C_1 \cup
+\dots \cup C_t$. The partition into steps is fixed in advance and is not
+revisited during training. This formulation is the class-incremental
+setting already introduced in Section~\ref{sec:continual-learning}: the label space grows
+monotonically, and no task identifier distinguishes which step a given
+class belongs to once training has moved past it.
+
+The constraint adopted throughout this thesis is rehearsal-free training:
+no raw example from a previous step's training set $D_i$, $i<t$, is stored
+or replayed at step $t$. Only the current step's data, $D_t$, is available
+for gradient-based training at that step. This constraint should not be
+read as a broader prohibition on carrying information forward. As
+established in Section~\ref{sec:rehearsal-free}, rehearsal-free is not equivalent to a
+memory-free or data-free setting; a rehearsal-free learner may still retain
+model state between steps. In this thesis, the retained state can include
+the frozen backbone parameters shared by all steps, adaptation parameters
+produced by earlier steps, the classifier's accumulated parameters, and,
+where a particular training objective calls for one, a frozen model or
+classifier snapshot obtained from an earlier point in the sequence. None of
+this constitutes access to raw past data: no image or label from $D_i$,
+$i<t$, is ever re-examined. The specific forms this retained state takes
+for each of the two compared integration strategies, and for the
+distillation objective that makes use of a frozen snapshot, are given in
+Sections~\ref{sec:ch3-integration-strategies} and~\ref{sec:ch3-stabilization}.
+
+Evaluation in this setting is task-agnostic. At any point after step $t$,
+the model is queried with an input belonging to one of the classes in
+$C_{1:t}$ and must produce a prediction over that entire cumulative label
+set, without being told which step introduced the correct class. This is
+the general class-incremental inference condition and is the primary
+regime in which every method compared in this thesis is assessed. A
+diagnostic decomposition of this evaluation --- separating what the model
+predicts when forced to compete against all classes seen so far from what
+it predicts when the candidate classes are restricted to a known subset ---
+is introduced later, in Section~\ref{sec:ch3-open-restricted}, once the classifier mechanism itself
+has been described; it is not needed to state the basic inference
+condition here.
+
+Together, the rehearsal-free constraint and task-agnostic inference define
+the methodological difficulty this thesis addresses. Each incremental step
+must extend the model's competence to the new classes in $C_t$ without
+degrading its competence on the classes in $C_{1:t-1}$, and it must do so
+without recourse to any stored example of those earlier classes. This is
+an instance of the stability--plasticity trade-off discussed in Section~\ref{sec:continual-learning},
+sharpened by the absence of a replay buffer. It is this specific
+difficulty --- retaining prior competence under a hard no-replay constraint,
+using only retained model state --- that motivates
+the two low-rank integration strategies compared in this thesis, together
+with the additional stabilisation mechanisms introduced alongside them in
+Section~\ref{sec:ch3-stabilization}.
+
+To describe these mechanisms precisely, it is convenient to write the model
+available after step $t$ as $f_{\theta_t}$, where the parameter set
+$\theta_t$ is partitioned into three kinds of components: backbone
+parameters, which are pretrained and frozen for the entire sequence and
+never depend on $t$; adaptation parameters, introduced and updated by the
+low-rank adaptation mechanism described in Section~\ref{sec:ch3-lora-framework}, whose organisation
+across steps depends on which integration strategy is in use; and
+classifier parameters, which map the shared representation onto the
+cumulative label space and are updated as the label space grows. Sections~\ref{sec:ch3-integration-strategies}
+and~\ref{sec:ch3-classifier-calibration} return to the adaptation and classifier components
+respectively. One terminological caution is worth stating at this point,
+before either strategy is introduced: because the two strategies compared
+here organise their adaptation parameters differently over the incremental
+sequence, a quantity as basic as ``rank'' cannot be used unqualified. The
+rank configured for a single low-rank adapter, the rank added at a single
+step of a persistent adapter, the cumulative rank such a persistent adapter
+reaches after several steps, and the rank of a dense update obtained by
+combining several independently learned adapters are, in general, four
+different quantities. Section~\ref{sec:ch3-lora-framework} introduces the low-rank update itself and
+fixes the first of these; the remaining distinctions are made precise once
+each strategy's mechanics are described in Section~\ref{sec:ch3-integration-strategies}.
+
+\subsection{Dataset and Protocol Instantiation}
+\label{sec:ch3-protocol-instantiation}
+
+The formulation above is deliberately independent of any particular
+dataset, total class count, or number of incremental steps: it is stated
+in terms of a dataset $D$, a total class count $C$, a number of steps $T$,
+and a per-step class group $C_t$ of size $|C_t|$. Every method definition,
+training objective, evaluation protocol, and metric given in the remainder
+of this chapter is expressed in exactly these terms and does not itself
+depend on any concrete choice of $C$, $T$, or $|C_t|$. This subsection
+fixes the concrete instantiation used to obtain the results reported in
+this thesis; a future dataset or protocol would be added here, as an
+additional row of Table~\ref{tab:ch3-protocol-config}, without requiring
+any change to the general methodology in the rest of this chapter.
+
+The dataset used throughout this thesis is CIFAR-100, with $C=100$
+classes. The \emph{primary} protocol partitions these into five incremental
+steps of 20 classes each ($T=5$, $|C_t|=20$, $5\times20$); this is the
+canonical protocol against which every method in this chapter is defined
+and compared, and the one used for the main results reported in
+Chapter~\ref{ch:results}. Unless a passage explicitly notes otherwise,
+every concrete number stated elsewhere in this chapter --- a rank
+schedule, the classifier's dimensionality, and so on --- refers to this
+primary protocol.
+
+Holding $C=100$ fixed, the same class set could also be partitioned more
+coarsely or more finely. No such alternative protocol depth is evaluated in
+this thesis; protocol depth is discussed only as literature background
+(Section~\ref{sec:protocol-depth}) and as a direction for future work
+(Section~\ref{sec:ch6-future-work}).
+
+\begin{table}[htbp]
+\centering
+\begin{tabularx}{\textwidth}{@{}l c X@{}}
+\toprule
+\textbf{Dataset} & \textbf{Total classes ($C$)} & \textbf{Main protocol} \\
+\midrule
+CIFAR-100 & 100 & 5 incremental steps $\times$ 20 classes \\
+\bottomrule
+\end{tabularx}
+\caption[Dataset and protocol configuration]{Dataset and primary protocol
+configuration used in this thesis. A future dataset would extend this
+table with one additional row; no other part of this chapter's methodology
+depends on its contents.}
+\label{tab:ch3-protocol-config}
+\end{table}
+
+\section{LoRA Adaptation Framework}
+\label{sec:ch3-lora-framework}
+
+Both integration strategies compared in this thesis adapt the same frozen
+pretrained backbone. At the level of backbone LoRA adaptation, the two
+strategies share the same low-rank update mechanism and differ in how those
+parameters are organised and integrated across steps. This section defines the shared
+mechanism; the two strategies themselves are introduced in Section~\ref{sec:ch3-integration-strategies}.
+
+The backbone is the vision encoder of CLIP ViT-B/16 \parencite{radford2021learning},
+a Vision Transformer \parencite{dosovitskiy2021image}. Its parameters are frozen
+throughout training, at every step and for both compared strategies: no
+gradient updates the pretrained weights themselves. The pooled
+representation it produces is passed to a linear classifier, described
+separately in Section~\ref{sec:ch3-classifier-calibration}. Adaptation is confined entirely to a small set
+of additional low-rank parameters injected into the backbone, following
+the low-rank adaptation (LoRA) formulation of \cite{hu2021lora}.
+
+For a frozen weight matrix $W_0 \in \mathbb{R}^{d_{out} \times d_{in}}$ of
+a target linear layer, LoRA leaves $W_0$ unchanged and represents the
+adaptation as an additive low-rank term:
+
+\begin{equation}
+\label{eq:ch3-lora-update}
+W = W_0 + \Delta W, \qquad \Delta W = s \, B A,
+\end{equation}
+
+where $A \in \mathbb{R}^{r \times d_{in}}$ and $B \in \mathbb{R}^{d_{out}
+\times r}$ are the trainable low-rank factors, $r$ is the rank of the
+update, and $s$ is a scaling factor applied to the product. Because
+$\Delta W$ is formed as the product of two rank-$r$ factors, a single such
+update has rank at most its configured rank $r$. The scaling factor is set as the ratio of a
+configured constant $\alpha$ to the rank, $s = \alpha / r$, so that the
+effective contribution of the adapter can be held fixed even if $r$ is
+later changed. In the implementation studied here, LoRA is applied to the
+query and value projection matrices of every attention block in the
+backbone; this is the sole set of weights either compared strategy is
+permitted to adapt, and it is the same set for both --- a point worth stating
+explicitly, since it is the kind of configuration detail under which the
+two strategies could otherwise be made to differ without that difference
+being part of either method's definition.
+
+Within this shared framework, SimpleAvg (Section~\ref{sec:ch3-simpleavg}) is configured with
+rank $r = 80$ and $\alpha = 160$, giving a scaling of $s = \alpha/r = 2$.
+RankExt (Section~\ref{sec:ch3-rankext}) organises its low-rank parameters differently
+across the incremental sequence --- a distinction deferred in full to that
+section --- but is configured so that its effective scaling is the same
+constant, $s = 2$, at every step regardless of how much rank it has
+accumulated. Using the same effective LoRA scaling for both strategies
+ensures that observed differences between them are not attributable simply
+to a difference in LoRA scaling.
+
+Rank itself, however, is not a single quantity once adaptation is spread
+across several incremental steps, and it is worth fixing the vocabulary
+before either strategy is described. The rank $r$ fixed above for a single
+LoRA factorisation is its \emph{configured} rank. A persistent adapter that
+accumulates rank over the sequence has, at a given step, an \emph{incremental}
+rank --- the amount added at that step --- and a \emph{cumulative} rank --- the
+running total after that step; Section~\ref{sec:ch3-rankext} gives both a precise
+definition. A separate quantity again is the rank of a \emph{dense combination}
+of several independently learned low-rank updates: summing or averaging
+several rank-$r$ updates does not, in general, produce a matrix whose rank
+is still bounded by $r$. Concretely, and stated here only as a bound on
+notation rather than as a result: each SimpleAvg adapter has configured
+rank 80, but when several such independently learned dense updates are
+later combined into one, the resulting combined update is not thereby
+constrained to rank 80 as well.
+The exact combination rule, and what this implies for the comparison
+between the two strategies, is developed in Section~\ref{sec:ch3-integration-strategies} and revisited,
+with supporting evidence, in later chapters.
+
+The remainder of this chapter builds on this shared framework. Section~\ref{sec:ch3-integration-strategies}
+introduces the two ways in which this thesis organises low-rank adaptation
+across a continual sequence --- an independent adapter retrained at every
+step and combined afterwards, denoted SimpleAvg, and a persistent adapter
+whose rank is extended step by step, denoted RankExt --- and shows precisely
+how each retains state consistently with the rehearsal-free constraint of
+Section~\ref{sec:ch3-problem-formulation}.
+
+\section{Continual LoRA Integration Strategies}
+\label{sec:ch3-integration-strategies}
+
+Both strategies compared in this thesis adapt the frozen backbone using
+exactly the low-rank update defined in Section~\ref{sec:ch3-lora-framework}; nothing in the
+mechanism itself differs between them. What differs is how the low-rank
+parameters introduced at successive steps are retained and integrated over
+the continual sequence. SimpleAvg trains an independent adapter at each
+step and combines the resulting updates by dense averaging once training
+is complete. RankExt instead maintains a single persistent adapter whose
+rank grows over the sequence: the low-rank blocks learned at earlier steps
+are kept and frozen, while a new block is appended and trained at each
+step. The two subsections below define each strategy in turn; no claim
+about their relative empirical performance is made here.
+
+\subsection{SimpleAvg}
+\label{sec:ch3-simpleavg}
+
+At each step $t$, SimpleAvg trains a fresh LoRA adapter on a fresh copy of
+the frozen pretrained backbone, entirely independently of the adapters
+trained at any other step. Independence here is architectural, not only a
+matter of not sharing gradients: step $t$'s adapter is attached to the
+original pretrained weights, not to a backbone already carrying the
+adaptation learned at step $t-1$, so no step begins from an accumulated
+or partially adapted state. No SimpleAvg adapter parameters are carried
+forward as trainable state from one step to the next. Consistently with
+Section~\ref{sec:ch3-problem-formulation}'s rehearsal-free
+constraint, no raw example from an earlier step's training set is
+available while step $t$'s adapter is being trained. The adapter is
+configured as fixed in Section~\ref{sec:ch3-lora-framework}: rank $r=80$, $\alpha=160$, giving
+scaling $s=\alpha/r=2$, applied to the query and value projection matrices
+of every attention block. Each step also trains its own classifier head
+from a fresh initialisation, over the full label space but with only that
+step's classes ever positive; how this head is later reconciled with the
+heads trained at other steps is addressed below.
+
+For each adapted layer $m$, training step $t$ produces low-rank factors
+$A_t^{(m)}, B_t^{(m)}$, from which the per-step dense update
+$\Delta W_t^{(m)}$ is reconstructed using the LoRA rule of
+Equation~\eqref{eq:ch3-lora-update}. It is this dense update, not the factors $A_t^{(m)}$ and $B_t^{(m)}$
+themselves, that SimpleAvg later combines across steps; the factors are
+never averaged directly. Once all $T$ steps have been trained, the final
+model is formed by taking the elementwise arithmetic mean of the $T$
+per-step dense updates for each adapted layer,
+
+\begin{equation}
+\label{eq:ch3-simpleavg-merge}
+\Delta \bar{W}^{(m)} = \frac{1}{T} \sum_{t=1}^{T} \Delta W_t^{(m)},
+\qquad
+W_{final}^{(m)} = W_0^{(m)} + \Delta \bar{W}^{(m)},
+\end{equation}
+
+and this mean --- not a sum --- is added to the frozen base weight to obtain
+the final adapted model. This combination is performed exactly once, after
+the entire continual sequence has been trained; SimpleAvg does not rebuild
+a merged model after every step, and no intermediate merged model is ever
+evaluated as the method's output. A separate, training-time-only
+artifact --- a frozen snapshot obtained by merging only the steps already
+trained so far, rebuilt at the start of each subsequent step --- is used as
+a teacher for one of the stabilisation mechanisms introduced in Section~\ref{sec:ch3-kd}.
+This snapshot is distinct from, and computed separately from, the
+single final evaluation merge described above, and plays no further role
+in this section.
+
+The classifier that accompanies the final merged backbone is not itself
+averaged. Each step trains its own head, as noted above, but only the rows
+belonging to that step's classes are ever meaningfully trained; the final
+classifier is assembled by copying, for every class, the weight row and
+bias from the step that introduced it, so that classifier assembly is, by
+construction, a separate operation from the LoRA-delta averaging described
+above. The full classifier mechanism, including how these rows interact
+with calibration, is developed in Section~\ref{sec:ch3-classifier-calibration}.
+
+A configured rank of 80 describes a single SimpleAvg adapter, not the
+final combined update: the final dense merged update is not constrained to
+the configured rank of a single rank-80 adapter. This combination rule is a direct instantiation,
+for low-rank
+adapters, of the unweighted dense-averaging baseline already positioned
+against the broader model-merging literature in Section~\ref{sec:model-merging}: SimpleAvg is
+presented here as a deliberate baseline, independent per-step training
+followed by post-hoc dense averaging with no clustering, weighting, or
+orthogonalisation of the contributions being combined, included to give a
+reference point for the persistent, growing-rank strategy described next.
+It is not put forward as a methodological contribution of this thesis.
+
+\subsection{Rank Extension (RankExt)}
+\label{sec:ch3-rankext}
+
+RankExt organises the same low-rank adaptation mechanism differently.
+Rather than training a fresh adapter at every step, it maintains one
+persistent model across the entire sequence. At each step, every low-rank
+block learned at a previous step is retained and kept frozen, and exactly
+one new block is appended and trained; the pretrained base weight $W_0$
+remains frozen throughout, as it does for SimpleAvg.
+
+Write the cumulative rank reached after step $t$ as $R_t$ (with $R_0=0$),
+and the block of factors learned at step $k$ as $A_k, B_k$, of incremental
+rank $R_k - R_{k-1}$. The cumulative update at step $t$ is then the sum of
+the contributions of every block learned so far,
+
+\begin{equation}
+\label{eq:ch3-rankext-cumulative}
+\Delta W_t = s \sum_{k=1}^{t} B_k A_k,
+\end{equation}
+
+where blocks $k<t$ are frozen --- they receive no gradient and are not
+included in any optimiser's parameter group --- and only block $k=t$ is
+trainable, with the same constant scaling $s=2$ fixed in Section~\ref{sec:ch3-lora-framework}
+applied uniformly to every block regardless of when it was learned. The
+implementation obtains this sum by concatenating the frozen and new factor
+matrices rather than by literally summing block-wise products, but the two
+are equivalent for a linear map: writing $A^{(t)}$ as the row-concatenation
+of all blocks up to $t$ and $B^{(t)}$ as their column-concatenation,
+$B^{(t)}A^{(t)} = \sum_{k=1}^{t} B_k A_k$.
+
+In the primary $5\times20$ protocol (Section~\ref{sec:ch3-protocol-instantiation})
+used for the main comparison, the cumulative RankExt schedule is
+$R_t=[16,32,48,64,80]$ for $t=1,\dots,5$, corresponding to an increment of
+rank 16 at each step. This is the schedule against which RankExt is
+compared to SimpleAvg in the main results of this thesis; it is a
+configurable property of the architecture, not a consequence of the
+general formulation above. A different partition of the same class set would require a
+correspondingly adjusted schedule; no such alternative is evaluated in this
+thesis. A previously learned block's parameters have zero gradient from
+the step after it was learned onward, contribute to the forward pass
+exactly as before, and are verified to remain unchanged for the remainder
+of training; freezing is total, not partial. A newly appended block's $A$
+factor is initialised as any fresh LoRA factor would be, while its $B$
+factor is initialised to zero, so that a block contributes nothing to the
+forward pass before it has been trained.
+
+RankExt's effective scaling remains the constant $s=2$ at every step,
+independently of how much cumulative rank has been reached. The
+implementation derives, purely for internal bookkeeping, an $\alpha$-like
+quantity proportional to the cumulative rank so that this ratio is
+preserved as the rank grows; this derived quantity is not an independently
+tuned hyperparameter and should not be read as one.
+
+The two architectures are therefore configured with an explicit and
+intentional asymmetry in how much adaptation capacity is introduced at
+each step: SimpleAvg trains a fresh rank-80 adapter at every step, while
+the canonical RankExt configuration --- in the primary $5\times20$ protocol
+--- adds rank 16 per step and reaches cumulative rank 80 only at the final
+step. This asymmetry is disclosed
+here as part of the architectural definition; its experimental
+consequences are not interpreted in this chapter, and additional
+capacity-sensitivity configurations of RankExt are examined later in this
+thesis. Because RankExt's cumulative update at step $t$ is formed from
+concatenated factors of total rank $R_t$, its rank cannot exceed $R_t$,
+and hence, under the canonical schedule, cannot exceed 80.
+
+As with SimpleAvg, the classifier is not folded into the low-rank update:
+a single classifier persists across the whole sequence, with rows for
+previously introduced classes carried forward unchanged and only the rows
+for the current step's classes updated at that step. The full row-training
+and calibration mechanism is again deferred to Section~\ref{sec:ch3-classifier-calibration}. Growing-rank,
+persistent low-rank adaptation of this kind is not introduced by this
+thesis; it instantiates a design already present in the continual-LoRA
+literature discussed in Section~\ref{sec:lora-cl}. What this thesis contributes is the
+controlled comparison between this persistent strategy and the
+independent-averaging strategy of Section~\ref{sec:ch3-simpleavg}, together with the
+stabilisation mechanisms introduced next, in Section~\ref{sec:ch3-stabilization}.
+
+To summarise the contrast that runs through the remainder of this thesis:
+SimpleAvg learns independently at each step, reconstructs a dense update
+per step, and averages these updates once after the full sequence has been
+trained; RankExt instead retains every previously learned block, freezes
+it permanently, appends one new trainable block per step, and persists a
+single evolving model throughout the sequence. Both strategies are, in
+Section~\ref{sec:ch3-stabilization}, paired with additional stabilisation mechanisms that act on
+top of this base architecture.
+
+\section{Continual Stabilisation Mechanisms}
+\label{sec:ch3-stabilization}
+
+Neither integration strategy defined in Section~\ref{sec:ch3-integration-strategies} places any explicit
+constraint on how much the shared representation is allowed to change when
+a new group of classes is learned: SimpleAvg's independence between steps
+and RankExt's frozen prior blocks limit \emph{where} new parameters can act, but
+not how far training is free to push the current step's own contribution.
+This thesis studies two additional mechanisms layered on top of either
+architecture --- knowledge distillation and FactorOrth regularisation,
+whose concrete formulation is family-specific --- and their combination. The same stabilisation
+principles are examined within both architectural families of
+Section~\ref{sec:ch3-integration-strategies}, with family-specific
+implementations where required by the architecture.
+Neither mechanism is presented here as
+universally necessary or as empirically superior to the other; their
+measured effect, individually and combined, is examined in Chapter~\ref{ch:results}.
+
+\subsection{Knowledge Distillation}
+\label{sec:ch3-kd}
+
+Knowledge distillation trains the current step's model to match the
+temperature-softened output distribution of a frozen teacher, rather than
+only the hard label, so that the relative scores the teacher assigns to
+non-target classes also shape the student's training signal \parencite{hinton2015distilling}.
+This is a form of self-distillation between successive states of the same
+model family, aimed at stabilising continual learning rather than
+compressing a larger teacher into a smaller student. In this
+implementation, distillation is computed only on the current step's own
+input batch --- no image or label from an earlier step is replayed for this
+purpose, consistent with the rehearsal-free constraint of Section~\ref{sec:ch3-problem-formulation} ---
+and its scope is family-specific. For RankExt, it is applied to the
+\textbf{full} output distribution over every class seen so far, including
+the classes newly introduced at the current step. For SimpleAvg, it is
+restricted to the previously seen classes: teacher and student logits are
+both restricted to the classes introduced at earlier steps before the
+softened distributions are formed. Writing $z_t$ and $z_s$ for the
+teacher's and student's logits on the same batch (restricted to the
+previously seen classes in the SimpleAvg case), and $\tau$ for the
+distillation temperature,
+
+\begin{equation}
+\label{eq:ch3-kd}
+p_t = \operatorname{softmax}(z_t/\tau), \qquad
+p_s = \operatorname{softmax}(z_s/\tau), \qquad
+\mathcal{L}_{KD} = \tau^2 \, D_{KL}(p_t \,\|\, p_s),
+\end{equation}
+
+with the teacher's distribution $p_t$ computed without gradient and used as
+the fixed reference --- the student is drawn toward the teacher, never the
+reverse. The temperature is $\tau=2$, and the canonical distillation weight
+is $\kappa=1.0$. Because a teacher requires at least one already-trained
+step, distillation is active only from the second step onward. For
+RankExt, its weight and temperature remain constant whenever it is active;
+for SimpleAvg, the distillation weight is ramped linearly over the first
+epoch of each step, as specified in Chapter~\ref{ch:experimental-setup}.
+
+The two integration strategies differ in what the teacher is, for
+architectural reasons rather than by an independent design choice. Because
+SimpleAvg has no single evolving model until the sequence is complete, its
+teacher cannot simply be ``the model as it stood after the previous step'' ---
+no such object exists during training. Instead, the teacher is a frozen
+snapshot produced by applying, to only the steps already trained, exactly
+the dense-averaging merge and per-class classifier row assembly defined in
+Section~\ref{sec:ch3-simpleavg} --- the same combination rule, evaluated over a growing prefix
+of the sequence rather than the complete one, and rebuilt from scratch at
+the start of each subsequent step because it is not itself stored between
+steps. This training-time snapshot is distinct from the single merge
+performed once after the complete sequence, described in Section~\ref{sec:ch3-simpleavg}. RankExt, by contrast, already maintains one persistent,
+complete model at every point in the sequence, so its teacher is simply
+that model as it stood at the end of the previous step, before the current
+step's new block is added: no separate merge-and-stitch operation is
+needed to construct it, because RankExt's own architecture already
+supplies a directly usable checkpoint at every step boundary.
+
+This mechanism should not be described as replay: no raw example from an
+earlier step is stored or reused, only the current step's own images are
+passed through the frozen teacher. Nor should it be described as
+data-free --- a live, if frozen, teacher model is required at every
+distillation step, and the constraint this thesis satisfies concerns which
+data that teacher is not given, not the absence of data altogether.
+Distillation's temperature is fixed throughout; the orthogonality
+regularisation this thesis studies alongside it is defined next.
+
+\subsection{FactorOrth Regularisation}
+\label{sec:ch3-factororth}
+
+FactorOrth denotes the orthogonality-based regularisation used in both
+integration families, but its concrete formulation is family-specific.
+Each family's formulation follows from what that family retains from
+earlier steps: SimpleAvg retains a reconstructed dense update per step,
+whereas RankExt retains its earlier low-rank factors as frozen blocks. The
+two formulations are therefore two different regularisation operators that
+share a common label and a common purpose --- discouraging the current
+step's update from coinciding with directions already used by earlier
+steps --- and neither should be described in terms of the other. In both
+families the penalty is inactive at the first step, for which no earlier
+update exists, and its coefficient is ramped in linearly over the first
+epoch of each step, as specified in Chapter~\ref{ch:experimental-setup}.
+
+\textbf{A. SimpleAvg FactorOrth (dense-update formulation).} Because each
+SimpleAvg step already reconstructs its dense update and retains it for the
+final merge, the SimpleAvg formulation compares the current step's dense
+update $\Delta W^{(m)}$ directly with each earlier step's retained dense
+update $\Delta W_u^{(m)}$, rather than comparing low-rank factors:
+\begin{equation}
+\label{eq:ch3-factororth-simpleavg}
+\mathcal{L}_{orth,\,SA}^{(m)} = \frac{1}{t-1}\sum_{u<t}
+\left(\frac{\langle \Delta W^{(m)}, \Delta W_u^{(m)}\rangle_F}
+{\lVert \Delta W^{(m)}\rVert_F \,\lVert \Delta W_u^{(m)}\rVert_F}\right)^{2},
+\end{equation}
+where $\langle\cdot,\cdot\rangle_F$ is the Frobenius inner product. The
+SimpleAvg FactorOrth loss is this quantity averaged over the adapted
+layers. Each earlier step's dense update enters individually, not through
+an averaged reference, and is held fixed, so only the current step's
+factors receive gradient. In the run behind the results of
+Chapter~\ref{ch:results}, its regularisation strength is $\lambda_{orth}=20$.
+
+\textbf{B. RankExt FactorOrth (factor-space formulation).} The RankExt
+formulation regularises the geometry of the low-rank factors learned at the
+current step relative to the frozen, accumulated prior rank blocks
+$A_{ref}, B_{ref} = A_{frozen}^{(t)}, B_{frozen}^{(t)}$ already introduced
+in Section~\ref{sec:ch3-rankext}, computed directly from normalised factors
+rather than from the reconstructed weight update. For a target layer, with
+the new block's factors $A, B$, each row of $A$ and $A_{ref}$ is normalised
+to unit length, and each column of $B$ and $B_{ref}$ is normalised to unit
+length:
+
+\begin{equation}
+\label{eq:ch3-factororth-a}
+\hat A_{ref} = \operatorname{rownorm}(A_{ref}), \quad
+\hat A = \operatorname{rownorm}(A), \quad
+O_A = \hat A_{ref}\hat A^{\top}, \quad
+\phi_A = \lVert O_A \rVert_F^2,
+\end{equation}
+\begin{equation}
+\label{eq:ch3-factororth-b}
+\hat B_{ref} = \operatorname{colnorm}(B_{ref}), \quad
+\hat B = \operatorname{colnorm}(B), \quad
+O_B = \hat B_{ref}^{\top}\hat B, \quad
+\phi_B = \lVert O_B \rVert_F^2,
+\end{equation}
+
+so that $O_A$ and $O_B$ are cross-factor overlap matrices between the
+reference and current directions, and $\phi_A,\phi_B$ are the squared
+Frobenius norms of those overlaps. The per-layer penalty is
+$\phi_A+\phi_B$, and the RankExt FactorOrth loss is this quantity averaged
+over the layers the penalty is computed at. Because every direction
+entering $O_A$ and $O_B$ has first been normalised to unit length, the
+penalty discourages the new block's directions from \emph{coinciding} with
+the frozen reference directions, regardless of either side's original
+magnitude. The reference is not an average: it is the architecture's own
+already-frozen state, used directly as a fixed target. Its regularisation
+strength is $\lambda_{orth}=50$; the coefficient is therefore not shared
+across families.
+
+The role of the orthogonality term also differs between the two
+strategies, as a consequence of the architectural difference established in
+Section~\ref{sec:ch3-integration-strategies}. RankExt's prior blocks are
+already hard-frozen by construction, so FactorOrth there is not protecting
+those blocks from being overwritten --- it instead discourages the newly
+appended block from learning directions that merely duplicate ones the
+frozen blocks already occupy. SimpleAvg has no such architectural freezing,
+since every step's adapter is trained independently; there, FactorOrth is
+the only mechanism discouraging the current step's dense update from
+aligning with those of earlier steps before the dense updates are ever
+combined.
+
+FactorOrth does not originate the idea of an orthogonality penalty between
+old and new low-rank updates; that idea, and this thesis's positioning of
+its own formulations relative to it --- including the related structural
+alternative to a soft penalty --- are established in Section~\ref{sec:orthogonality}.
+What is specific to this implementation is the exact form of the two
+family-specific formulations and the references they use.
+
+Every variant is trained with a standard cross-entropy loss on the current
+step's labelled batch as its base term, to which the mechanisms of
+Sections~\ref{sec:ch3-kd} and~\ref{sec:ch3-factororth} add further terms
+whenever they are active. The exact variant-specific loss composition,
+auxiliary stabilisation terms, and warmup schedules used in the experiments
+are specified in Chapter~\ref{ch:experimental-setup}.
+
+\section{Classifier Construction and Calibration}
+\label{sec:ch3-classifier-calibration}
+
+Representation integration, as defined in Section~\ref{sec:ch3-integration-strategies}, and the classifier
+that turns that representation into class predictions are handled as two
+separate operations on two separate sets of parameters. Nothing in
+SimpleAvg's dense-averaging merge or RankExt's block-sum forward pass
+touches the classifier, and, symmetrically, the post-hoc calibration
+described below never touches the backbone or the low-rank adaptation
+parameters. This section defines both operations in turn.
+
+\subsection{Classifier Construction}
+\label{sec:ch3-classifier-construction}
+
+The classifier is a single linear layer that maps the shared pooled
+representation $h$ to logits $z$ through a weight matrix
+$W_{cls}\in\mathbb{R}^{C\times d}$ and a bias vector $b\in\mathbb{R}^{C}$,
+covering every class the model will ever see ($C=100$ in the CIFAR-100
+protocol of Section~\ref{sec:ch3-protocol-instantiation}). This is precisely the classifier component of the three-way
+parameter partition of $f_{\theta_t}$ introduced in Section~\ref{sec:ch3-problem-formulation}, alongside
+the frozen backbone and the adaptation parameters of Section~\ref{sec:ch3-integration-strategies}. All $C$
+rows of $W_{cls}$ and $b$ exist from the
+first step onward, for both strategies; what changes across steps and
+across strategies is which rows are meaningfully trained at a given point,
+not the tensor's shape, and in both cases the set of rows available to
+compete at inference tracks exactly the cumulative label set $C_{1:t}$
+already defined in Section~\ref{sec:ch3-problem-formulation}. No row is normalised during training --- the
+normalisation applied in Section~\ref{sec:ch3-calibration} is strictly post-hoc.
+
+For SimpleAvg, each step trains its own classifier alongside that step's
+adapter, as already noted in Section~\ref{sec:ch3-simpleavg}. The final classifier used with
+the single averaged LoRA update is not obtained by averaging these
+per-step classifiers. Instead, for every class, the final weight row and
+its corresponding bias entry are both copied from whichever step
+introduced and trained that class: the final classifier is assembled by
+copying each class row and bias from the step that trained that class,
+not by averaging the per-step classifiers. This assembly operation is
+independent of the
+dense-delta averaging described in Section~\ref{sec:ch3-simpleavg}: the two are combined into one
+final model, but neither is derived from the other.
+
+For RankExt, one classifier instance persists across the entire sequence,
+as already noted in Section~\ref{sec:ch3-rankext}, mirroring the persistence of the
+low-rank blocks themselves: neither the classifier nor the adapter is ever
+rebuilt from scratch after the first step. Rows belonging to classes
+introduced at earlier steps are carried forward unchanged into every later
+step, and only the rows for the current step's classes receive gradient at
+that step. The implementation enforces this guarantee redundantly ---
+through a gradient mask during training and a hard restoration of
+protected rows afterward --- but the property that matters methodologically
+is simply stated: old class rows are preserved exactly, and only new class
+rows are trained.
+
+\subsection{Calibration}
+\label{sec:ch3-calibration}
+
+After training is complete, and before either evaluation mode introduced
+in Section~\ref{sec:ch3-open-restricted} is computed, the final classifier's weight rows are
+rescaled by a post-hoc procedure applied identically to both strategies.
+Calibration is not part of gradient-based training, does not touch the
+backbone or the low-rank adaptation parameters, and never modifies the
+bias vector $b$ --- only the weight rows $W_{cls}[c,:]$ are rescaled, based on
+their own $\ell_2$ norm, $n_c=\lVert W_{cls}[c,:]\rVert_2$. The rescaling is
+norm-based: each step's block of rows is multiplied by a single positive
+factor derived from a target row norm for that step, so that an entire
+step's rows are scaled together rather than individually.
+
+This family of rescaling rules is conceptually related to the norm-balancing
+principle of Weight Aligning \parencite{zhao2020maintaining}, which observes
+that later-trained class rows tend to have larger norms than earlier ones
+and corrects for it by rescaling the new-class rows toward the old classes'
+mean norm. The calibration used in this thesis is not a direct
+implementation of Weight Aligning: several target-norm variants are
+implemented, differing in how the target norm for a step is chosen and
+whether it is adjusted by that step's own training convergence; their exact
+form, and which variant is used for the results reported in this thesis,
+are configuration detail specified in Chapter~\ref{ch:experimental-setup}
+rather than part of the methodological definition given here.
+
+Because every variant rescales an entire step's block of rows by one
+common positive factor, and does so identically regardless of which
+evaluation mode will later be applied, the calibrated classifier is what
+both open and restricted evaluation are computed from. Section~\ref{sec:ch3-open-restricted}
+returns to this property once both evaluation modes have been defined.
+
+\section{Open and Restricted Evaluation Protocols}
+\label{sec:ch3-open-restricted}
+
+For any fixed checkpoint and test example, open and restricted evaluation
+use the same model, forward pass, and logits; only the set of logits
+eligible for the final argmax differs. The paired open/restricted headline
+diagnostic reported for the completed model uses the final calibrated model
+(Section~\ref{sec:ch3-classifier-calibration}). Trajectory-based
+measurements --- backward transfer and forgetting
+(Section~\ref{sec:ch3-bwt-forgetting}) --- additionally require
+step-specific references: intermediate RankExt checkpoints, and
+SimpleAvg's pre-merge specialists. Two different views are taken of a
+checkpoint's logits. The first, open evaluation, lets a prediction
+compete against every class the model has learned. The second, restricted
+evaluation, narrows the competition to only the classes introduced
+alongside the example being scored. Nothing about the model, the
+classifier, the examples, or the logits themselves differs between the two
+views; only which logits are eligible for the final argmax changes. This
+section defines both precisely, since the distinction between them bears
+directly on how the results in later chapters should be read.
+
+Open evaluation is this thesis's term for what the continual-learning
+literature calls task-agnostic evaluation \parencite{masana2020classincremental}: the
+predicted class for an input $x$ is the argmax of the classifier's logits
+$z(x)$ over the complete cumulative label set observed by the point at
+which evaluation is performed, with no task identifier supplied,
+
+\begin{equation}
+\label{eq:ch3-open-eval}
+\hat y_{open}(x) = \arg\max_{c\,\in\,C_{1:t}} z_c(x).
+\end{equation}
+
+In this implementation, every open accuracy reported for the completed
+model --- whether computed over the classes of a single step or over every
+class the model has been trained on --- is obtained from the single final
+model produced after the complete sequence of $T$ steps, at which point
+every class this thesis studies has already been introduced. For these
+final results the open argmax is therefore taken with $t=T$, i.e.\ over
+$C_{1:T}$, the complete set of classes seen across the sequence; the
+step-specific accuracies used only for backward transfer and forgetting
+are computed from the references defined in
+Section~\ref{sec:ch3-bwt-forgetting}.
+
+Restricted evaluation is this thesis's term for task-oracle evaluation
+\parencite{masana2020classincremental}. For an example belonging to the group of classes
+introduced at step $t$, $C_t$, the same logits $z(x)$ are used, but every
+logit for a class outside $C_t$ is excluded from the argmax:
+
+\begin{equation}
+\label{eq:ch3-restricted-eval}
+\hat y_{restr}(x) = \arg\max_{c\,\in\,C_t} z_c(x).
+\end{equation}
+
+Task identity enters only here, and only to determine which classes
+constitute $C_t$ for the example being scored --- it is not used for open
+evaluation, and even for restricted evaluation it never selects a
+different model, a different classifier, or a different forward pass. The
+model is not retrained, the classifier is not replaced, and the
+representation is not modified; the same logits computed once are simply
+read under a narrower mask.
+
+Because open evaluation forces a prediction to compete against every class
+the model has learned, it reflects two things at once: how well the model
+discriminates within the group of classes an example actually belongs to,
+and how well that group's classes compete against every other group under
+a single argmax. Restricted evaluation removes cross-group competition by
+construction, providing a more direct view of within-group discrimination.
+Comparing the two accuracies for the
+same group of examples is therefore informative about, and can help
+diagnose, whether a given pattern in the results is more consistent with a
+limitation in within-group discrimination or with cross-group competition
+at the output layer; it does not, on its own, prove which of the two is
+responsible in any particular case. Open evaluation remains the primary
+regime in which this thesis's methods are assessed, since it is the one
+that matches the task-agnostic inference condition set out in Section~\ref{sec:ch3-problem-formulation};
+restricted evaluation is a supplementary diagnostic, not an alternative
+headline metric, and should never be read as recovering a model's ``true''
+or ``actual'' retention --- it reports accuracy once one specific source of
+competition has been removed, nothing more.
+
+This diagnostic role connects directly to the calibration mechanism of
+Section~\ref{sec:ch3-calibration}. Because the same positive factor is
+applied to all weight rows within a step, calibration does not alter their
+relative weight-vector scaling. However, classifier biases are left
+unchanged, so restricted accuracy is not mathematically guaranteed to
+remain invariant under the rescaling. Open accuracy is more directly
+exposed to calibration, since its argmax compares logits across groups that
+calibration may have scaled differently.
+
+\section{Method Variants and Overall Continual-Learning Procedure}
+\label{sec:ch3-method-variants}
+
+The components defined in Sections~\ref{sec:ch3-integration-strategies}--\ref{sec:ch3-open-restricted} --- the two integration
+strategies, knowledge distillation, orthogonality regularisation, classifier
+construction and calibration, and the open/restricted evaluation
+protocols --- are instantiated as a controlled set of eight method variants.
+Their purpose is to separate the contribution of the continual integration
+strategy from that of the two stabilisation mechanisms while holding the
+rest of the pipeline --- the backbone, the classifier mechanism, the
+calibration procedure, and the evaluation protocols --- fixed across all
+eight. This section assembles those variants, describes the end-to-end
+procedure each family follows, and defines the two continual-learning
+metrics this thesis reports; it does not compare their outcomes.
+
+\subsection{Eight Method Variants}
+\label{sec:ch3-eight-variants}
+
+Within each integration strategy, knowledge distillation and FactorOrth
+regularisation are switched on or off, giving four variants per family and
+eight in total. Every variant shares the same frozen backbone, the same
+target modules, the same classifier mechanism, the same calibration
+procedure, and the same evaluation protocols (Sections~\ref{sec:ch3-lora-framework}, \ref{sec:ch3-classifier-calibration}, \ref{sec:ch3-open-restricted}).
+The variants are organised conceptually as a two-by-two KD/FactorOrth
+grid within each integration family, but variant-specific warmups and
+RankExt-specific auxiliary protection mechanisms mean that the complete
+experiment is not a strictly factorial design. ``FactorOrth'' is a common
+label: its implementation, and its coefficient, differ by family
+(Section~\ref{sec:ch3-factororth}).
+Table~\ref{tab:ch3-eight-methods} sets out the resulting conceptual grid.
+
+\begin{table}[htbp]
+\centering
+\footnotesize
+\begin{tabularx}{\textwidth}{@{}>{\raggedright\arraybackslash}p{4cm} >{\raggedright\arraybackslash}p{4.5cm} c c@{}}
+\toprule
+\textbf{Method} & \textbf{Integration strategy} & \textbf{KD} & \textbf{FactorOrth} \\
+\midrule
+SimpleAvg & independent-per-step, dense mean-merge (Section~\ref{sec:ch3-simpleavg}) & -- & -- \\
+SimpleAvg + KD & same & \checkmark & -- \\
+SimpleAvg + FactorOrth & same & -- & \checkmark \\
+SimpleAvg + FactorOrth + KD & same & \checkmark & \checkmark \\
+RankExt & persistent growing-rank (Section~\ref{sec:ch3-rankext}) & -- & -- \\
+RankExt + KD + Protect & same & \checkmark & -- \\
+RankExt + FactorOrth & same & -- & \checkmark \\
+RankExt + FactorOrth + KD + Protect & same & \checkmark & \checkmark \\
+\bottomrule
+\end{tabularx}
+\caption[Eight method variants]{The eight method variants compared in this
+thesis, organised as a conceptual grid of knowledge distillation (KD) and
+FactorOrth regularisation within each of the two integration strategies of
+Section~\ref{sec:ch3-integration-strategies}. FactorOrth is a common label
+whose formulation is family-specific: dense-update orthogonality for
+SimpleAvg and factor-space orthogonality for RankExt
+(Section~\ref{sec:ch3-factororth}). KD-bearing RankExt variants are
+additionally coupled to projected feature protection
+(Section~\ref{sec:ch4-rankext-auxiliary}), hence ``+ Protect''.}
+\label{tab:ch3-eight-methods}
+\end{table}
+
+Within RankExt, activating knowledge distillation does not only add the
+distillation loss term of Section~\ref{sec:ch3-kd}: the implementation also
+couples it to further, RankExt-specific configuration choices, specified in
+Chapter~\ref{ch:experimental-setup}, that are not independent of whether
+distillation is active. In particular, the implemented KD-bearing RankExt
+configurations are coupled to projected feature protection, as specified
+in Section~\ref{sec:ch4-rankext-auxiliary}; later result labels therefore
+include ``+ Protect'' (for example, RankExt + FactorOrth + KD + Protect) to
+make this implementation detail visible. Protect is not an independent
+toggle in the method set. SimpleAvg carries no such coupling, since it has
+no persistent block for those choices to act on. The eight-method set as a
+whole is therefore best described as a structured family-wise ablation over
+integration strategy, KD, and orthogonality regularisation, rather than as
+a strictly factorial experiment.
+
+\subsection{Overall Continual-Learning Procedure}
+\label{sec:ch3-procedure}
+
+Both families share the same outer loop over $T$ incremental steps and the
+same three closing operations, but differ in what is retained between
+steps and in how the final model is assembled. Each is described
+separately below, followed by the shared closing sequence.
+
+\textbf{Procedure (SimpleAvg).} For each step $t=1,\dots,T$:
+
+\begin{enumerate}
+\item Receive the current step's data $D_t$ and its class group $C_t$
+   (Section~\ref{sec:ch3-problem-formulation}); no raw example from any earlier $D_i$, $i<t$, is
+   available.
+\item Configure the current adaptation state: start a fresh copy of the
+   frozen pretrained backbone (Section~\ref{sec:ch3-lora-framework}) and inject a new LoRA adapter
+   and a new classifier head --- never continuing from a previous step's
+   adapted weights (Section~\ref{sec:ch3-simpleavg}).
+\item Train on $D_t$ with the classification objective and whichever
+   stabilisation mechanisms are active for the selected variant
+   (Section~\ref{sec:ch3-stabilization}) --- the distillation term against a
+   frozen running merge of the steps already trained, and/or the
+   dense-update FactorOrth term against each earlier step's retained dense
+   update.
+\item Update the classifier state by training the current step's head, as
+   part of the same training loop as step 3 (Section~\ref{sec:ch3-classifier-construction}).
+\item At the end of the step, retain the dense update and trained classifier
+   rows required for final assembly; the same retained per-step dense
+   updates also supply the running merge used as the distillation teacher
+   and, for FactorOrth-bearing variants, the reference against which the
+   next step's regularisation is computed. The step's own model instance,
+   backbone copy, and adapter object are not themselves carried forward.
+   No raw training example is retained.
+\end{enumerate}
+
+After all $T$ steps, the final SimpleAvg model used for evaluation is
+assembled by averaging the retained dense updates and stitching the
+classifier rows (Sections~\ref{sec:ch3-simpleavg}/\ref{sec:ch3-classifier-construction}).
+Temporary running merged snapshots may additionally be constructed during
+training when required by a stabilisation mechanism such as knowledge
+distillation (Section~\ref{sec:ch3-kd}); the object described here is the
+single final model produced once, after training, and used for evaluation.
+
+\textbf{Procedure (RankExt).} For each step $t=1,\dots,T$:
+
+\begin{enumerate}
+\item Receive $D_t$ and $C_t$; as for SimpleAvg, no raw example from any
+   earlier step is available.
+\item Configure the current adaptation state: continue the single persistent
+   model carried over from step $t-1$ --- the base weight remains frozen,
+   every previously learned rank block remains frozen, and one new
+   trainable block is appended (Section~\ref{sec:ch3-rankext}).
+\item Update the classifier state for this step: rows for classes already
+   introduced remain frozen, and rows for $C_t$ are unmasked and become
+   trainable (Section~\ref{sec:ch3-classifier-construction}).
+\item Train on $D_t$ with the classification objective and whichever
+   stabilisation mechanisms are active for the selected variant
+   (Section~\ref{sec:ch3-stabilization}) --- the distillation term against
+   the frozen previous-step model and/or the FactorOrth term against the
+   frozen accumulated prior blocks, each computed exactly as defined there.
+\item At the end of the step, the persistent model itself --- now including the
+   newly trained block and the newly trained classifier rows --- is carried
+   forward as the retained state for step $t+1$; no separate extraction or
+   reconstruction is needed, and no raw example of $D_t$ is kept.
+\end{enumerate}
+
+Because the persistent model produced by this loop already is the model at
+every point in the sequence, RankExt has no separate final-merge step
+analogous to SimpleAvg's dense-averaging reconstruction; the model at the
+end of step $T$ is the final model.
+
+\textbf{Shared closing sequence.} For either family, once the final model is
+assembled: the configured post-hoc classifier calibration is applied
+(Section~\ref{sec:ch3-calibration}); open accuracy is computed from the resulting logits
+(Section~\ref{sec:ch3-open-restricted}); restricted accuracy is computed from the identical logits
+under the narrower per-group mask (Section~\ref{sec:ch3-open-restricted}); and the continual-learning
+metrics defined next are computed from the accuracies this evaluation
+produces.
+
+\subsection{Backward Transfer and Forgetting Definitions}
+\label{sec:ch3-bwt-forgetting}
+
+Let $a_{i,j}$ denote open accuracy (Section~\ref{sec:ch3-open-restricted}) on class group $C_j$,
+measured using the checkpoint produced after step $i$ has been trained.
+$a_{i,j}$ is defined only for $j\le i$: a class group cannot be evaluated
+before the step that introduces it has been trained. Its diagonal entries,
+$a_{j,j}$, record each group's accuracy at the point it was first learned;
+its final row, $a_{T,j}$ for $j=1,\dots,T$, records every group's accuracy
+under the completed model. Backward transfer and forgetting are both computed from
+this same matrix, but they summarise different properties of it and are
+not interchangeable.
+
+Backward transfer (BWT) compares the final model against each group's own
+diagonal entry:
+
+\begin{equation}
+\label{eq:ch3-bwt}
+\text{BWT} = \frac{1}{T-1}\sum_{j=1}^{T-1}\big(a_{T,j} - a_{j,j}\big),
+\end{equation}
+
+excluding the final group, for which no later comparison point exists
+\parencite{lopezpaz2017gradient}. A positive value indicates that, on average,
+later training left a group's accuracy higher than it was at its own
+diagonal reference; a negative value indicates the opposite. The two
+families do not supply this diagonal reference in the same way, and the
+difference must be stated plainly rather than treated as a detail. For
+RankExt, $a_{j,j}$ is a genuine checkpoint: the persistent model exactly as
+it existed immediately after step $j$, evaluated on $C_j$. For SimpleAvg,
+no single evolving model exists to checkpoint (Section~\ref{sec:ch3-simpleavg}), so
+$a_{j,j}$ is substituted with step $j$'s own independently-trained
+specialist's accuracy on $C_j$, at that specialist's best epoch, measured
+before the eventual merge. This substitution is the closest available
+equivalent and remains diagnostically useful, but it is not structurally
+identical to RankExt's reference --- one is a real intermediate state of the
+model whose later trajectory is being measured, the other is a separate
+model that the final SimpleAvg model never itself passes through. BWT is
+reported for both families under this understanding.
+
+Forgetting instead compares each non-final group's \emph{best-ever} recorded
+accuracy against its accuracy at the final checkpoint:
+
+\begin{equation}
+\label{eq:ch3-forgetting}
+f_j = \max_{j\le s\le T} a_{s,j} \;-\; a_{T,j}, \qquad
+\text{Forgetting} = \frac{1}{T-1}\sum_{j=1}^{T-1} f_j,
+\end{equation}
+
+following \cite{chaudhry2018riemannian}, where the maximum is taken over the
+group's entire recorded trajectory, including the final checkpoint itself,
+so that $f_j$ is non-negative by construction. Computing $f_j$ requires a genuine
+accuracy trajectory for group $j$ across every later checkpoint, which only
+RankExt's incrementally-evolving architecture provides; SimpleAvg's $T$
+independently trained adapters are not sequential checkpoints of
+one evolving model, so this trajectory does not exist for it. Forgetting is
+therefore reported for RankExt only, and no substitute or approximate value
+is computed or reported for SimpleAvg --- this is a scope limit of what the
+architecture makes available, not an omission.
+
+Backward transfer and forgetting are related but distinct, and one is not
+simply the negation of the other. BWT compares only two points for each
+group --- its diagonal reference and the final checkpoint --- so a group whose
+accuracy rose after being learned, peaked, and then fell back exactly to
+its starting level would show a BWT contribution of zero for that group,
+since its diagonal and final values coincide. Forgetting instead compares the final checkpoint against
+whichever intervening checkpoint scored that group highest, so the same
+trajectory would register a strictly positive forgetting contribution,
+because that peak is retained in the maximum even though it does not
+appear at either endpoint BWT considers. The two metrics are reported,
+where available, alongside the open and restricted accuracies of Section~\ref{sec:ch3-open-restricted},
+not in place of them.

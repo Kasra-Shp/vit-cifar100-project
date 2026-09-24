@@ -1,0 +1,9 @@
+% PDF/A document metadata, read by the pdfx package (\jobname.xmpdata).
+% Kept in sync with the frontespizio fields in main.tex.
+% Confirmed 2026-09-18 by the thesis author -- all fields below are final.
+\Title{Continual LoRA Merging for Class-Incremental Learning}
+\Author{Kasra Shahrampour}
+\Language{en-US}
+\Subject{Master's thesis, Master's Degree in Control Systems Engineering, Department of Information Engineering, University of Padova}
+\Keywords{continual learning\sep class-incremental learning\sep rehearsal-free\sep low-rank adaptation\sep LoRA\sep catastrophic forgetting\sep vision transformer}
+\Publisher{University of Padova}

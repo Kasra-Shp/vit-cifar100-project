@@ -1,0 +1,39 @@
+\chapter*{Preface}
+\addcontentsline{toc}{chapter}{Preface}
+
+This project grew out of a simple interest in parameter-efficient continual
+learning: given that low-rank adaptation already lets a large pretrained
+model be fine-tuned cheaply for a single task, what happens when that
+fine-tuning has to happen repeatedly, one incremental step after another,
+without revisiting the data that came before? The central empirical
+question that emerged from this starting point was not whether low-rank
+adaptation works for continual learning in isolation, but how it should be
+\emph{organised} across a sequence of incremental steps.
+
+Two candidate organisations run through this thesis. The first,
+\emph{SimpleAvg}, is deliberately simple: each step gets its own
+independently trained, fixed-rank adapter, and their reconstructed dense
+updates are combined once, at the end of the sequence, by arithmetic
+averaging. It is treated throughout as a
+reference point rather than as a proposed contribution in itself. The
+second, \emph{RankExt}, is a persistent alternative in which a single
+adapter is grown incrementally, one rank increment per step, with earlier
+blocks left frozen but still active. One question that motivated much of
+the experimental work reported here is how much of SimpleAvg's performance
+a persistent, growing-rank strategy can recover, and what
+stability--plasticity trade-off accompanies that recovery as auxiliary retention
+mechanisms are added.
+
+The resulting work is mainly empirical, comparative, diagnostic, and
+ablative in character. It compares the two strategies under a common
+protocol, examines where and why one struggles relative to the other, and
+tests a number of auxiliary mechanisms and refinements against that
+diagnosis. It does not claim to have invented low-rank adaptation, model
+averaging, growing-rank continual adaptation, knowledge distillation, or
+orthogonality-based regularisation; each of these building blocks is drawn
+from existing practice and combined here for the specific purpose of this
+comparison.
+
+I hope the chapters that follow are useful not only for the specific
+numbers they report, but for the diagnostic approach they take to reading
+those numbers.

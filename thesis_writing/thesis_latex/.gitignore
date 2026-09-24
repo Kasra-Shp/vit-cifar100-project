@@ -1,0 +1,17 @@
+# LaTeX build artifacts
+*.aux
+*.bbl
+*.bcf
+*.blg
+*.fdb_latexmk
+*.fls
+*.lof
+*.lot
+*.out
+*.toc
+*.run.xml
+*-SAVE-ERROR
+*.synctex.gz
+pdfa.xmpi
+main.pdf
+build/

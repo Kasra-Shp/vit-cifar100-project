@@ -1,0 +1,460 @@
+% ============================================================================
+%  references.bib  --  bibliography for Chapter 2 (Literature Review)
+% ----------------------------------------------------------------------------
+%  Format: biblatex / biber.  Style assumed: authoryear.
+%
+%  Scope: contains ONLY the works cited in thesis_latex/chapters/chapter_2.tex.
+%  Every entry is transcribed from thesis_agent/literature/literature_registry.jsonl
+%  (paper_id given in a comment on each entry). No metadata was invented; fields
+%  the registry does not verify are omitted and flagged in FINAL REPORT item 10.
+%
+%  Citation-normalisation notes:
+%   * wang2022learning (L2P, P28) and wang2022dualprompt (DualPrompt, P29) are
+%     both "Wang et al. 2022": distinct keys, authoryear renders 2022a/2022b.
+%   * masana2020classincremental (P09): registry venue is "arXiv preprint
+%     (later TPAMI)"; no verified final TPAMI volume/issue/year in the registry,
+%     so kept as the 2020 arXiv preprint. -> manual normalisation candidate.
+%   * delange2022continual (P10): verified final journal metadata IS in the
+%     registry (IEEE TPAMI 44(7):3366-3385, 2022) and is used here.
+%   * li2016learning (P15): cited in the source as "Li and Hoiem, 2016"
+%     (ECCV 2016). Extended journal version: IEEE TPAMI 2017,
+%     doi:10.1109/TPAMI.2017.2773081 (noted in the entry).
+%   * zhu2025bilora (P32): DOI is user-supplied (not independently verified);
+%     no arXiv preprint located. -> manual normalisation candidate.
+%   * testa2025glam (P24), qiao2025merge (P25), alyamac2026evaluating (P26):
+%     arXiv preprints; venue/acceptance not finalised in the registry.
+% ============================================================================
+
+% --- P01 ---
+@inproceedings{zhao2020maintaining,
+  author       = {Zhao, Bowen and Xiao, Xi and Gan, Guojun and Zhang, Bin and Xia, Shu-Tao},
+  title        = {Maintaining Discrimination and Fairness in Class Incremental Learning},
+  booktitle    = {Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR)},
+  year         = {2020},
+  pages        = {13208--13217},
+  eprint       = {1911.07053},
+  eprinttype   = {arXiv},
+  eprintclass  = {cs.CV},
+  url          = {https://openaccess.thecvf.com/content_CVPR_2020/html/Zhao_Maintaining_Discrimination_and_Fairness_in_Class_Incremental_Learning_CVPR_2020_paper.html},
+}
+
+% --- P02 ---
+@inproceedings{lopezpaz2017gradient,
+  author       = {Lopez-Paz, David and Ranzato, Marc'Aurelio},
+  title        = {Gradient Episodic Memory for Continual Learning},
+  booktitle    = {Advances in Neural Information Processing Systems (NeurIPS)},
+  year         = {2017},
+  pages        = {6467--6476},
+  eprint       = {1706.08840},
+  eprinttype   = {arXiv},
+  eprintclass  = {cs.LG},
+  url          = {https://proceedings.neurips.cc/paper/2017/hash/f87522788a2be2d171666752f97ddebb-Abstract.html},
+}
+
+% --- P03 ---
+@misc{hinton2015distilling,
+  author       = {Hinton, Geoffrey and Vinyals, Oriol and Dean, Jeff},
+  title        = {Distilling the Knowledge in a Neural Network},
+  year         = {2015},
+  note         = {NeurIPS 2014 Deep Learning Workshop},
+  eprint       = {1503.02531},
+  eprinttype   = {arXiv},
+  eprintclass  = {stat.ML},
+  url          = {https://arxiv.org/abs/1503.02531},
+}
+
+% --- P04 ---
+@inproceedings{radford2021learning,
+  author       = {Radford, Alec and Kim, Jong Wook and Hallacy, Chris and Ramesh, Aditya and Goh, Gabriel and Agarwal, Sandhini and Sastry, Girish and Askell, Amanda and Mishkin, Pamela and Clark, Jack and Krueger, Gretchen and Sutskever, Ilya},
+  title        = {Learning Transferable Visual Models From Natural Language Supervision},
+  booktitle    = {Proceedings of the 38th International Conference on Machine Learning (ICML)},
+  series       = {Proceedings of Machine Learning Research},
+  volume       = {139},
+  year         = {2021},
+  eprint       = {2103.00020},
+  eprinttype   = {arXiv},
+  eprintclass  = {cs.CV},
+  url          = {https://proceedings.mlr.press/v139/radford21a},
+}
+
+% --- P05 ---
+@inproceedings{dosovitskiy2021image,
+  author       = {Dosovitskiy, Alexey and Beyer, Lucas and Kolesnikov, Alexander and Weissenborn, Dirk and Zhai, Xiaohua and Unterthiner, Thomas and Dehghani, Mostafa and Minderer, Matthias and Heigold, Georg and Gelly, Sylvain and Uszkoreit, Jakob and Houlsby, Neil},
+  title        = {An Image is Worth 16x16 Words: Transformers for Image Recognition at Scale},
+  booktitle    = {International Conference on Learning Representations (ICLR)},
+  year         = {2021},
+  eprint       = {2010.11929},
+  eprinttype   = {arXiv},
+  eprintclass  = {cs.CV},
+  url          = {https://arxiv.org/abs/2010.11929},
+}
+
+% --- P06 ---
+@inproceedings{hu2021lora,
+  author       = {Hu, Edward J. and Shen, Yelong and Wallis, Phillip and Allen-Zhu, Zeyuan and Li, Yuanzhi and Wang, Shean and Wang, Lu and Chen, Weizhu},
+  title        = {{LoRA}: Low-Rank Adaptation of Large Language Models},
+  booktitle    = {International Conference on Learning Representations (ICLR)},
+  year         = {2022},
+  eprint       = {2106.09685},
+  eprinttype   = {arXiv},
+  eprintclass  = {cs.CL},
+  url          = {https://arxiv.org/abs/2106.09685},
+}
+
+% --- P07 ---
+@inproceedings{houlsby2019parameter,
+  author       = {Houlsby, Neil and Giurgiu, Andrei and Jastrzebski, Stanislaw and Morrone, Bruna and de Laroussilhe, Quentin and Gesmundo, Andrea and Attariyan, Mona and Gelly, Sylvain},
+  title        = {Parameter-Efficient Transfer Learning for {NLP}},
+  booktitle    = {Proceedings of the 36th International Conference on Machine Learning (ICML)},
+  series       = {Proceedings of Machine Learning Research},
+  volume       = {97},
+  year         = {2019},
+  eprint       = {1902.00751},
+  eprinttype   = {arXiv},
+  eprintclass  = {cs.LG},
+  url          = {https://arxiv.org/abs/1902.00751},
+}
+
+% --- P08 ---
+@article{kirkpatrick2017overcoming,
+  author       = {Kirkpatrick, James and Pascanu, Razvan and Rabinowitz, Neil and Veness, Joel and Desjardins, Guillaume and Rusu, Andrei A. and Milan, Kieran and Quan, John and Ramalho, Tiago and Grabska-Barwinska, Agnieszka and Hassabis, Demis and Clopath, Claudia and Kumaran, Dharshan and Hadsell, Raia},
+  title        = {Overcoming catastrophic forgetting in neural networks},
+  journal      = {Proceedings of the National Academy of Sciences},
+  volume       = {114},
+  number       = {13},
+  pages        = {3521--3526},
+  year         = {2017},
+  doi          = {10.1073/pnas.1611835114},
+  eprint       = {1612.00796},
+  eprinttype   = {arXiv},
+  eprintclass  = {cs.LG},
+  url          = {https://www.pnas.org/doi/10.1073/pnas.1611835114},
+}
+
+% --- P09 ---
+@misc{masana2020classincremental,
+  author       = {Masana, Marc and Liu, Xialei and Twardowski, Bartlomiej and Menta, Mikel and Bagdanov, Andrew D. and van de Weijer, Joost},
+  title        = {Class-incremental learning: survey and performance evaluation on image classification},
+  year         = {2020},
+  note         = {arXiv preprint; extended version later published in IEEE TPAMI},
+  eprint       = {2010.15277},
+  eprinttype   = {arXiv},
+  eprintclass  = {cs.CV},
+  url          = {https://arxiv.org/abs/2010.15277},
+}
+
+% --- P10 ---
+@article{delange2022continual,
+  author       = {De Lange, Matthias and Aljundi, Rahaf and Masana, Marc and Parisot, Sarah and Jia, Xu and Leonardis, Ales and Slabaugh, Gregory and Tuytelaars, Tinne},
+  title        = {A Continual Learning Survey: Defying Forgetting in Classification Tasks},
+  journal      = {IEEE Transactions on Pattern Analysis and Machine Intelligence},
+  volume       = {44},
+  number       = {7},
+  pages        = {3366--3385},
+  year         = {2022},
+  eprint       = {1909.08383},
+  eprinttype   = {arXiv},
+  eprintclass  = {cs.LG},
+  url          = {https://arxiv.org/abs/1909.08383},
+}
+
+% --- P11 ---
+@inproceedings{wortsman2022model,
+  author       = {Wortsman, Mitchell and Ilharco, Gabriel and Gadre, Samir Yitzhak and Roelofs, Rebecca and Gontijo-Lopes, Raphael and Morcos, Ari S. and Namkoong, Hongseok and Farhadi, Ali and Carmon, Yair and Kornblith, Simon and Schmidt, Ludwig},
+  title        = {Model soups: averaging weights of multiple fine-tuned models improves accuracy without increasing inference time},
+  booktitle    = {Proceedings of the 39th International Conference on Machine Learning (ICML)},
+  series       = {Proceedings of Machine Learning Research},
+  volume       = {162},
+  pages        = {23965--23998},
+  year         = {2022},
+  eprint       = {2203.05482},
+  eprinttype   = {arXiv},
+  eprintclass  = {cs.LG},
+  url          = {https://arxiv.org/abs/2203.05482},
+}
+
+% --- P12 ---
+@inproceedings{ilharco2023editing,
+  author       = {Ilharco, Gabriel and Ribeiro, Marco Tulio and Wortsman, Mitchell and Gururangan, Suchin and Schmidt, Ludwig and Hajishirzi, Hannaneh and Farhadi, Ali},
+  title        = {Editing Models with Task Arithmetic},
+  booktitle    = {International Conference on Learning Representations (ICLR)},
+  year         = {2023},
+  eprint       = {2212.04089},
+  eprinttype   = {arXiv},
+  eprintclass  = {cs.LG},
+  url          = {https://arxiv.org/abs/2212.04089},
+}
+
+% --- P13 ---
+@inproceedings{yadav2023ties,
+  author       = {Yadav, Prateek and Tam, Derek and Choshen, Leshem and Raffel, Colin and Bansal, Mohit},
+  title        = {{TIES-Merging}: Resolving Interference When Merging Models},
+  booktitle    = {Advances in Neural Information Processing Systems (NeurIPS)},
+  year         = {2023},
+  eprint       = {2306.01708},
+  eprinttype   = {arXiv},
+  eprintclass  = {cs.LG},
+  url          = {https://arxiv.org/abs/2306.01708},
+}
+
+% --- P14 ---
+@inproceedings{rebuffi2017icarl,
+  author       = {Rebuffi, Sylvestre-Alvise and Kolesnikov, Alexander and Sperl, Georg and Lampert, Christoph H.},
+  title        = {{iCaRL}: Incremental Classifier and Representation Learning},
+  booktitle    = {Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition (CVPR)},
+  year         = {2017},
+  pages        = {5533--5542},
+  eprint       = {1611.07725},
+  eprinttype   = {arXiv},
+  eprintclass  = {cs.CV},
+  url          = {https://openaccess.thecvf.com/content_cvpr_2017/html/Rebuffi_iCaRL_Incremental_Classifier_CVPR_2017_paper.html},
+}
+
+% --- P15 ---
+@inproceedings{li2016learning,
+  author       = {Li, Zhizhong and Hoiem, Derek},
+  title        = {Learning without Forgetting},
+  booktitle    = {European Conference on Computer Vision (ECCV)},
+  year         = {2016},
+  note         = {Extended version in IEEE Transactions on Pattern Analysis and Machine Intelligence, 2017, doi:10.1109/TPAMI.2017.2773081},
+  eprint       = {1606.09282},
+  eprinttype   = {arXiv},
+  eprintclass  = {cs.CV},
+  url          = {https://arxiv.org/abs/1606.09282},
+}
+
+% --- P16 ---
+@inproceedings{buzzega2020dark,
+  author       = {Buzzega, Pietro and Boschini, Matteo and Porrello, Angelo and Abati, Davide and Calderara, Simone},
+  title        = {Dark Experience for General Continual Learning: a Strong, Simple Baseline},
+  booktitle    = {Advances in Neural Information Processing Systems (NeurIPS)},
+  year         = {2020},
+  eprint       = {2004.07211},
+  eprinttype   = {arXiv},
+  eprintclass  = {cs.LG},
+  url          = {https://arxiv.org/abs/2004.07211},
+}
+
+% --- P17 ---
+@inproceedings{wu2019large,
+  author       = {Wu, Yue and Chen, Yinpeng and Wang, Lijuan and Ye, Yuancheng and Liu, Zicheng and Guo, Yandong and Fu, Yun},
+  title        = {Large Scale Incremental Learning},
+  booktitle    = {Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR)},
+  year         = {2019},
+  eprint       = {1905.13260},
+  eprinttype   = {arXiv},
+  eprintclass  = {cs.CV},
+  url          = {https://openaccess.thecvf.com/content_CVPR_2019/html/Wu_Large_Scale_Incremental_Learning_CVPR_2019_paper.html},
+}
+
+% --- P18 ---  (method name: O-LoRA; title below is the paper title, not the method name)
+@inproceedings{wang2023orthogonal,
+  author       = {Wang, Xiao and Chen, Tianze and Ge, Qiming and Xia, Han and Bao, Rong and Zheng, Rui and Zhang, Qi and Gui, Tao and Huang, Xuanjing},
+  title        = {Orthogonal Subspace Learning for Language Model Continual Learning},
+  booktitle    = {Findings of the Association for Computational Linguistics: EMNLP 2023},
+  year         = {2023},
+  eprint       = {2310.14152},
+  eprinttype   = {arXiv},
+  eprintclass  = {cs.CL},
+  url          = {https://arxiv.org/abs/2310.14152},
+}
+
+% --- P19 ---
+@inproceedings{saha2021gradient,
+  author       = {Saha, Gobinda and Garg, Isha and Roy, Kaushik},
+  title        = {Gradient Projection Memory for Continual Learning},
+  booktitle    = {International Conference on Learning Representations (ICLR)},
+  year         = {2021},
+  eprint       = {2103.09762},
+  eprinttype   = {arXiv},
+  eprintclass  = {cs.LG},
+  url          = {https://arxiv.org/abs/2103.09762},
+}
+
+% --- P20 ---
+@inproceedings{farajtabar2020orthogonal,
+  author       = {Farajtabar, Mehrdad and Azizan, Navid and Mott, Alex and Li, Ang},
+  title        = {Orthogonal Gradient Descent for Continual Learning},
+  booktitle    = {Proceedings of the 23rd International Conference on Artificial Intelligence and Statistics (AISTATS)},
+  series       = {Proceedings of Machine Learning Research},
+  volume       = {108},
+  year         = {2020},
+  eprint       = {1910.07104},
+  eprinttype   = {arXiv},
+  eprintclass  = {cs.LG},
+  url          = {https://proceedings.mlr.press/v108/farajtabar20a.html},
+}
+
+% --- P21 ---
+@inproceedings{wu2025sdlora,
+  author       = {Wu, Yichen and Piao, Hongming and Huang, Long-Kai and Wang, Renzhen and Li, Wanhua and Pfister, Hanspeter and Meng, Deyu and Ma, Kede and Wei, Ying},
+  title        = {{SD-LoRA}: Scalable Decoupled Low-Rank Adaptation for Class Incremental Learning},
+  booktitle    = {International Conference on Learning Representations (ICLR)},
+  year         = {2025},
+  eprint       = {2501.13198},
+  eprinttype   = {arXiv},
+  eprintclass  = {cs.LG},
+  url          = {https://arxiv.org/abs/2501.13198},
+}
+
+% --- P22 ---
+@inproceedings{he2025cllora,
+  author       = {He, Jiangpeng and Duan, Zhihao and Zhu, Fengqing},
+  title        = {{CL-LoRA}: Continual Low-Rank Adaptation for Rehearsal-Free Class-Incremental Learning},
+  booktitle    = {Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR)},
+  year         = {2025},
+  pages        = {30534--30544},
+  eprint       = {2505.24816},
+  eprinttype   = {arXiv},
+  eprintclass  = {cs.CV},
+  url          = {https://arxiv.org/abs/2505.24816},
+}
+
+% --- P23 ---
+@inproceedings{liang2024inflora,
+  author       = {Liang, Yan-Shuo and Li, Wu-Jun},
+  title        = {{InfLoRA}: Interference-Free Low-Rank Adaptation for Continual Learning},
+  booktitle    = {Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR)},
+  year         = {2024},
+  pages        = {23638--23647},
+  eprint       = {2404.00228},
+  eprinttype   = {arXiv},
+  eprintclass  = {cs.CV},
+  url          = {https://arxiv.org/abs/2404.00228},
+}
+
+% --- P24 ---  (formerly "HAM: Hierarchical Adapter Merging for Scalable Continual Learning")
+@misc{testa2025glam,
+  author       = {Testa, Irene and Quarantiello, Luigi and Coleman, Eric Nuertey and Mukherjee, Samrat and Hurtado, Julio and Lomonaco, Vincenzo},
+  title        = {{GLAM}: Efficient Continual Learning at Scale via Grouped {LoRA} Adapter Merging},
+  year         = {2025},
+  note         = {arXiv preprint; earlier versions (v1--v3) titled ``HAM: Hierarchical Adapter Merging for Scalable Continual Learning''},
+  eprint       = {2509.13211},
+  eprinttype   = {arXiv},
+  eprintclass  = {cs.LG},
+  url          = {https://arxiv.org/abs/2509.13211},
+}
+
+% --- P25 ---
+@misc{qiao2025merge,
+  author       = {Qiao, Fuli and Mahdavi, Mehrdad},
+  title        = {Merge before Forget: A Single {LoRA} Continual Learning via Continual Merging},
+  year         = {2025},
+  note         = {arXiv preprint, submitted 2025-12-28; apparently accepted to ICLR 2026 (pending final confirmation)},
+  eprint       = {2512.23017},
+  eprinttype   = {arXiv},
+  eprintclass  = {cs.LG},
+  url          = {https://arxiv.org/abs/2512.23017},
+}
+
+% --- P26 ---
+@misc{alyamac2026evaluating,
+  author       = {Alyamac, Emre and Janmeda, Himanshu and Krishna, Shashwat and Vijay, Yash},
+  title        = {Evaluating the Impact of Task Granularity on Catastrophic Forgetting in Continual Learning},
+  year         = {2026},
+  note         = {arXiv preprint},
+  eprint       = {2606.08013},
+  eprinttype   = {arXiv},
+  eprintclass  = {cs.LG},
+  url          = {https://arxiv.org/abs/2606.08013},
+}
+
+% --- P27 ---
+@article{liang2023new,
+  author       = {Liang, Guoqiang and Chen, Zhaojie and Chen, Zhaoqiang and Ji, Shiyu and Zhang, Yanning},
+  title        = {New Insights on Relieving Task-Recency Bias for Online Class Incremental Learning},
+  journal      = {IEEE Transactions on Circuits and Systems for Video Technology},
+  year         = {2023},
+  eprint       = {2302.08243},
+  eprinttype   = {arXiv},
+  eprintclass  = {cs.CV},
+  url          = {https://arxiv.org/abs/2302.08243},
+}
+
+% --- P28 ---  (L2P; "Wang et al. 2022a")
+@inproceedings{wang2022learning,
+  author       = {Wang, Zifeng and Zhang, Zizhao and Lee, Chen-Yu and Zhang, Han and Sun, Ruoxi and Ren, Xiaoqi and Su, Guolong and Perot, Vincent and Dy, Jennifer and Pfister, Tomas},
+  title        = {Learning to Prompt for Continual Learning},
+  booktitle    = {Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR)},
+  year         = {2022},
+  eprint       = {2112.08654},
+  eprinttype   = {arXiv},
+  eprintclass  = {cs.CV},
+  url          = {https://arxiv.org/abs/2112.08654},
+}
+
+% --- P29 ---  (DualPrompt; "Wang et al. 2022b")
+@inproceedings{wang2022dualprompt,
+  author       = {Wang, Zifeng and Zhang, Zizhao and Ebrahimi, Sayna and Sun, Ruoxi and Zhang, Han and Lee, Chen-Yu and Ren, Xiaoqi and Su, Guolong and Perot, Vincent and Dy, Jennifer and Pfister, Tomas},
+  title        = {{DualPrompt}: Complementary Prompting for Rehearsal-Free Continual Learning},
+  booktitle    = {European Conference on Computer Vision (ECCV)},
+  year         = {2022},
+  doi          = {10.1007/978-3-031-19809-0_36},
+  eprint       = {2204.04799},
+  eprinttype   = {arXiv},
+  eprintclass  = {cs.CV},
+  url          = {https://arxiv.org/abs/2204.04799},
+}
+
+% --- P32 ---
+@inproceedings{zhu2025bilora,
+  author       = {Zhu, Hao and Zhang, Yifei and Dong, Junhao and Koniusz, Piotr},
+  title        = {{BiLoRA}: Almost-Orthogonal Parameter Spaces for Continual Learning},
+  booktitle    = {Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR)},
+  year         = {2025},
+  pages        = {25613--25622},
+  doi          = {10.1109/CVPR52734.2025.02385},
+  note         = {DOI supplied by author of the literature registry; not independently verified against IEEE Xplore},
+  url          = {https://openaccess.thecvf.com/content/CVPR2025/html/Zhu_BiLoRA_Almost-Orthogonal_Parameter_Spaces_for_Continual_Learning_CVPR_2025_paper.html},
+}
+
+% --- P33 ---
+@inproceedings{chaudhry2018riemannian,
+  author       = {Chaudhry, Arslan and Dokania, Puneet K. and Ajanthan, Thalaiyasingam and Torr, Philip H. S.},
+  title        = {Riemannian Walk for Incremental Learning: Understanding Forgetting and Intransigence},
+  booktitle    = {European Conference on Computer Vision (ECCV)},
+  series       = {Lecture Notes in Computer Science},
+  volume       = {11215},
+  pages        = {556--572},
+  year         = {2018},
+  eprint       = {1801.10112},
+  eprinttype   = {arXiv},
+  eprintclass  = {cs.LG},
+  url          = {https://openaccess.thecvf.com/content_ECCV_2018/html/Arslan_Chaudhry__Riemannian_Walk_ECCV_2018_paper.html},
+}
+
+% --- P34 --- (added 2026-09-07: Chapter 2 literature-extension pass)
+@article{ling2026lorac,
+  author       = {Ling, Shimou and Zhang, Liang and Zhao, Jiangwei and Pan, Lili and Li, Hongliang},
+  title        = {{LoRA}-based continual learning with constraints on critical parameter changes},
+  journal      = {Pattern Recognition},
+  volume       = {171},
+  pages        = {112086},
+  year         = {2026},
+  doi          = {10.1016/j.patcog.2025.112086},
+  note         = {Originally arXiv:2504.13407 (2025); cited here via the final Pattern Recognition publication (online 2025-07-16, print March 2026)},
+  eprint       = {2504.13407},
+  eprinttype   = {arXiv},
+  eprintclass  = {cs.CV},
+  url          = {https://doi.org/10.1016/j.patcog.2025.112086},
+}
+
+% --- Chapter 4 (Experimental Setup) LaTeX conversion pass, added here ---
+@techreport{krizhevsky2009learning,
+  author       = {Krizhevsky, Alex},
+  title        = {Learning Multiple Layers of Features from Tiny Images},
+  institution  = {University of Toronto},
+  year         = {2009},
+}
+
+% --- P35 --- (added 2026-09-07: Chapter 2 literature-extension pass)
+@misc{zheng2025domerging,
+  author       = {Zheng, Shenghe and Wang, Hongzhi and Huang, Chenyu and Wang, Xiaohui and Chen, Tao and Fan, Jiayuan and Hu, Shuyue and Ye, Peng},
+  title        = {Decouple and Orthogonalize: A Data-Free Framework for {LoRA} Merging},
+  year         = {2025},
+  note         = {arXiv preprint (CoRR); single version (v1) as of 2026-09-07, no journal/conference publication record found},
+  eprint       = {2505.15875},
+  eprinttype   = {arXiv},
+  eprintclass  = {cs.CV},
+  url          = {https://arxiv.org/abs/2505.15875},
+}

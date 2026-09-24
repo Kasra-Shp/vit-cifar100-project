@@ -1,0 +1,149 @@
+\section{Hyperparameter and Protocol Reference}
+\label{sec:appA-hyperparameters}
+
+Table~\ref{tab:appA-hyperparams} consolidates, in one place, the exact
+per-family configuration used for the primary benchmark
+(Chapter~\ref{ch:results}). Every value here is already established in
+Chapter~\ref{ch:experimental-setup} or Chapter~\ref{ch:results}; it is
+repeated here as a single quick-reference table rather than as new
+information.
+
+\begin{table}[htbp]
+\centering
+\begin{tabularx}{\textwidth}{@{}X X X@{}}
+\toprule
+\textbf{Setting} & \textbf{SimpleAvg} & \textbf{RankExt} \\
+\midrule
+Backbone & \multicolumn{2}{l}{CLIP ViT-B/16 vision encoder (frozen), hidden size 768} \\
+LoRA target modules & \multicolumn{2}{l}{\texttt{q\_proj}, \texttt{v\_proj}, all 12 layers (24 modules)} \\
+LoRA rank & 80 (fixed, per specialist) & Cumulative: $16{\to}32{\to}48{\to}64{\to}80$ \\
+LoRA alpha & 160 & $2\times$ cumulative rank at each step \\
+Classifier-head LR multiplier & $\times10$ & $\times1$ \\
+FactorOrth formulation & Dense-update orthogonality & Factor-space orthogonality \\
+FactorOrth $\lambda$ & $\lambda=20$ (1-epoch warmup) & $\lambda=50$ (1-epoch warmup) \\
+KD scope & Old-seen only, no replay & Full (100-way) \\
+KD temperature & 2 & 2 \\
+KD warmup & 1 epoch & None \\
+Classifier-row / feature protection & --- & Protect30 (weight 30, KD-bearing arms only) \\
+Epochs per task & \multicolumn{2}{l}{9} \\
+Optimizer / scheduler & \multicolumn{2}{l}{AdamW, cosine schedule, 10\% warmup ratio} \\
+Replay & \multicolumn{2}{l}{None (rehearsal-free)} \\
+Calibration & \multicolumn{2}{l}{Confidence-weighted, regime-grouped row-norm calibration only} \\
+Seed & \multicolumn{2}{l}{42} \\
+\bottomrule
+\end{tabularx}
+\caption[Hyperparameter reference]{Consolidated hyperparameter and protocol
+reference for the primary benchmark.}
+\label{tab:appA-hyperparams}
+\end{table}
+
+\section{Local Head-Learning-Rate Decision Probe}
+\label{sec:appA-lr-probe}
+
+Table~\ref{tab:appA-lr-probe} reports the reduced-scale local decision
+probe discussed in Section~\ref{sec:ch6-lr-probe}, which tested the
+combined RankExt configuration (FactorOrth + full KD + Protect30) at
+2 tasks, 2 epochs per task, and 10--15 images per class, across two seeds
+(42 and 123). These figures are explicitly non-benchmark, reduced-scale
+diagnostic evidence, reported here in full only because
+Section~\ref{sec:ch6-lr-probe} refers to them by summary; they are never
+compared numerically against any Chapter~\ref{ch:results} benchmark value.
+
+\begin{table}[htbp]
+\centering
+\begin{tabularx}{\textwidth}{@{}X X X X@{}}
+\toprule
+\textbf{Head-LR multiplier} & \textbf{Validation CE (mean $\pm$ std)} & \textbf{All-seen accuracy (mean $\pm$ std)} & \textbf{Restricted mean accuracy} \\
+\midrule
+$\times0.5$ & $3.9055 \pm 0.0033$ & $16.00\% \pm 2.12$ & $25.00\%$ \\
+$\times1.0$ & $3.6389 \pm 0.0120$ & $21.75\% \pm 1.77$ & $32.75\%$ \\
+$\times2.0$ & $3.1455 \pm 0.0168$ & $36.50\% \pm 4.24$ & $52.00\%$ \\
+\bottomrule
+\end{tabularx}
+\caption[Local head-LR decision probe]{Local, reduced-scale head-LR
+decision probe on the combined RankExt configuration (2 seeds; 2 tasks, 2
+epochs/task, 10--15 images/class). Non-benchmark diagnostic evidence.}
+\label{tab:appA-lr-probe}
+\end{table}
+
+\section{RankExt $R_{i,j}$ Retention Matrices, Full Numeric Values}
+\label{sec:appA-rij}
+
+Tables~\ref{tab:appA-rij-plain}--\ref{tab:appA-rij-combined} give the exact
+open (all-seen) accuracy values underlying the four $R_{i,j}$ heatmaps of
+Figure~\ref{fig:ch5-rij-comparison}, for readers who want precise numbers
+rather than a colour scale. $R_{i,j}$ is the accuracy on task $j$ after
+training has completed through task $i$ ($j \le i$); empty cells are
+structurally undefined (a task cannot be evaluated before it is trained).
+
+\begin{table}[htbp]
+\centering
+\begin{tabular}{@{}l ccccc@{}}
+\toprule
+ & T1 & T2 & T3 & T4 & T5 \\
+\midrule
+After step 1 & 95.40 & & & & \\
+After step 2 & 43.50 & 95.70 & & & \\
+After step 3 & 20.75 & 34.00 & 94.05 & & \\
+After step 4 & 12.10 & 26.05 & 42.65 & 93.90 & \\
+After step 5 & 6.40 & 14.90 & 11.80 & 20.75 & 97.05 \\
+\bottomrule
+\end{tabular}
+\caption[$R_{i,j}$ matrix -- RankExt plain]{RankExt (plain), open accuracy
+(\%), $R_{i,j}$.}
+\label{tab:appA-rij-plain}
+\end{table}
+
+\begin{table}[htbp]
+\centering
+\begin{tabular}{@{}l ccccc@{}}
+\toprule
+ & T1 & T2 & T3 & T4 & T5 \\
+\midrule
+After step 1 & 95.40 & & & & \\
+After step 2 & 40.55 & 96.05 & & & \\
+After step 3 & 11.65 & 39.55 & 93.95 & & \\
+After step 4 & 10.05 & 37.15 & 67.85 & 94.10 & \\
+After step 5 & 1.95 & 16.55 & 21.90 & 33.25 & 97.05 \\
+\bottomrule
+\end{tabular}
+\caption[$R_{i,j}$ matrix -- RankExt + FactorOrth]{RankExt + FactorOrth,
+open accuracy (\%), $R_{i,j}$.}
+\label{tab:appA-rij-factororth}
+\end{table}
+
+\begin{table}[htbp]
+\centering
+\begin{tabular}{@{}l ccccc@{}}
+\toprule
+ & T1 & T2 & T3 & T4 & T5 \\
+\midrule
+After step 1 & 95.75 & & & & \\
+After step 2 & 92.40 & 70.35 & & & \\
+After step 3 & 84.45 & 62.75 & 82.85 & & \\
+After step 4 & 76.60 & 47.85 & 73.90 & 88.25 & \\
+After step 5 & 60.10 & 33.70 & 42.90 & 69.75 & 93.45 \\
+\bottomrule
+\end{tabular}
+\caption[$R_{i,j}$ matrix -- RankExt + KD + Protect]{RankExt + KD +
+Protect, open accuracy (\%), $R_{i,j}$.}
+\label{tab:appA-rij-kdprotect}
+\end{table}
+
+\begin{table}[htbp]
+\centering
+\begin{tabular}{@{}l ccccc@{}}
+\toprule
+ & T1 & T2 & T3 & T4 & T5 \\
+\midrule
+After step 1 & 95.75 & & & & \\
+After step 2 & 93.15 & 69.10 & & & \\
+After step 3 & 87.40 & 64.50 & 81.60 & & \\
+After step 4 & 77.75 & 57.10 & 76.10 & 88.05 & \\
+After step 5 & 66.40 & 47.60 & 49.45 & 72.10 & 92.05 \\
+\bottomrule
+\end{tabular}
+\caption[$R_{i,j}$ matrix -- RankExt combined]{RankExt + FactorOrth + KD +
+Protect (combined), open accuracy (\%), $R_{i,j}$.}
+\label{tab:appA-rij-combined}
+\end{table}

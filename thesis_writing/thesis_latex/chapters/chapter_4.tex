@@ -1,0 +1,310 @@
+% ============================================================================
+%  Chapter 4 -- Experimental Setup
+% ----------------------------------------------------------------------------
+%  FORMAT CONVERSION of thesis_writing/chapter_4/chapter_4_full_v1.md
+%  (verified draft, written during the 2026-09-18 six-chapter structural
+%  migration -- see that file's own provenance note). Scientific content,
+%  wording, and every configuration value are preserved; only changes
+%  required for valid LaTeX have been made (heading levels, math delimiters,
+%  citation commands, cross-references, list/table environments). This
+%  chapter states experimental SETTINGS only -- it reports no accuracy, BWT,
+%  or forgetting number; those belong to Chapter 5 (Results), still a
+%  placeholder as of this conversion.
+%
+%  LABELS: sec:ch4-* for sections, tab:ch4-* for tables, mirroring Chapter
+%    3's sec:ch3-*/tab:ch3-* convention. Chapter label \label{ch:experimental-setup}
+%    is unchanged from the pre-existing placeholder, so every \ref to it
+%    already present in Chapters 1-3 continues to resolve.
+%
+%  CROSS-REFERENCES INTO CHAPTER 5: only the chapter-level \ref{ch:results}
+%    is used; stale plain-text Chapter 5 subsection numbers were removed in
+%    the 2026-09-23 cleanup pass.
+%
+%  BIBLIOGRAPHY: one new entry added, krizhevsky2009learning (CIFAR-100),
+%    appended to references.bib. radford2021learning (CLIP) already existed,
+%    reused from Chapter 3.
+% ============================================================================
+
+\chapter{Experimental Setup}
+\label{ch:experimental-setup}
+
+\section{Experimental Objectives}
+\label{sec:ch4-objectives}
+
+This chapter specifies the concrete experimental settings under which the
+two continual-LoRA integration strategies defined in
+Chapter~\ref{ch:methodology} --- SimpleAvg (Section~\ref{sec:ch3-simpleavg})
+and RankExt (Section~\ref{sec:ch3-rankext}) --- together with the knowledge
+distillation and FactorOrth stabilisation mechanisms of
+Section~\ref{sec:ch3-stabilization}, were trained and evaluated. Three
+objectives structure the chapter: to fix, once, the dataset, protocol,
+backbone, and training configuration shared by every experiment reported in
+Chapter~\ref{ch:results}, so results are not repeatedly re-described; to
+state exactly which method variants and configuration differences exist
+across the experiments this thesis draws on, since more than one
+configuration of each strategy has been run; and to record the
+implementation and reproducibility details --- software environment, seeds,
+compute infrastructure, checkpointing --- needed to situate those results as
+reproducible, traceable experiments rather than one-off numbers. This
+chapter states settings only; Chapter~\ref{ch:results} reports and
+interprets what those settings produced.
+
+\section{Datasets}
+\label{sec:ch4-datasets}
+
+At the time of writing, \textbf{CIFAR-100} \parencite{krizhevsky2009learning}
+is the dataset used for all completed experiments reported in this thesis:
+100 fine-grained object classes, 50,000 training images and 10,000 test
+images, loaded in its native (unshuffled) label order. Every
+dataset-specific setting in the remainder of this chapter is stated for
+CIFAR-100.
+
+\section{Class-Incremental Protocol}
+\label{sec:ch4-protocols}
+
+The primary experimental setting used throughout this thesis is CIFAR-100
+under a $5\times20$ class-incremental protocol, comprising five steps of 20
+classes each. Unless explicitly stated otherwise, the main comparisons and
+analyses in Chapter~\ref{ch:results} refer to this setting. It instantiates
+the class-incremental setting of
+Section~\ref{sec:ch3-problem-formulation} --- a fixed, disjoint,
+non-revisited sequence of class groups, introduced under the native
+(unshuffled) label order --- with class groups $[0,19]$, $[20,39]$,
+$[40,59]$, $[60,79]$, $[80,99]$, and RankExt's cumulative rank schedule
+$[16,32,48,64,80]$ (Section~\ref{sec:ch4-backbone}). This is the setting
+used for the main, headline results in Chapter~\ref{ch:results}.
+
+No alternative class-incremental partition is reported in this thesis:
+every result in Chapter~\ref{ch:results} uses the primary $5\times20$
+protocol, and the effect of protocol depth is left to future work
+(Section~\ref{sec:ch6-future-work}). No dataset-level accuracy number
+appears in this section; results under the primary protocol are reported in
+Chapter~\ref{ch:results}.
+
+\section{Backbone and Adaptation Architecture}
+\label{sec:ch4-backbone}
+
+The backbone is the vision encoder of CLIP ViT-B/16
+(\texttt{openai/clip-vit-base-patch16}; \parencite{radford2021learning}),
+used identically for both integration strategies and frozen throughout
+training (Section~\ref{sec:ch3-lora-framework}); CLIP's text encoder plays
+no role. The pooled representation feeds a single linear classifier,
+$\mathbb{R}^{768}\to\mathbb{R}^{100}$ (Section~\ref{sec:ch3-classifier-construction}).
+LoRA is injected into the query and value projection matrices
+(\texttt{q\_proj}, \texttt{v\_proj}) of every attention block --- the same
+two-module target set for both strategies; no alternative target-module set
+was evaluated for any result in this thesis.
+
+SimpleAvg is configured, throughout every experiment presented as primary in
+Chapter~\ref{ch:results}, at rank $r=80$, $\alpha=160$, giving scaling
+$s=\alpha/r=2$ (Section~\ref{sec:ch3-lora-framework}), fixed for every step.
+One independent specialist is trained per step from the pretrained backbone;
+after the final step, the reconstructed dense updates of the five
+specialists are averaged arithmetically and added to a fresh pretrained
+backbone, and each class's classifier row is copied from the specialist
+that trained it (Section~\ref{sec:ch3-simpleavg}).
+RankExt's primary $5\times20$ cumulative rank schedule is
+$[16,32,48,64,80]$ (Section~\ref{sec:ch4-protocols} above), with a constant
+per-rank scaling of 2.0 at every growth step, matching SimpleAvg's own
+scaling by construction (Section~\ref{sec:ch3-lora-framework}). A single
+persistent adaptation is carried across steps: at each step a new rank-16
+block is appended, while all previously learned blocks remain active in the
+forward pass and are hard-frozen (Section~\ref{sec:ch3-rankext}).
+
+\section{Training Configuration}
+\label{sec:ch4-training}
+
+The following training configuration is shared by every method variant and
+every experiment presented as primary in Chapter~\ref{ch:results}, under the
+primary $5\times20$ protocol:
+
+\begin{table}[htbp]
+\centering
+\begin{tabularx}{\textwidth}{@{}l X@{}}
+\toprule
+\textbf{Setting} & \textbf{Value} \\
+\midrule
+Epochs per step & 9 \\
+Optimizer & AdamW \\
+Learning rate & $5\times10^{-5}$ (SimpleAvg) / $1\times10^{-4}$ (RankExt) --- family-specific \\
+Classifier-head LR multiplier & $\times10$ (SimpleAvg) / $\times1$ (RankExt) --- family-specific \\
+Weight decay & 0.05 \\
+LR scheduler & Cosine, with a 10\% warmup ratio \\
+Batch size & 16 (effective batch 16, gradient accumulation 1) \\
+Gradient clipping & Default Hugging Face \texttt{Trainer} behaviour, \texttt{max\_grad\_norm=1.0} \\
+Mixed precision & fp16 when a GPU is available; fp32 otherwise \\
+Replay & \textbf{None.} Every method variant in this thesis is rehearsal-free (Section~\ref{sec:ch3-problem-formulation}); no replay buffer is used by any reported method variant \\
+Data augmentation (train) & Resize $\to$ random crop (padding 8) $\to$ random horizontal flip $\to$ colour jitter $\to$ normalise (CLIP statistics) \\
+Data augmentation (eval) & Resize $\to$ normalise only, no augmentation \\
+\bottomrule
+\end{tabularx}
+\caption[Training configuration]{Training configuration shared by every
+method variant and every experiment presented as primary in
+Chapter~\ref{ch:results}.}
+\label{tab:ch4-training-config}
+\end{table}
+
+\textbf{Validation and best-epoch selection.} A held-out, class-stratified
+validation split (25 images per class, deterministically shuffled) is
+constructed once, before any method's training loop begins, and shared by
+every method variant. At the end of each local epoch, pure validation
+cross-entropy --- not the regularised training loss any KD- or
+orthogonality-bearing method optimises --- is computed; whenever it improves on
+the running best, the current trainable parameters are snapshotted, and the
+best snapshot is reloaded once that step's training completes, before that
+step's evaluation runs. This selection rule is identical across every method
+variant and every experiment referenced in Chapter~\ref{ch:results}.
+
+\textbf{Calibration.} The confidence-weighted, regime-grouped row-norm
+calibration mode of Section~\ref{sec:ch3-calibration} is applied,
+identically, to every method variant's final classifier before evaluation,
+with confidence exponent $\gamma=0.65$ and per-step scaling factors clipped
+to $[0.85, 1.30]$. As already established in
+Section~\ref{sec:ch3-calibration}, this rescaling is post-hoc, touches only
+the classifier's weight rows (the bias vector $b$ is never modified), and
+the same calibrated classifier is used for both open and restricted
+evaluation.
+
+\subsection{Variant-Specific Loss Composition}
+\label{sec:ch4-loss-composition}
+
+Section~\ref{sec:ch3-stabilization} states that every variant's exact loss
+composition, auxiliary stabilisation terms, and warmup schedules are
+specified here. Each stabilisation mechanism's general form and the
+temperature/weight symbols below are defined in
+Sections~\ref{sec:ch3-kd} and~\ref{sec:ch3-factororth}; this section states
+only the experimental configuration actually used, not a re-derivation of
+either mechanism.
+
+\textbf{Knowledge distillation.} Temperature $\tau=2$, weight $\kappa=1.0$,
+with the $\tau^2$ scaling of Equation~\eqref{eq:ch3-kd}. Distillation is
+active from the second class-incremental step onward (a teacher requires at
+least one already-trained step) and is computed on the current step's own
+input batch only. Its scope and schedule are family-specific. For RankExt,
+it compares the full output distribution over every class seen so far, and
+there is no distillation-specific warmup: $\tau$ and $\kappa$ are constant
+whenever distillation is active. For SimpleAvg, the comparison is
+restricted to the previously seen classes, and the distillation weight is
+ramped linearly from zero over the first epoch of each step. Teacher
+construction is as defined in Section~\ref{sec:ch3-kd}: for SimpleAvg, a
+frozen running merged prefix snapshot over the steps already trained; for
+RankExt, the frozen persistent model as it stood at the end of the previous
+step.
+
+\textbf{FactorOrth.} The FactorOrth configuration is family-specific
+(Section~\ref{sec:ch3-factororth}). SimpleAvg's FactorOrth variants use
+dense-update orthogonality (Equation~\eqref{eq:ch3-factororth-simpleavg})
+with $\lambda_{orth}=20$; RankExt's FactorOrth variants use factor-space
+orthogonality on normalised factors
+(Equations~\eqref{eq:ch3-factororth-a}--\eqref{eq:ch3-factororth-b}) with
+$\lambda_{orth}=50$. A one-epoch linear warmup on the FactorOrth coefficient
+is applied to all four FactorOrth-bearing variants: SimpleAvg + FactorOrth,
+SimpleAvg + FactorOrth + KD, RankExt + FactorOrth, and RankExt + FactorOrth
++ KD + Protect. This
+orthogonality-loss warmup is distinct from the $10\%$ learning-rate warmup
+of the main optimizer schedule (Table~\ref{tab:ch4-training-config}).
+
+\subsection{RankExt Auxiliary Stabilisation}
+\label{sec:ch4-rankext-auxiliary}
+
+Section~\ref{sec:ch3-eight-variants} notes that activating knowledge
+distillation for RankExt also couples it to further, RankExt-specific
+configuration choices, not present for SimpleAvg. These choices are
+implementation/configuration details of the RankExt variants used in the
+experiments, not a novel contribution of this thesis:
+
+\begin{itemize}
+\item Non-KD RankExt variants use a pretrained-backbone feature anchor
+(weight $1.0$), a cosine-distance term against the frozen pretrained
+backbone's own features.
+\item KD-bearing RankExt variants instead use projected feature protection
+(weight $30.0$), active from the second step onward, which discourages
+drift of the shared representation along directions the earlier steps'
+classifier rows already occupy.
+\item The feature anchor and projected feature protection are mutually
+exclusive: exactly one, or neither, is active for a given RankExt variant,
+never both.
+\item New-block output warmup (a one-epoch linear ramp on the
+newly-appended rank block's contribution to the forward pass) is active for
+non-KD RankExt variants and disabled for KD-bearing RankExt variants.
+\end{itemize}
+
+\section{Evaluation Metrics}
+\label{sec:ch4-metrics}
+
+Chapter~\ref{ch:methodology} defines every metric in this list precisely
+(Sections~\ref{sec:ch3-open-restricted} and~\ref{sec:ch3-bwt-forgetting});
+this section states only which are computed and reported, not their
+derivation.
+
+Three summary metrics are used throughout Chapter~\ref{ch:results} to
+characterise the final model in a single comparison table; they are
+distinct from the formal continual-learning metrics, backward transfer and
+forgetting, defined next.
+
+\begin{itemize}
+\item \textbf{First-step accuracy} --- open accuracy on the first step's own
+class group, at the final model.
+\item \textbf{All-seen accuracy} --- open accuracy over every class
+introduced by the point of evaluation, at the final model; the headline
+comparison metric used throughout Chapter~\ref{ch:results}.
+\item \textbf{Later-steps accuracy} --- open accuracy of the final model on
+a single combined evaluation set formed by pooling every class introduced
+after the first step; this is one accuracy number over the union of those
+classes, not an average of separately computed per-step accuracies.
+\end{itemize}
+
+\begin{itemize}
+\item \textbf{Open accuracy} and \textbf{restricted accuracy} --- computed
+from the same model's logits on the same examples; open accuracy competes
+every seen class, restricted accuracy masks to one step's own class group.
+Both open and restricted class-group accuracies are reported using the
+final calibrated model.
+\item \textbf{Backward transfer (BWT)} and \textbf{forgetting} --- computed
+exactly as defined in Section~\ref{sec:ch3-bwt-forgetting}. BWT is reported
+for both integration strategies (with SimpleAvg's diagonal reference
+substituted by its pre-merge specialist accuracy, since no genuine
+intermediate checkpoint exists for that strategy); forgetting is reported
+for RankExt only.
+\item \textbf{Forward transfer} is not reported because it was not
+validated sufficiently for reliable interpretation.
+\end{itemize}
+
+\section{Implementation and Reproducibility}
+\label{sec:ch4-reproducibility}
+
+\textbf{Software.} Training is implemented in PyTorch using the Hugging Face
+\texttt{transformers.Trainer} API, the CLIP vision encoder from the Hugging
+Face \texttt{transformers} model hub, and PEFT's
+\texttt{LoraConfig}/\texttt{get\_peft\_model} for SimpleAvg's per-step
+adapters (RankExt uses a custom \texttt{Growing\allowbreak RankLoRA\allowbreak Linear} module rather
+than PEFT, to support persistent, growing-rank blocks ---
+Section~\ref{sec:ch3-rankext}). The exact PyTorch/CUDA version used for any
+specific run was not independently recovered from a saved environment log
+during the preparation of this thesis and is not stated here rather than
+guessed.
+
+\textbf{Compute environment.} Training was performed on the University of
+Padova DEI computing cluster using one NVIDIA A40 GPU per job, with jobs
+submitted through SLURM.
+
+\textbf{Seeds.} A single global seed drives every source of randomness
+(Python's \texttt{random}, NumPy, and PyTorch) at process start, with an
+additional per-method reseed inside the outer training loop so that no
+method's initialisation or dropout draws depend on how many other methods
+have already trained earlier in the same process. The default seed is 42,
+used for every primary $5\times20$ result reported in
+Chapter~\ref{ch:results}. Every primary $5\times20$ result is single-seed; no primary result is
+replicated across seeds.
+
+\textbf{Checkpointing, logging, and result artifacts.} Each run writes, per
+method and per class-incremental step: the best-validation-CE snapshot of
+trainable parameters (Section~\ref{sec:ch4-training}), a per-epoch
+training/validation loss log, and a structured set of result tables
+(per-method final metrics, per-step open/restricted accuracy, best-epoch
+selection records, and --- where applicable --- classifier-row-restoration
+and rank-structure diagnostics) as CSV files under a per-run results
+directory, together with a machine-readable configuration snapshot
+recording the hyperparameters and configuration used for the run. All reported metrics
+in Chapter~\ref{ch:results} are derived from these saved experiment
+artifacts.

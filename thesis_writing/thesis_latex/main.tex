@@ -1,0 +1,83 @@
+% ============================================================================
+%  main.tex -- Master thesis, University of Padua, Department of Information
+%  Engineering (DEI), Master's Degree in Control Systems Engineering.
+%
+%  Master file for the DEI thesis template (class: DEIthesis).
+%  Build (LaTeX toolchain required -- see DEI_COMPLIANCE.md):
+%     pdflatex main
+%     biber    main
+%     pdflatex main
+%     pdflatex main
+%  or:  latexmk -pdf main
+% ============================================================================
+
+\documentclass{DEIthesis}
+
+% ---- Frontespizio / thesis metadata -----------------------------------------
+% Confirmed 2026-09-18 by the thesis author -- all fields below are final,
+% not placeholders.
+\title{Continual LoRA Merging for Class-Incremental Learning}
+\author{Kasra Shahrampour}
+\studentId{2106037}
+\advisor{Prof. Pietro Zanuttigh}
+% No co-supervisor: none was confirmed. No co-supervisor field exists in
+% DEIthesis.cls (\advisor is the only advisor-type command it defines); if a
+% co-supervisor is later confirmed, add a \coadvisor{...} command to
+% DEIthesis.cls (mirroring \advisor) and render it beside \advisor in
+% \maketitle.
+\university{University of Padova}
+\department{Department of Information Engineering}
+\mastername{Control Systems Engineering}
+% \academicYear is used ONLY for the title page's bottom defense-date line
+% (DEIthesis.cls, \maketitle) -- confirmed by grep, no other use anywhere in
+% the thesis. Set directly to the defense month/year rather than an
+% academic-year range.
+\academicYear{October 2026}
+
+\begin{document}
+
+% ---- Front matter order ----------------------------------------------------
+% Title page / blank / Declaration of Originality / blank / Abstract / blank
+% / Acknowledgements / Contents / List of Figures / List of Tables / Preface
+% / Chapter 1. Each \blankpage (DEIthesis.cls) is a single page with no
+% header, footer, or printed page number.
+\frontmatter
+\maketitle
+\blankpage
+
+\input{frontmatter/declaration}
+\blankpage
+
+\input{frontmatter/abstract}
+\blankpage
+
+\input{frontmatter/thanks}
+
+\tableofcontents
+\listoffigures
+\listoftables
+
+\input{frontmatter/preface}
+
+\mainmatter
+
+\input{chapters/chapter_1}
+\input{chapters/chapter_2}
+\input{chapters/chapter_3}
+\input{chapters/chapter_4}
+\input{chapters/chapter_5}
+\input{chapters/chapter_6}
+
+% \backmatter is redefined by DEIthesis.cls: it prints the bibliography, then
+% the acknowledgments (frontmatter/thanks.tex), then switches to \appendix.
+\backmatter
+
+\chapter{Appendix 1}
+\label{app:appendix1}
+\input{appendices/appendix1}
+
+\chapter{Core Implementation Listings}
+\label{app:code}
+\input{appendices/code_listings}
+
+\end{document}

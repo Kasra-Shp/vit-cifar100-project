@@ -74,10 +74,11 @@ $[40,59]$, $[60,79]$, $[80,99]$, and RankExt's cumulative rank schedule
 $[16,32,48,64,80]$ (Section~\ref{sec:ch4-backbone}). This is the setting
 used for the main, headline results in Chapter~\ref{ch:results}.
 
-No alternative class-incremental partition is reported in this thesis:
-every result in Chapter~\ref{ch:results} uses the primary $5\times20$
-protocol, and the effect of protocol depth is left to future work
-(Section~\ref{sec:ch6-future-work}). No dataset-level accuracy number
+Every main result in Chapter~\ref{ch:results} uses the primary
+$5\times20$ protocol. The only alternative partition reported is a
+secondary $4\times25$ diagnostic for the RankExt family
+(Section~\ref{sec:ch5-ablation}); a systematic study of protocol depth is
+left to future work (Section~\ref{sec:ch6-future-work}). No dataset-level accuracy number
 appears in this section; results under the primary protocol are reported in
 Chapter~\ref{ch:results}.
 
@@ -124,7 +125,7 @@ primary $5\times20$ protocol:
 \toprule
 \textbf{Setting} & \textbf{Value} \\
 \midrule
-Epochs per step & 9 \\
+Epochs per step & Maximum 9; best-validation checkpoint selection throughout. Plain SimpleAvg alone uses validation-based early stopping (patience 3) and stopped after 5--8 epochs per step; every other variant ran all 9 \\
 Optimizer & AdamW \\
 Learning rate & $5\times10^{-5}$ (SimpleAvg) / $1\times10^{-4}$ (RankExt) --- family-specific \\
 Classifier-head LR multiplier & $\times10$ (SimpleAvg) / $\times1$ (RankExt) --- family-specific \\
@@ -181,7 +182,8 @@ with the $\tau^2$ scaling of Equation~\eqref{eq:ch3-kd}. Distillation is
 active from the second class-incremental step onward (a teacher requires at
 least one already-trained step) and is computed on the current step's own
 input batch only. Its scope and schedule are family-specific. For RankExt,
-it compares the full output distribution over every class seen so far, and
+it compares the full 100-way output distribution, which covers every class
+seen so far, and
 there is no distillation-specific warmup: $\tau$ and $\kappa$ are constant
 whenever distillation is active. For SimpleAvg, the comparison is
 restricted to the previously seen classes, and the distillation weight is

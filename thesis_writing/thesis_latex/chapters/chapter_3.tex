@@ -161,10 +161,11 @@ schedule, the classifier's dimensionality, and so on --- refers to this
 primary protocol.
 
 Holding $C=100$ fixed, the same class set could also be partitioned more
-coarsely or more finely. No such alternative protocol depth is evaluated in
-this thesis; protocol depth is discussed only as literature background
-(Section~\ref{sec:protocol-depth}) and as a direction for future work
-(Section~\ref{sec:ch6-future-work}).
+coarsely or more finely. Apart from one secondary $4\times25$ diagnostic
+reported in Section~\ref{sec:ch5-ablation}, no alternative protocol depth
+is evaluated in this thesis; protocol depth is otherwise discussed only as
+literature background (Section~\ref{sec:protocol-depth}) and as a
+direction for future work (Section~\ref{sec:ch6-future-work}).
 
 \begin{table}[htbp]
 \centering
@@ -465,8 +466,8 @@ implementation, distillation is computed only on the current step's own
 input batch --- no image or label from an earlier step is replayed for this
 purpose, consistent with the rehearsal-free constraint of Section~\ref{sec:ch3-problem-formulation} ---
 and its scope is family-specific. For RankExt, it is applied to the
-\textbf{full} output distribution over every class seen so far, including
-the classes newly introduced at the current step. For SimpleAvg, it is
+\textbf{full} 100-way output distribution, which covers every class seen
+so far, including the classes newly introduced at the current step. For SimpleAvg, it is
 restricted to the previously seen classes: teacher and student logits are
 both restricted to the classes introduced at earlier steps before the
 softened distributions are formed. Writing $z_t$ and $z_s$ for the
@@ -622,7 +623,7 @@ Representation integration, as defined in Section~\ref{sec:ch3-integration-strat
 that turns that representation into class predictions are handled as two
 separate operations on two separate sets of parameters. Nothing in
 SimpleAvg's dense-averaging merge or RankExt's block-sum forward pass
-touches the classifier, and, symmetrically, the post-hoc calibration
+touches the classifier, and, symmetrically, the classifier rescaling
 described below never touches the backbone or the low-rank adaptation
 parameters. This section defines both operations in turn.
 
@@ -936,7 +937,7 @@ analogous to SimpleAvg's dense-averaging reconstruction; the model at the
 end of step $T$ is the final model.
 
 \textbf{Shared closing sequence.} For either family, once the final model is
-assembled: the configured post-hoc classifier calibration is applied
+assembled: the configured classifier rescaling is applied
 (Section~\ref{sec:ch3-calibration}); open accuracy is computed from the resulting logits
 (Section~\ref{sec:ch3-open-restricted}); restricted accuracy is computed from the identical logits
 under the narrower per-group mask (Section~\ref{sec:ch3-open-restricted}); and the continual-learning

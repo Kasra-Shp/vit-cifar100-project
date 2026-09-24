@@ -1,9 +1,7 @@
 % ============================================================================
 %  Chapter 6 -- Discussion and Conclusion
-%  Evidence hierarchy: (A) main benchmark; (B) controlled ablation/refinement;
-%  (C) mechanistic diagnostics; (D) calibration diagnostics; (E)
-%  historical/supporting runs. A lower tier is never allowed to override or
-%  silently reinterpret a higher tier's result.
+%  Primary evidence: CIFAR-100 5x20, seed 42 (Chapter 5). Supporting
+%  diagnostics are identified as such where they are used.
 % ============================================================================
 
 \chapter{Discussion and Conclusion}
@@ -12,752 +10,514 @@
 \section{Main Findings}
 \label{sec:ch6-main-findings}
 
-Chapter 5's primary benchmark (CIFAR-100 $5\times20$, seed 42)
-places SimpleAvg's best result (SimpleAvg + KD, 75.21\%) 4.45 percentage
-points above RankExt's best result (RankExt + FactorOrth + KD + Protect,
-70.76\%). Two observations drive the rest of this chapter. First,
-SimpleAvg's four variants move very little around a strong plain baseline
-(75.16\%): none of KD, FactorOrth, or their combination produces a clear
-all-seen improvement. Second, RankExt's four variants move an order of
-magnitude more (34.99\% to 70.76\%), and the movement is concentrated almost
-entirely in the presence or absence of the KD+Protect configuration
-($+$30.02 percentage points over plain), with FactorOrth contributing a
-smaller, separate increment ($+$6.01 percentage points alone; a further
-$+$5.75 points on top of KD+Protect). This chapter asks why these two
-families respond so differently to auxiliary objectives that are, at the
-level of Chapter~\ref{ch:methodology}'s design, addressing the same nominal
-problem --- retention under sequential class-incremental training --- and
-what the parameter-efficiency, $R_{i,j}$, and refinement evidence of
-Chapter~\ref{ch:results} imply about that difference. Every interpretation
-below is explicitly graded by the evidence tier it rests on: (A) the
-primary benchmark; (B) the controlled refinement experiment;
-(C) mechanistic diagnostics; (D) calibration diagnostics; (E)
-historical/supporting runs. A lower tier is never allowed to override or
-silently reinterpret a higher tier's result.
+The primary benchmark of Chapter~\ref{ch:results} (CIFAR-100 $5\times20$,
+seed 42) places the highest observed SimpleAvg result in this run
+(SimpleAvg + KD, 75.21\%) 4.45 percentage points above the highest observed
+RankExt result in this run (RankExt + FactorOrth + KD + Protect, 70.76\%).
+Two observations shape the rest of this chapter. First, the four SimpleAvg
+variants stay close to a strong plain baseline (75.16\%): none of KD,
+FactorOrth, or their combination produces a clear all-seen improvement.
+Second, the four RankExt variants span a far wider range (34.99\% to
+70.76\%), and the largest observed changes are associated with the
+KD+Protect-bearing configurations ($+$30.02 percentage points over plain
+RankExt), while FactorOrth adds a smaller increment ($+$6.01 points on its
+own and $+$5.75 points on top of KD+Protect).
+
+The discussion below asks why the two families respond so differently to
+auxiliary objectives that, at the level of the design in
+Chapter~\ref{ch:methodology}, address the same problem of retention under
+sequential class-incremental training, and what the open/restricted,
+$R_{i,j}$, refinement, and parameter-accounting results of
+Chapter~\ref{ch:results} suggest about that difference. The primary
+benchmark is the reference point throughout; where supporting diagnostics
+from other runs or checkpoints are used, this is stated explicitly.
 
 \section{Why SimpleAvg Is Strong}
 \label{sec:ch6-simpleavg-strong}
 
-SimpleAvg's plain baseline reaches 75.16\% without any auxiliary mechanism
-(Chapter~\ref{ch:results}, Section~\ref{sec:ch5-main-results}). Several
-structural properties of its design plausibly contribute to this, and this
-section states them as candidate contributors, not as an isolated, proven
-cause, following a dedicated evidence audit specifically constructed to
-test for leakage or an unfair evaluation advantage.
+Plain SimpleAvg reaches 75.16\% without any auxiliary mechanism
+(Section~\ref{sec:ch5-main-results}). This result is obtained under the
+same task-agnostic evaluation as RankExt: the final merged model has a
+single 100-way classifier and is evaluated with a plain argmax over all
+classes, without task-identity routing at inference.
 
-That audit confirms directly from the training and evaluation code --- not
-inferred --- that SimpleAvg's final evaluation is genuinely task-agnostic: a
-single merged model with a single 100-way classifier head, evaluated with a
-plain argmax and no task-ID routing at inference, identical in mechanism to
-RankExt's own evaluation path. No leakage of task identity into final
-inference was found. Given that baseline of legitimacy, several structural
-properties are consistent with SimpleAvg's strength: each of its five
-specialists is trained independently from a fresh pretrained checkpoint, so
-no task's gradient can interfere with another task's already-learned
-parameters within a single evolving model --- the sequential interference
-RankExt's architecture is exposed to by construction does not arise for
-SimpleAvg at all. Classifier-row stitching (Chapter~\ref{ch:methodology})
-assigns each class's final row directly from the one specialist that
-actually trained it, preserving an exact, task-co-adapted linear boundary
-rather than blending or averaging classifier weights across tasks. This
+Several properties of the design are consistent with this strength, although
+none is isolated as a sole cause. Each of the five rank-80 LoRA specialists
+is trained from a fresh pretrained initialisation, so there is no
+sequential parameter interference between specialists during specialist
+training: learning a later step cannot overwrite what an earlier specialist
+has learned. Classifier-row stitching (Chapter~\ref{ch:methodology}) then
+takes each class's final classifier row directly from the specialist that
+trained it, rather than averaging classifier weights across steps. This
 merge-then-stitch strategy sits within the broader model-merging literature
 on combining independently fine-tuned weights
-\parencite{wortsman2022model,ilharco2023editing}. Fresh, full-rank-80 LoRA
-specialists and a $\times10$ classifier-head learning-rate multiplier
-(unchanged throughout the primary benchmark) are both consistent with,
-though not individually isolated as necessary for, SimpleAvg's result.
+\parencite{wortsman2022model,ilharco2023editing}.
 
-A specific, measured capacity question is worth stating precisely rather
-than left implicit. An SVD-based effective-rank measurement on real,
-architecture-matched checkpoints (an earlier diagnostic run for SimpleAvg, the calibration-diagnostic checkpoint for
-RankExt --- the primary benchmark's own checkpoints were unavailable locally for this
-measurement, a disclosed proxy) found that SimpleAvg's merged dense delta
-has 137--192 singular values exceeding 1\% of the maximum, versus 79--80
-for a single specialist's own delta (roughly $1.7\times$--$2.4\times$), and
-an entropy-based effective rank of 79.7--128.1 against RankExt's final
-cumulative delta's 44.9--66.4 at the same sampled layers. Arithmetic
-averaging of five independently-trained deltas therefore neither
-destructively cancels toward the single-specialist rank ($\sim$80) nor
-purely stacks toward a naive ceiling ($5\times80=400$); it lands measurably
-above a single specialist's rank, in the moderate-magnitude tail of the
-spectrum specifically, not concentrated in the dominant directions (stable
-rank is comparable between the two families). This measurement is real and
-directly relevant, but it is not, on its own, an explanation of the
-4.45-percentage-point gap. Two independent controlled capacity experiments
---- a rank-32-SimpleAvg-vs-cumulative-rank-160-RankExt comparison and a
-same-seed rank-80-vs-160 doubling of RankExt's own cumulative rank at fixed
-SimpleAvg configuration --- both found that increasing RankExt's capacity
-within the tested range closed well under 5\% of the corresponding accuracy
-gap for the non-KD variants. The results are consistent with a real,
-measured effective-capacity edge for SimpleAvg's merge mechanism that is
-nonetheless a minor, not dominant, contributor to the observed accuracy
-gap; the larger share of the gap is better explained by the mechanisms
-discussed in Sections~\ref{sec:ch6-rankext-struggles}--\ref{sec:ch6-kd-protect}
-below.
+A natural question is whether SimpleAvg simply has more effective capacity.
+Architecture-matched supporting diagnostics suggest that the merged
+SimpleAvg dense update can span more effective directions than a single
+rank-80 specialist or the final RankExt rank-80 adapter. These measurements
+were made on related checkpoints, not on the canonical checkpoints of the
+primary benchmark, and are therefore supporting diagnostic evidence only.
+Two controlled capacity experiments --- a rank-32 SimpleAvg versus a
+cumulative-rank-160 RankExt comparison, and a doubling of RankExt's final
+cumulative rank from 80 to 160 --- closed only a small fraction of the
+corresponding accuracy gap for the non-KD RankExt variants. Capacity is
+unlikely to be the main source of the difference within the
+tested range. The remaining performance difference is therefore examined
+in Sections~\ref{sec:ch6-rankext-struggles}--\ref{sec:ch6-kd-protect} in
+terms of sequential retention and output-space competition rather than
+capacity alone.
 
-One further, disclosed asymmetry is worth naming without overclaiming it.
-SimpleAvg's classifier head trains at a learning-rate multiplier of
-$\times10$ relative to the LoRA parameters, while RankExt's (in the primary
-benchmark's configuration) trains at $\times1$ --- a deliberate,
-historically-documented choice (Section~\ref{sec:ch6-calibration}), not an
-unexplained oversight, but one that has never been ablated back to parity
-for either family. This remains an open confound on the SimpleAvg-strength
-question specifically, not resolved by any evidence gathered for this
-thesis.
+One further asymmetry should be kept in view. SimpleAvg's classifier head
+is trained with a learning-rate multiplier of $\times10$ relative to the
+LoRA parameters, whereas RankExt's canonical configuration uses $\times1$.
+Because classifier-head learning-rate parity between the two families was
+not directly tested, this remains a potential confound in attributing the
+full performance difference solely to integration architecture.
 
-\section{Why Knowledge Distillation Does Not Improve SimpleAvg}
+\section{Why KD Provides Little Net Gain for SimpleAvg}
 \label{sec:ch6-kd-simpleavg}
 
-Chapter~\ref{ch:results} reports that SimpleAvg + KD (75.21\%) is, at this
-single seed, effectively tied with plain SimpleAvg (75.16\%, $+$0.05
-percentage points), while redistributing accuracy from the first task
-($-$9.50 points) toward later tasks ($+$2.44 points) and raising restricted
-accuracy slightly ($+$0.58 points). This section interprets that
-redistribution.
+SimpleAvg + KD reaches 75.21\% against 75.16\% for plain SimpleAvg, a
+difference too small to support an improvement claim from this single-seed
+experiment. The aggregate hides a redistribution: first-task accuracy
+falls by 9.50 percentage points, the later-tasks mean rises by 2.44 points,
+and restricted accuracy rises by 0.58 points
+(Section~\ref{sec:ch5-simpleavg}).
 
-SimpleAvg's KD objective \parencite{hinton2015distilling}
-(Chapter~\ref{ch:methodology}) distills only the already-introduced
-(``old-seen'') classes' logits from a frozen teacher onto the student's
-current-task training images, at temperature 2, with no replay of old-task
-images and with current- and future-task logits excluded from the
-distillation softmax entirely. This design preserves the \emph{relative}
-structure among old classes as reflected on new-task images --- it
-constrains how the student's old-class logits relate to one another when
-evaluated on images the student is currently training on --- but it does
-not directly constrain old-class predictions on old-task images themselves,
-since no old-task image ever appears in this loss term, and it places no
-constraint at all on the total probability mass old classes receive
-relative to newly introduced classes, since the current task's own logits
-are masked out of the KD softmax by construction. This is consistent with,
-and offers a plausible reading of, the observed pattern: restricted
-accuracy (a within-task measure, insulated from cross-task competition)
-improves slightly, and later-task accuracy improves, while first-task,
-all-seen-scale, open accuracy --- which depends on exactly the
-old-versus-new competition this KD objective does not constrain --- does
-not.
+SimpleAvg's KD objective \parencite{hinton2015distilling} distils the
+logits of the previously seen classes from a frozen teacher on the current
+step's training images, at temperature 2. It does not replay images from
+earlier steps, and the current step's own logits are excluded from the KD
+softmax. The objective therefore encourages the student to match the
+teacher's relative logit structure among old classes, as it appears on
+new-step images. It does not directly constrain old-class predictions on
+old-step images, since those images never enter the loss, and it places no
+constraint on how much probability mass old classes receive relative to the
+newly introduced classes. This is consistent with the observed pattern:
+the within-step restricted measure and the later-step accuracy improve
+slightly, while first-step open accuracy, which depends on exactly the
+old-versus-new competition this objective does not constrain, does not.
 
-A local gradient diagnostic on the SimpleAvg+KD configuration (one training
-step, two optimizer updates) provides mechanistic support, at the tier of a
-diagnostic, not a benchmark result. Immediately before the first optimizer
-update, the KD gradient's norm is a substantial fraction of the
-cross-entropy gradient's own norm (25.48 vs.\ 33.72, a ratio of roughly
-three-quarters); after one and two optimizer updates the ratio grows
-slightly ($23.15/28.96 \approx 80\%$; $21.65/27.75 \approx 78\%$). The
-cosine similarity between the CE and KD gradients is small and positive
-before any update ($+0.053$) and becomes mildly negative after both
-subsequent updates ($-0.032$, then $-0.036$). This is consistent with a
-real, non-trivial optimization interaction between the two loss terms,
-strong enough to materially influence the update direction, but the
-gradient conflict itself is mild, not catastrophic --- a cosine near zero,
-not sharply negative. Pure CE/KD gradient opposition is therefore not, on
-this evidence, a sufficient explanation on its own for the
-first-task-versus-later-task redistribution observed in
-Chapter~\ref{ch:results}; it is one plausible contributing factor among the
-scope-of-constraint argument above, and the two are consistent with each
-other rather than competing explanations.
+A small local gradient diagnostic confirms that the KD term is not
+numerically negligible: its gradient norm is of the same order as the
+cross-entropy gradient, while their cosine similarity remains close to
+zero. This indicates a genuine optimisation interaction, but not strong
+gradient opposition.
 
-This chapter does not conclude that SimpleAvg's KD objective is broken, nor
-that it should be discarded; the redistribution it produces is a real,
-measured trade-off (retention on later tasks against retention on the first
-task), not an unambiguous failure. It also does not conclude that post-hoc
-calibration is the cause of KD's flat all-seen result --- that question is
-examined on its own terms in Section~\ref{sec:ch6-calibration}.
+The KD objective is therefore not ineffective in this setting; it produces
+a redistribution of final accuracy from the first-step group toward
+later-step groups, with little net effect on all-seen accuracy.
 
 \section{SimpleAvg FactorOrth: Optimization Strength versus Geometric Objective}
 \label{sec:ch6-sa-factororth}
 
-Although both are referred to as FactorOrth in the thesis-facing
-terminology, their concrete regularisation operators differ by family:
-SimpleAvg applies orthogonality to dense updates, while RankExt applies it
-to normalised low-rank factors (Section~\ref{sec:ch3-factororth}). This
-section concerns the SimpleAvg, dense-update formulation only; RankExt's
-factor-space FactorOrth is discussed in Section~\ref{sec:ch6-factororth}.
+FactorOrth is a common label with a family-specific formulation: SimpleAvg
+applies orthogonality to the reconstructed dense updates, whereas RankExt
+applies it directly to normalised low-rank factors
+(Section~\ref{sec:ch3-factororth}). This section concerns the SimpleAvg,
+dense-update formulation only; RankExt's factor-space FactorOrth is
+discussed in Section~\ref{sec:ch6-factororth}.
 
-Chapter~\ref{ch:results} reports that neither SimpleAvg + FactorOrth
-(74.02\%, $-$1.14 points versus plain) nor SimpleAvg + FactorOrth + KD
-(73.22\%, $-$1.94 points versus plain) improves on the plain baseline, and
-that lowering SimpleAvg FactorOrth's coefficient from $\lambda=20$ (the primary benchmark) to
-$\lambda=1$ (the refinement experiment, Section~\ref{sec:ch5-ablation}) does not recover
-the pure SimpleAvg FactorOrth variant's accuracy (73.80\% at $\lambda=1$, still
-$-$0.22 points relative to $\lambda=20$'s 74.02\%, and still below plain).
-This section separates two distinct questions the SimpleAvg FactorOrth result raises:
-whether $\lambda=20$ was too strong an optimization pressure, and whether
-the dense-update objective itself is well-aligned with the interference it is
-intended to control.
+Neither SimpleAvg + FactorOrth (74.02\%) nor SimpleAvg + FactorOrth + KD
+(73.22\%) improves on plain SimpleAvg (75.16\%). Reducing $\lambda$ from 20
+to 1 in the refinement experiment (Section~\ref{sec:ch5-ablation}) moved
+the FactorOrth variant from 74.02\% to 73.80\% and the FactorOrth + KD
+variant from 73.22\% to 74.64\%; neither exceeds plain SimpleAvg. Reducing
+$\lambda$ from 20 to 1 produced mixed effects and does not establish
+$\lambda=1$ as a superior setting.
 
-On optimization strength: an independently-computed loss-magnitude audit,
-based on an earlier diagnostic run's per-arm loss logs, finds that at $\lambda=20$,
-the dense-update penalty's weighted loss contribution (in that run
-applied to both families) is approximately 29.1\% of the cross-entropy loss
-for RankExt, but only approximately 0.04\% (alone) to
-0.15\% (combined with KD) of cross-entropy for SimpleAvg --- roughly three
-orders of magnitude smaller. This is a loss-magnitude ratio, not a
-gradient-norm ratio, and this chapter does not conflate the two: a
-separate, SimpleAvg-specific gradient-level probe measured
-weighted-orthogonality-to-CE ratios directly at candidate coefficients
-between 0.75 and 2.0 (not 20) and found them likewise small throughout
-training (median ratios of 0.001--0.033, maximum observed ratio 0.236 at
-the single largest tested coefficient and earliest measured update). No
-diagnostic file located for this thesis reports a gradient-norm ratio for
-the dense-update penalty at $\lambda=20$ specifically for either family; a figure of this
-kind was sought and not found, and is not used in this chapter. Taken
-together, the available evidence --- the loss-magnitude ratio from an
-earlier diagnostic run and the refinement experiment's $\lambda=1$
-ablation both moving SimpleAvg FactorOrth's pure variant
-no closer to, or further from, plain SimpleAvg --- is consistent with
-the dense-update penalty being numerically near-inert for SimpleAvg across the coefficient
-range actually tested (1 through 20), which argues against ``$\lambda=20$
-was simply too aggressive'' as the explanation for its lack of benefit: an
-inert term does not become effective by being made smaller.
+Two separate questions follow from this result: whether $\lambda=20$
+imposed too strong an optimisation pressure, and whether the dense-update
+objective is aligned with the interference it is meant to control. On the
+first, the evidence is limited. A one-batch local probe at the second step
+found the weighted orthogonality gradient at $\lambda=20$ to be comparable
+to, and after a second update larger than, the cross-entropy gradient,
+whereas at $\lambda\le1$ it remained a small fraction of it. That probe,
+however, applies the full coefficient from the first update, while the
+canonical run ramps $\lambda$ up from zero over the first epoch of each
+step, and it covers only two optimiser updates. It therefore does not
+describe the gradient balance over the actual training trajectory, and the
+available evidence neither establishes nor excludes excessive optimisation
+pressure at $\lambda=20$ as the reason for the lack of benefit; the mixed
+$\lambda=1$ result does not resolve the question either.
 
-On the geometric objective itself: SimpleAvg FactorOrth, as implemented, penalizes
-each specialist's current dense weight update against every previous
-specialist's own dense update, individually and pairwise. An alternative
-formulation --- orthogonality against a merged or accumulated historical
-direction, or against a shared subspace spanned by all previous updates,
-rather than against each individual prior update separately --- was not the
-mechanism tested in either the primary benchmark or the refinement experiment. This chapter does not
-claim the individual-pairwise formulation is geometrically wrong; it states
-it as a plausible limitation, distinct from and additional to the
-coefficient question above: even a well-tuned coefficient could leave a
-geometrically-misaligned penalty unable to constrain the interference it is
-meant to target. Reducing $\lambda$ addresses only the first question (was
-the pressure too strong) and, on the evidence in Chapter~\ref{ch:results}'s
-ablation, does not resolve the second (is the objective itself targeting
-the right geometric quantity) --- the two are logically separable, and
-the refinement experiment's result speaks only to the first.
+On the second question, SimpleAvg FactorOrth as implemented penalises each
+specialist's dense update against every previous specialist's dense update,
+pairwise. Because the final model is built from the average of all
+updates, an alternative formulation --- orthogonality against an
+accumulated historical direction, or against the joint subspace spanned by
+all previous updates --- could be better aligned with the merged update
+that is eventually deployed. This thesis did not test such formulations, and
+does not claim that the pairwise formulation is geometrically wrong; they
+are identified as future work (Section~\ref{sec:ch6-future-work}).
 
 \section{Why Plain RankExt Struggles}
 \label{sec:ch6-rankext-struggles}
 
 Plain RankExt reaches 34.99\% all-seen accuracy against a restricted
-accuracy of 91.03\% --- a 56.04-percentage-point gap
-(Chapter~\ref{ch:results}, Section~\ref{sec:ch5-stability}), the largest of
-any method in the benchmark. RankExt's architecture differs from
-SimpleAvg's in exactly the properties Section~\ref{sec:ch6-simpleavg-strong}
-identified as plausible contributors to SimpleAvg's strength: it is a
-single, persistent adapter, sequentially trained, with previously-trained
-rank blocks remaining active (not retrained, but live) in every later
-forward pass, and a single classifier head shared across all five tasks
-from the start. This chapter reports this as the structural difference
-motivating RankExt's distinct failure mode, not as itself proving what that
-failure mode is mechanistically.
+accuracy of 91.03\%, a 56.04-percentage-point gap and the largest of any
+method in the benchmark (Section~\ref{sec:ch5-stability}). RankExt differs
+from SimpleAvg in exactly the properties discussed in
+Section~\ref{sec:ch6-simpleavg-strong}: it maintains a persistent adapter
+state that is carried forward and extended across steps, its previously
+learned rank blocks remain frozen but active in every later forward pass,
+and a single classifier head is shared across all five steps.
 
-The Chapter~\ref{ch:results} evidence directly rules out one candidate
-explanation: insufficient adaptation capacity.
-Section~\ref{sec:ch6-simpleavg-strong} already reports that two independent
-controlled capacity experiments --- doubling RankExt's cumulative rank at
-fixed protocol, and a rank32-SimpleAvg-vs-rank160-RankExt comparison in
-which RankExt has substantially more nominal capacity than SimpleAvg ---
-both find that increased capacity closes well under 5\% of the
-corresponding gap for RankExt's non-KD variants, and in the plain case can
-leave accuracy essentially unchanged or slightly worse. Within the tested
-capacity range, capacity alone does not explain plain RankExt's weakness.
-The open/restricted divergence itself
-(Section~\ref{sec:ch6-open-restricted}) is more directly diagnostic:
-restricted accuracy --- a within-task measure, insulated from competition
-against other tasks' logits --- remains high (91.03\%) even as open,
-all-seen accuracy collapses, which is inconsistent with a simple loss of
-discriminative features and more consistent with a cross-task, output-space
-competition effect, examined further below and in
-Section~\ref{sec:ch6-open-restricted}. A companion audit of candidate
-mechanisms found one further mechanism directly measured, on a related
-variant set (not identical to the primary benchmark's own arms):
-representation/feature drift, via a
-cosine-alignment diagnostic comparing an old task's features to its own
-classifier row versus the most recently trained row, strongly implicates
-feature drift for non-KD RankExt configurations specifically. The primary benchmark's
-non-KD arms (plain and FactorOrth-only) already include a training-time
-mitigation for this --- a pretrained-feature anchor loss --- adopted in
-response to that earlier diagnosis, meaning their reported
-34.99\%/41.00\% results are already post-mitigation, not pre-fix numbers.
+The available capacity experiments do not support insufficient adapter
+capacity as the dominant explanation within the tested range
+(Section~\ref{sec:ch6-simpleavg-strong}). The open/restricted divergence is
+more informative. The high restricted accuracy argues against a complete
+loss of within-step discriminative structure, although it does not rule out
+representation drift or other forms of forgetting. It is consistent with a
+substantial output-space component, in which classes from different steps
+compete in the shared argmax (Section~\ref{sec:ch6-open-restricted}).
+
+Representation drift is nevertheless plausible for the non-KD
+configurations. A feature-alignment diagnostic in an earlier, related run
+pointed to drift of older steps' features relative to their classifier rows
+in non-KD RankExt configurations. For this reason, the canonical non-KD arms
+(plain and FactorOrth-only) already include a pretrained-feature anchor
+(Section~\ref{sec:ch4-rankext-auxiliary}); their reported 34.99\% and
+41.00\% are obtained with this mitigation in place.
 
 \section{The Role of KD+Protect in RankExt's Recovery}
 \label{sec:ch6-kd-protect}
 
-RankExt + KD + Protect reaches 65.01\% ($+$30.02 percentage points over
-plain), the majority of the total recovery achieved by the combined
-configuration (70.76\%). Following Chapter~\ref{ch:results}'s own
-convention, this chapter attributes this recovery to the KD+Protect
-configuration as a whole: full-scope, 100-way knowledge distillation and
-the classifier-row feature-protection term are both active in every
-RankExt arm that includes either, and this thesis's evidence does not
-isolate their individual contributions from one another. This chapter does
-not state that knowledge distillation alone causes this recovery.
+RankExt + KD + Protect reaches 65.01\%, 30.02 percentage points above plain
+RankExt. The observed recovery is attributed to the KD+Protect configuration
+as a whole: full-output knowledge distillation and the projected
+feature-protection term are active together, and the benchmark does not
+isolate their individual contributions.
 
-Two properties of this configuration are consistent with why it addresses
-RankExt's failure mode more directly than FactorOrth alone
-(Section~\ref{sec:ch6-factororth}). Full-scope KD's teacher softmax spans
-every class introduced so far, including the classes the student is
-currently learning, so the distillation loss directly constrains the
-\emph{relative scale} between old and newly introduced classes' logits ---
-precisely the axis Section~\ref{sec:ch6-rankext-struggles}'s open/restricted
-evidence implicates as the dominant failure mode, and precisely the
-constraint SimpleAvg's differently-scoped, old-seen-only KD objective
-(Section~\ref{sec:ch6-kd-simpleavg}) does not provide. The projected
-feature-protection term penalizes the student's feature displacement, for
-old classes, against a subspace derived from those classes' own classifier
-rows --- a targeted retention constraint distinct in mechanism from KD's
-output-space constraint. Both readings are offered as plausible
-mechanistic accounts consistent with the measured result, not as
-individually isolated causal findings; no ablation in this thesis separates
-KD's contribution from Protect's.
+The two components act on different parts of the model. Knowledge
+distillation provides an output-space constraint: in RankExt, the teacher
+and student distributions span the full 100-way classifier output, which
+includes the classes introduced at the current step, so the distillation
+loss also constrains the relative scale of old-class and new-class logits
+--- the competition that the open/restricted evidence points to, and that
+SimpleAvg's old-seen KD objective (Section~\ref{sec:ch6-kd-simpleavg}) does
+not constrain. The projected feature-protection term provides a
+feature-space constraint: it penalises displacement of the student's
+features, relative to the teacher's, along a subspace derived from the
+classifier rows of the previously seen classes. Both are plausible
+contributors to the recovery, and neither is established here as the
+dominant cause.
 
 \section{RankExt FactorOrth and KD+Protect}
 \label{sec:ch6-factororth}
 
-FactorOrth alone recovers 41.00\% from plain RankExt's 34.99\% ($+$6.01
-percentage points) --- a real but much smaller recovery than KD+Protect's
-$+$30.02 points. Combined with KD+Protect, the full recipe reaches 70.76\%,
-a further $+$5.75 points above KD+Protect alone
-(Chapter~\ref{ch:results}, Section~\ref{sec:ch5-rankext}). One plausible
-interaction is that FactorOrth's weight-geometry regularization ---
-penalizing the current rank block's factor-space cosine similarity against
-previous blocks --- controls a different aspect of the adapter's structure
-than KD+Protect's output-space and feature-space constraints, and that its
-benefit is correspondingly larger when paired with a mechanism that already
-addresses old-task retention directly. This is stated as an interaction
-consistent with the measured pattern, not as a statistically established
-synergy: this thesis ran no seed replication of any RankExt arm, and the
-ablation evidence in Section~\ref{sec:ch6-calibration} shows this
-interaction's sign is not stable across configurations (the
-head-learning-rate refinement reverses it, Section~\ref{sec:ch6-calibration}).
-FactorOrth alone, without KD+Protect, is not sufficient to close a
-meaningful share of RankExt's gap to SimpleAvg --- its own-arm result
-(41.00\%) remains far below SimpleAvg's weakest variant (73.22\%).
+FactorOrth alone raises RankExt from 34.99\% to 41.00\% ($+$6.01 percentage
+points), a much smaller recovery than KD+Protect's. Added to KD+Protect, it
+raises all-seen accuracy from 65.01\% to 70.76\%. FactorOrth provides a
+similar-sized additional improvement in the two comparisons: $+$6.01 points
+over plain RankExt when used alone, and $+$5.75 points when added to
+KD+Protect.
+
+A plausible interpretation is complementarity. FactorOrth is a
+weight-geometry constraint: it discourages the newly appended rank block
+from duplicating directions already occupied by the frozen blocks, which is
+a different aspect of the adapter than the output-space and feature-space
+constraints of KD+Protect. The data are consistent with this reading but do
+not establish synergy, and the single-seed design does not allow the size
+of the interaction to be estimated. The head-learning-rate refinement
+(Section~\ref{sec:ch6-stability-plasticity}) also shows that the combined
+configuration responds differently from the others to a change in
+optimisation settings. Used alone, FactorOrth leaves RankExt far below every
+SimpleAvg variant (41.00\% against at least 73.22\%).
 
 \section{Stability--Plasticity Trade-off}
 \label{sec:ch6-stability-plasticity}
 
-Chapter~\ref{ch:results}'s first-task, later-tasks-mean, BWT, and forgetting
-values, its $R_{i,j}$ trajectories, and the head-learning-rate refinement's
-combined-arm result together describe a consistent stability--plasticity
-pattern \parencite{kirkpatrick2017overcoming,delange2022continual}:
-mechanisms that improve retention of earlier tasks can reduce a model's
-accuracy on tasks introduced later, and the balance is sensitive to exactly
-how strongly a retention mechanism is applied, not only to whether one is
-present. SimpleAvg's KD-bearing variants trade first-task accuracy for
+The first-task, later-tasks, BWT, and forgetting values, the $R_{i,j}$
+trajectories, and the head-learning-rate refinement together describe a
+stability--plasticity pattern
+\parencite{kirkpatrick2017overcoming,delange2022continual}: mechanisms that
+improve retention of earlier steps can reduce accuracy on later ones, and
+the balance depends on how strongly and in which combination they are
+applied. SimpleAvg's KD-bearing variants trade first-task accuracy for
 later-task accuracy at roughly unchanged all-seen accuracy
-(Section~\ref{sec:ch6-kd-simpleavg}). RankExt's auxiliary configurations
-raise both first-task and later-task accuracy relative to plain, in an
-order that matches their overall all-seen ranking --- auxiliary mechanisms
-here improve both axes simultaneously, rather than trading one for the
-other, which is a materially different pattern from SimpleAvg's.
+(Section~\ref{sec:ch6-kd-simpleavg}). Within RankExt, the KD+Protect-bearing
+configurations substantially increase both first-step and later-step
+accuracy relative to plain RankExt, whereas FactorOrth alone increases
+later-step accuracy but not first-step accuracy.
 
-The clearest single instance of this trade-off in this thesis is the
-RankExt head-learning-rate refinement (the refinement experiment,
-Section~\ref{sec:ch5-ablation}): raising the classifier-head learning-rate
-multiplier from $\times1$ to $\times2$ improves three of the four RankExt
-configurations, but the combined configuration --- the strongest result in
-the primary benchmark --- regresses, from 70.76\% to 67.92\% ($-$2.84
-percentage points). This regression is not a uniform degradation:
-first-task accuracy improves ($60.70\% \to 67.75\%$, $+$7.05 points), BWT
-improves ($-0.1584 \to -0.0532$), and forgetting improves ($0.2474 \to
-0.1289$), while later-tasks-mean accuracy falls ($73.28\% \to 67.96\%$).
-This is consistent with, and directly illustrates, the stability--plasticity
-trade-off this section describes: at $\times2$, the combined configuration
-becomes more stable on earlier tasks and less plastic on later ones, at
-this single seed, and the net all-seen effect of that shift is negative for
-this specific, most heavily retention-constrained configuration, even
-though the same directional shift is net-positive for the three
-configurations with fewer or weaker retention constraints. This chapter
-interprets this as evidence that the optimal degree of classifier-head
-plasticity for RankExt is not independent of which retention mechanisms
-are simultaneously active in a given configuration --- raising plasticity
-helps a lightly-constrained arm and can hurt a heavily-constrained one ---
-rather than as evidence that either learning-rate setting is globally
-preferable.
+The head-learning-rate refinement (Section~\ref{sec:ch5-ablation}) adds a
+further observation. The effect of classifier-head learning rate is
+configuration-dependent: increasing the multiplier to $\times2$ improves
+three RankExt variants but changes the balance between earlier- and
+later-step performance unfavourably for the combined configuration, whose
+all-seen accuracy falls from 70.76\% to 67.92\%. For that configuration,
+first-task accuracy rises from 60.70\% to 67.75\%, BWT improves from
+$-0.1584$ to $-0.0532$, and forgetting improves from 0.2474 to 0.1289, while
+the later-tasks mean falls from 73.28\% to 67.96\%. In this run, the shift
+toward earlier steps outweighs the gain in retention for the configuration
+with the most retention mechanisms active. Neither learning-rate setting is
+therefore globally preferable for RankExt.
 
-\section{The Local Head-Learning-Rate Probe and the Full Production Run}
+\section{The Local Head-Learning-Rate Probe and the Full Refinement}
 \label{sec:ch6-lr-probe}
 
-This section corrects an important point of scope that is easy to state
-imprecisely. The local decision probe that informed the refinement experiment's choice of
-a $\times2$ classifier-head learning-rate multiplier for RankExt tested the
-\textbf{same RankExt method} used in the primary benchmark's flagship arm
---- the full FactorOrth + KD + Protect combined configuration --- not a
-simpler or differently-composed RankExt variant. The final-compare script
-that extended the sweep to LR$=1.0$ and LR$=2.0$ is confirmed, by direct
-comparison, to be a byte-for-byte copy of the decision-probe script,
-differing only in the swept learning-rate values, their assertions, and the
-run-name prefix; both scripts target this one method exclusively. What
-differs between the probe and the primary/ablation production runs is
-\textbf{scale}, not \textbf{method}: the probe trained on 2 tasks (not 5),
-2 epochs per task (not 9), and 10--15 images per class (not the full
-dataset). Within that reduced scale, the probe found validation
-cross-entropy and every measured accuracy metric improving monotonically as
-the learning-rate multiplier increased across $\{0.1, 0.2, 0.5\}$ and then
-across $\{0.5, 1.0, 2.0\}$, consistently across two seeds, with no
-exception on any headline metric.
-
-The full 5-task, 9-epoch, full-dataset production run (the refinement experiment) does not
-reproduce this finding for the one configuration the probe actually tested:
-the combined arm's accuracy falls under $\times2$
-(Section~\ref{sec:ch6-stability-plasticity}). Three of the four RankExt
-configurations --- none of which were the probe's own tested configuration
---- do improve under $\times2$, consistent with the probe's directional
-finding extended by analogy, not by direct test, to those other
-configurations. This is best read as a genuine methodological lesson about
-probe scale, not about probe scope: a small-scale decision probe, run on
-the exact production method it was meant to inform, correctly identified
-the direction of the effect within the range it tested, but did not --- and
-at that scale could not have been expected to --- predict that the same
-method's response to a longer, full-length continual sequence, with five
-tasks' worth of accumulated retention constraints active simultaneously
-rather than two, would reverse sign for that specific,
-already-most-heavily-constrained configuration. This chapter treats the
-probe's own within-scale conclusion as sound and treats the discrepancy as
-evidence that short, few-task decision probes may not extrapolate reliably
-to longer continual sequences for a configuration that is already close to
-its own stability--plasticity limit, rather than as evidence the probe
-itself was flawed in design or target.
+The reduced-scale probe that motivated the $\times2$ RankExt
+head-learning-rate refinement tested the same combined configuration used
+in the main experiment and favoured the larger multiplier within that
+reduced setting (Table~\ref{tab:appA-lr-probe}). The full five-step
+refinement did not reproduce this direction for the combined configuration,
+although three other RankExt variants improved. This discrepancy indicates
+that short, reduced-scale probes need not extrapolate reliably to a longer
+continual sequence, particularly when several retention mechanisms
+interact.
 
 \section{Open versus Restricted Performance and Cross-Task Competition}
 \label{sec:ch6-open-restricted}
 
-The open/restricted divergence is the most consistent pattern across every
-RankExt configuration in Chapter~\ref{ch:results}
-(Section~\ref{sec:ch5-stability}): restricted accuracy stays in a narrow
-91.03\%--94.78\% band across all eight methods in the benchmark, while
-all-seen accuracy for RankExt alone spans 34.99\% to 70.76\%. Plain
-RankExt's own gap (56.04 percentage points) is the largest observed. This
-indicates, as Chapter~\ref{ch:results} states factually, that within-task
-class discrimination remains substantially stronger than task-agnostic
-discrimination for the affected configurations --- restricted accuracy, by
-construction, measures whether the correct class is still favored once
-competition from other tasks' classes is removed, and that measurement
-stays high even where the full, unrestricted competition collapses the
-same model's accuracy.
+The open/restricted divergence is the most consistent pattern across the
+RankExt configurations (Section~\ref{sec:ch5-stability}). Restricted
+accuracy for RankExt lies in a narrow 91.03\%--94.78\% band, while all-seen
+accuracy ranges from 34.99\% to 70.76\%; plain RankExt's gap of 56.04
+percentage points is the largest observed. Within-step class discrimination
+therefore remains substantially stronger than task-agnostic discrimination
+for the affected configurations: once competition from other steps' classes
+is removed, the correct class is still usually preferred.
 
-Multiple, not mutually exclusive, mechanisms are consistent with this
-pattern, and this chapter does not conclude the gap is purely a calibration
-artifact, nor that it demonstrates zero forgetting. Cross-task logit
-competition --- newer tasks' logits systematically out-competing older
-tasks' logits in the shared argmax --- is consistent with the monotone,
-step-by-step decline visible in the $R_{i,j}$ matrices
-(Chapter~\ref{ch:results}, Section~\ref{sec:ch5-rankext}): each old task's
-open accuracy erodes as more tasks are trained, while its own diagonal
-(just-learned) accuracy and its restricted accuracy both stay high
-throughout. Score-scale mismatch between task groups is directly, though
-diagnostically, evidenced by the post-hoc calibration result discussed in
-Section~\ref{sec:ch6-calibration}. Representation drift is separately
-implicated, for non-KD RankExt configurations specifically, by the
-cosine-alignment diagnostic cited in
-Section~\ref{sec:ch6-rankext-struggles}. These mechanisms plausibly coexist
-rather than compete: a model can simultaneously retain within-task
-discriminative structure, suffer some genuine representation drift for
-non-KD-protected old tasks, and have its surviving structure obscured at
-the output-space level by inter-task score misalignment. This thesis's
-evidence does not decompose the 56.04-percentage-point plain-RankExt gap,
-or any other configuration's smaller gap, into precise shares attributable
-to each mechanism.
+Several mechanisms, not mutually exclusive, are consistent with this
+pattern. The observed trajectory is consistent with increasing competition
+from later-step class logits against earlier-step classes in the shared
+argmax: in the $R_{i,j}$ matrices (Section~\ref{sec:ch5-rankext}), each
+earlier step's open accuracy declines as more steps are trained, while
+just-learned and restricted accuracies remain substantially higher than
+final open accuracy for earlier steps. A mismatch in score scale between
+step groups is supported, for one non-primary checkpoint, by the logit
+rescaling diagnostic of Section~\ref{sec:ch6-calibration}. Representation
+drift is plausible for the non-KD configurations
+(Section~\ref{sec:ch6-rankext-struggles}). A model can retain within-step
+discriminative structure, undergo some representation drift, and still
+lose open accuracy through inter-step score misalignment at the same time.
+The open/restricted gap is diagnostic: it does not decompose the deficit of
+any configuration into causal shares attributable to these mechanisms.
 
-\section{Calibration as Diagnostic Headroom}
+\section{Inter-Step Logit Rescaling as a Diagnostic}
 \label{sec:ch6-calibration}
 
-A separate, explicitly diagnostic line of evidence bears on the
-score-scale-mismatch reading above. A post-hoc, validation-fitted
-inter-task logit-scale calibration \parencite{zhao2020maintaining} --- one
-positive multiplicative scalar per task group, four free parameters, fit by
-minimizing validation cross-entropy with no backbone, LoRA, or classifier
-retraining and no test-set tuning --- was evaluated against an earlier,
-separately-trained RankExt combined-arm checkpoint (6 epochs, no Protect30
-term, not the primary benchmark's own weights, which were unavailable
-locally for this diagnostic). On that checkpoint: raw, uncalibrated open
-accuracy was
-34.67\%; the pipeline's own historical row-norm calibration alone reached
-53.12\% (matching that run's own reported result); adding the
-four-parameter scale calibration reached 70.74\%, a further $+$17.62
-percentage points, while restricted accuracy remained exactly unchanged at
-93.68\% before and after (proven exactly invariant by construction, not
-merely observed to be similar) --- direct evidence that a substantial
-share of that specific checkpoint's residual open/restricted gap is
-attributable to a correctable inter-task logit-scale mismatch, not to
-further loss of within-task discriminative structure. The fitted scales
-(2.147, 1.224, 1.178, 0.932, with the most recent task fixed at 1.0 as
-reference) decrease roughly monotonically from oldest to most recent task,
-consistent with a recency-competition reading: older tasks' logits needed
-the largest upward correction to compete fairly against newer tasks'.
+Two different mechanisms must be kept apart here. The canonical
+Chapter~\ref{ch:results} pipeline applies classifier rescaling: after
+training, the classifier weight rows of each step are multiplied by a
+positive step-specific factor (Section~\ref{sec:ch5-protocol}). The
+diagnostic discussed in this section is a different operation:
+validation-fitted, group-wise logit rescaling at inference, in the spirit of
+\textcite{zhao2020maintaining}. It multiplies the logits of each step group
+by one positive scalar (four free parameters, with the most recent step as
+reference), fitted by minimising validation cross-entropy, without changing
+the backbone, the LoRA parameters, or the classifier weights. The scalars
+are fitted using the known step-group boundaries, but no per-sample step
+identity is used at inference: every test image is scored with the same
+rescaled classifier.
 
-This chapter uses the term \textbf{post-hoc, validation-fitted inter-task
-logit-scale calibration} throughout, and avoids ``classifier-weight
-correction'' or ``corrected average weights'': the mechanism never touches
-stored classifier weights, LoRA factors, or the merged dense delta; it
-rescales the already-computed logit vector at inference time only, via a
-small, separate module distinct from the model's own parameters. It is also
-worth stating precisely what ``task-aware'' means here: the four scale
-parameters are fit using knowledge of the fixed 20-class task-group
-boundaries, but no per-sample task identity is required or used at
-inference --- every test image is scored by the same, already-fitted,
-group-wise rescaled classifier, regardless of which task it belongs to. The
-mechanism is therefore task-structure-aware at calibration time and
-task-agnostic at per-example inference time.
+This diagnostic was evaluated on an earlier, non-primary RankExt checkpoint
+that combines FactorOrth with old-seen knowledge distillation and does not
+include the projected feature-protection term. On that checkpoint, raw open
+accuracy was 34.67\%; the existing classifier-rescaling mechanism raised it
+to 53.12\%; validation-fitted inter-step logit rescaling raised it to
+70.74\%. Restricted accuracy remained 93.68\% throughout, as expected, since
+multiplying all logits of one step group by the same positive scalar cannot
+change the argmax within that group. The fitted scalars (2.147, 1.224,
+1.178, and 0.932 for steps 1--4) decrease from the oldest to the most recent
+step, meaning that older steps' logits needed the largest upward correction.
 
-This result is reported strictly as diagnostic headroom, not as main
-benchmark evidence, and for three compounding reasons: it was measured on
-that earlier checkpoint, not the primary benchmark's own; that earlier
-run lacks the Protect30 term and uses a different epoch count from the
-primary benchmark, so its own 53.12\% starting point is not directly
-comparable to the primary benchmark's 70.76\%; and the coincidence that
-70.74\% (this diagnostic, on a weaker
-starting checkpoint) lands close to the primary benchmark's own combined-arm result
-(70.76\%, achieved through a different mechanism --- full-scope KD,
-Protect30, and the pipeline's own more sophisticated row-norm calibration)
-is noted as a striking but uncontrolled observation, not evidence that the
-two mechanisms are interchangeable or additive. A related run, the calibration-diagnostic experiment,
-applies this style of calibration (though not identically parameterized) to
-RankExt while simultaneously changing SimpleAvg's classifier-head learning
-rate; because the two changes are confounded within that run, the calibration-diagnostic experiment is
-used in this chapter only as a second, independent diagnostic data point,
-never as benchmark evidence: relative to the primary benchmark, it shows large gains
-for RankExt configurations without a prior bias-correction mechanism
-($+$32.71 and $+$31.47 percentage points for plain and FactorOrth-only
-respectively) and small or negative changes for configurations that
-already include KD+Protect ($+$1.75 and $-$1.17 percentage points for
-KD+Protect and the combined configuration respectively) --- a pattern
-consistent with calibration and KD+Protect addressing overlapping headroom
-in the same underlying inter-task competition problem, though the calibration-diagnostic experiment's
-own confound (the simultaneous SimpleAvg regression) prevents this from
-being stated as a clean, isolated finding.
+On this specific non-primary checkpoint, the large gain produced solely by
+group-wise logit rescaling provides direct evidence that a substantial
+component of its open-accuracy deficit was associated with inter-step
+score-scale mismatch. The result is not transferred to the primary
+benchmark: the checkpoint differs from the canonical configurations, and
+the closeness of 70.74\% to the primary combined configuration's 70.76\% is
+a coincidence of two different pipelines, not evidence that the two
+mechanisms are interchangeable. Evaluating the same diagnostic on the
+primary checkpoints is identified as future work
+(Section~\ref{sec:ch6-future-work}).
 
 \section{Parameter and Rank Efficiency}
 \label{sec:ch6-efficiency}
 
-Chapter~\ref{ch:results}'s parameter-efficiency accounting
-(Section~\ref{sec:ch5-efficiency}) shows the two families reach the same
-final adapter size (a rank-80-equivalent, 2{,}949{,}120 LoRA parameters)
-through structurally different training and deployment paths, and this
-chapter does not conclude either is more efficient in general --- the two
-represent different trade-offs, separable into training cost, storage, and
-deployment overhead, each considered in turn.
+RankExt's final cumulative adapter contains 2{,}949{,}120 LoRA parameters,
+equal to the parameter count of one rank-80 SimpleAvg specialist. The two
+methods nevertheless have different final representations: RankExt retains
+a low-rank adapter, whereas SimpleAvg deploys a fused dense update
+(Section~\ref{sec:ch5-efficiency}).
 
-\textbf{Training cost.} SimpleAvg trains 2{,}949{,}120 new LoRA parameters
-at every one of its five tasks (a fresh, full rank-80 specialist each
-time), for a cumulative training-time volume of 14{,}745{,}600 parameters
-across the sequence. RankExt trains only 589{,}824 new parameters at each
-task (a single new rank-16 block, with all earlier blocks frozen and never
-retrained), for a cumulative training-time volume of 2{,}949{,}120 ---
-exactly RankExt's own final adapter size, because each of its five blocks
-is trained exactly once. RankExt is therefore substantially cheaper in
-training-time parameter volume at every stage of the sequence, a genuine
-structural property of its incremental design, independent of the accuracy
-results discussed above.
+\textbf{Trainable-parameter accounting.} Across the sequence, SimpleAvg
+optimises a fresh 2{,}949{,}120-parameter LoRA specialist at each step,
+whereas RankExt introduces only 589{,}824 new trainable LoRA parameters per
+step, with earlier blocks frozen. Summed over the five steps, this amounts
+to 14{,}745{,}600 trained LoRA parameters for SimpleAvg and 2{,}949{,}120 for
+RankExt. This establishes a difference in trainable-parameter exposure, not
+a measured difference in wall-clock or FLOP cost.
 
-\textbf{Deployment form.} The two families do not merely differ in size at
-deployment; they differ in kind. SimpleAvg's merge step averages its five
-specialists' dense per-module weight updates and adds the averaged update
-directly into the pretrained base model's own weight tensors --- no
-separate, low-rank adapter object survives this step. If the averaged
-update is fused directly into the base weights, as the training pipeline
-does, the deployed model requires no additional adapter parameters beyond
-its 76{,}900-parameter classifier; the underlying rank-80-equivalent
-structure that produced that update is not present in the deployed model
-as a distinct, removable component. If, instead, the dense update were
-stored separately from an unmodified base checkpoint --- for
-reproducibility, versioning, or to keep a shared base model usable by
-multiple downstream adapters --- it would occupy 14{,}155{,}776 values,
-larger than the 2{,}949{,}120-parameter low-rank form it was derived from,
-because the averaging step itself operates in dense, not factored, weight
-space. This chapter does not treat the dense-storage figure as SimpleAvg's
-default or mandatory deployment representation; it is one possible
-representation, quantified because the fused, in-place form (SimpleAvg's
-actual default) has no separately-quantifiable ``extra parameter'' figure
-at all. RankExt's cumulative adapter, in contrast, remains in low-rank,
-additive form at every step through deployment: its 2{,}949{,}120
-parameters sit alongside an unmodified base model, addable and removable as
-a distinct object, never fused into the base weights.
+\textbf{Deployment form.} In the evaluated implementation, SimpleAvg's
+averaged dense update is added directly to the pretrained weights, so the
+deployed model needs no adapter parameters beyond its 76{,}900-parameter
+classifier, and the merged dense update is not retained as a low-rank
+factorisation. If it were instead stored separately from an unmodified
+base model, it would occupy 14{,}155{,}776 values, because averaging is
+performed on dense matrices. RankExt's cumulative adapter is retained in
+low-rank additive form alongside an unmodified base model and remains
+separable from it.
 
-RankExt's structural advantage is therefore progressive, low training-time
-cost and a persistent, separable adapter structure --- not, on this
-evidence, a smaller final adapter than SimpleAvg's, since the two reach the
-same nominal rank-80-equivalent size. SimpleAvg's structural advantage is a
-final deployment representation that, once fused, requires no separate
-adapter bookkeeping at all, at the cost of five times the training-time
-parameter volume to reach it and no accessible low-rank structure at any
-intermediate point in the sequence (a property directly connected to
-Section~\ref{sec:ch5-rankext}'s observation that SimpleAvg has no genuine
-$R_{i,j}$ trajectory: without a persistent, evolving intermediate model,
-there is nothing to evaluate at ``after training through task $i$,
-$i<5$''). No wall-clock or FLOPs measurement was made for either family in
-this thesis; the comparison above is a parameter-count and
-deployment-structure comparison only, and this chapter does not extend it
-to computational cost.
+The two families therefore represent different parameter-structure and
+deployment trade-offs rather than a single ranking of efficiency. RankExt
+adds a small trainable block at each step and keeps a separable cumulative
+adapter; SimpleAvg trains a complete rank-80 specialist at each step and
+deploys a fused model without a separate adapter. SimpleAvg does not
+maintain a persistent cumulative low-rank adapter state across steps, which
+is also why it has no $R_{i,j}$ trajectory (Section~\ref{sec:ch5-rankext}).
+No wall-clock or FLOP measurements were made for either family.
 
 \section{Limitations}
 \label{sec:ch6-limitations}
 
-The most consequential limitation is that every result presented as
-primary in this thesis --- the primary benchmark, the ablation/refinement
-comparison, and every number in this chapter drawn from either --- is a
-\textbf{single-seed (seed 42)}
-production result. No repeated-seed evidence exists for the primary
-benchmark; the 4.45-percentage-point SimpleAvg-versus-RankExt gap, the
-RankExt combined arm's $-$2.84-point response to the head-learning-rate
-refinement, and every mechanistic interpretation offered above rest on this
-single run each. A canonical multi-seed replication plan for the primary
-benchmark exists but had not been executed at the time of writing.
+The main limitation of this study is that the primary comparison is based
+on a single seed. The reported differences should therefore be interpreted
+as observed outcomes of the evaluated setting rather than as estimates of
+expected performance across repeated runs. This applies to the
+4.45-percentage-point gap between the two families, to the small
+differences among the SimpleAvg variants, and to the head-learning-rate and
+$\lambda$ refinements, which are also single-seed comparisons. The final
+benchmark presented in this thesis is limited to CIFAR-100, so
+cross-dataset generalisation is not established.
 
-Several of this chapter's auxiliary mechanisms are bundled, not
-individually isolated: KD and Protect30 are never tested apart from one
-another in RankExt (Section~\ref{sec:ch6-kd-protect}); FactorOrth's
-interaction with KD+Protect is observed, not statistically isolated
-(Section~\ref{sec:ch6-factororth}); the SimpleAvg FactorOrth loss-magnitude finding
-and the SimpleAvg FactorOrth gradient-level probe come from different runs at
-different coefficients, not a single controlled sweep through $\lambda=20$
-itself. SimpleAvg's calibration behavior (a small-sample diagnostic: plain
-accuracy moving from 84\% to 83\% with calibration on versus off, and the
-KD variant moving from 83\% to 75\%, both on a 100-image evaluation subset)
-is a real but tiny-sample observation that has not been run at benchmark
-scale, and may confound comparisons between SimpleAvg configurations if
-calibration interacts differently with each. BWT is constructed differently
-for the two families by necessity (Section~\ref{sec:ch5-protocol}) and the
-two families' BWT values, though tabulated together for compactness, are
-not structurally comparable. SimpleAvg has no standard, persistent
-$R_{i,j}$ trajectory to evaluate, for the structural reason given in
-Section~\ref{sec:ch6-efficiency}, not a logging gap. The local
-head-learning-rate probes and gradient/effective-rank diagnostics cited
-throughout this chapter are, by their own design and by this thesis's own
-evidence hierarchy, diagnostic only --- informative about direction and
-mechanism, never substituted for benchmark evidence. A second dataset,
-needed to test whether any conclusion in this chapter is specific to
-CIFAR-100's particular class structure, had not been evaluated at the time
-of writing. Finally, this thesis's parameter-efficiency comparison
-(Section~\ref{sec:ch6-efficiency}) covers parameter counts and deployment
-structure only; no wall-clock training time or FLOPs measurement was made
-for either family, and no claim in this chapter should be read as a
-computational-cost comparison.
+Some mechanisms are also not separated from one another. In RankExt, the
+KD-bearing configurations always combine knowledge distillation with the
+projected feature-protection term, so their individual contributions to the
+largest observed recovery cannot be distinguished. Similarly, the
+interaction between FactorOrth and KD+Protect is observed in two
+comparisons, not isolated. With respect to the protocol, the primary
+benchmark uses the $5\times20$ partition. A secondary $4\times25$
+diagnostic provides one shallower-protocol comparison, but a single
+alternative partition, run with a slightly different training budget and
+rank increment, is not sufficient to characterise protocol-depth effects
+systematically.
+
+The continual-learning metrics have structural limits of their own.
+SimpleAvg's BWT is computed against the accuracy of each independent
+specialist, not against a sequentially trained model, so the BWT values of
+the two families are not directly equivalent. SimpleAvg has no persistent
+intermediate merged model and therefore no $R_{i,j}$ trajectory; this is an
+architectural property of the method, not a missing log. The
+parameter-efficiency comparison, finally, covers parameter counts and
+deployment structure; wall-clock time and FLOPs were not measured, and
+neither method should be regarded as computationally cheaper on the basis
+of trainable-parameter counts alone.
+
+Several interpretations in this chapter draw on supporting diagnostics:
+the gradient probes, the effective-rank measurements, and the inter-step
+logit-rescaling diagnostic come from supporting experiments or non-primary
+checkpoints. They help explain the primary results, but they are not
+primary benchmark evidence and are not used as such.
 
 \section{Future Work}
 \label{sec:ch6-future-work}
 
-The evidence gathered in this thesis motivates several specific,
-evidence-grounded directions, stated in priority order rather than as a
-generic list.
+The next experiments follow directly from the findings and limitations
+above, in order of priority.
 
-\textbf{Reformulate SimpleAvg FactorOrth's geometric target.}
-Section~\ref{sec:ch6-sa-factororth}'s distinction between optimization strength
-and geometric alignment motivates testing an orthogonality penalty against
-a merged or accumulated historical direction, or against a subspace
-spanned by all previous updates jointly, rather than against each
-individual prior specialist's update pairwise --- a test that would
-isolate whether the dense-update formulation, not only its coefficient, limits
-its usefulness.
+\textbf{Multi-seed replication.} The primary benchmark and the
+head-learning-rate refinement should be repeated across several seeds. The
+regression of the combined RankExt configuration under the $\times2$
+head learning rate is a high-priority replication target, as is the
+4.45-percentage-point gap between the two families.
 
-\textbf{Disentangle KD from Protect30 in RankExt.} No arm in this thesis
-tests full-scope KD without the projected feature-protection term, or
-Protect30 without KD, for RankExt; Section~\ref{sec:ch6-kd-protect}'s
-attribution to ``the KD+Protect configuration'' as a whole is the most
-precise claim this evidence supports, and resolving it further requires
-this specific ablation.
+\textbf{Disentangling KD and projected feature protection.} Two additional
+RankExt arms --- knowledge distillation without the projected
+feature-protection term, and the projected feature-protection term without
+distillation --- are the cleanest way to determine what each component
+contributes to the largest observed recovery.
 
-\textbf{Revisit KD's data distribution for SimpleAvg, including
-replay-aware variants.} Section~\ref{sec:ch6-kd-simpleavg}'s
-scope-of-constraint argument suggests that a KD objective exposed to
-old-task images directly (rather than only old-class logits on new-task
-images), or an explicitly replay-aware distillation design, would more
-directly constrain the axis Chapter~\ref{ch:results}'s evidence identifies
-as unaddressed by the current old-seen, no-replay formulation.
+\textbf{A systematic protocol-depth study.} The $4\times25$ diagnostic is
+preliminary. Additional partitions of the same 100 classes should be tested
+while holding the total number of classes, the final RankExt capacity, the
+backbone, the training budget, and the evaluation protocol fixed.
 
-\textbf{Complete calibration-aware continual learning as an integrated, not
-diagnostic-only, mechanism.} Section~\ref{sec:ch6-calibration}'s headroom
-result, measured only on a non-primary checkpoint, is a strong-tier
-diagnostic finding but a weak-tier claim about the primary benchmark
-specifically; the natural next step is fitting and evaluating the same
-calibration mechanism against the primary benchmark's own checkpoints directly, and,
-if it holds, integrating it as part of the trained or
-immediately-post-training pipeline rather than a separate diagnostic pass.
+\textbf{An additional dataset.} Repeating the comparison on a further
+visual benchmark with different class granularity or domain
+characteristics would show whether the SimpleAvg--RankExt asymmetry is
+specific to CIFAR-100.
 
-\textbf{Multi-seed replication of the primary benchmark and the
-head-learning-rate refinement.} Section~\ref{sec:ch6-limitations}'s
-single-seed limitation applies to every quantitative claim in this thesis;
-the combined-arm regression under the head-learning-rate refinement
-(Sections~\ref{sec:ch6-stability-plasticity}--\ref{sec:ch6-lr-probe}) is
-the single most novel and most seed-fragile finding, and is the
-highest-priority candidate for replication.
+\textbf{Inter-step logit rescaling on the primary checkpoints.} The
+validation-fitted logit-rescaling diagnostic of
+Section~\ref{sec:ch6-calibration} should be evaluated directly on the
+primary benchmark checkpoints. If it remains effective there, it would be
+worth studying whether it should become an integrated inference-time
+component rather than an external diagnostic.
 
-\textbf{A second dataset}, to test whether the SimpleAvg-versus-RankExt
-structural account developed in this chapter is a property of the two
-architectures generally or is in some way specific to CIFAR-100's class
-structure --- ImageNet-100 is a natural candidate; no results for a second
-dataset exist at the time of writing.
+\textbf{Reformulating SimpleAvg FactorOrth.} Motivated by the absence of a
+clear gain, alternatives to pairwise dense-update orthogonality could be
+tested: orthogonality against an accumulated historical direction, against
+the joint subspace of previous updates, or other geometries aligned with
+the merged update.
 
-\textbf{Protocol depth.} Every result in this thesis uses the primary
-$5\times20$ protocol. Whether RankExt's behaviour, and its position
-relative to SimpleAvg, changes when the same 100 classes are partitioned
-into fewer or more incremental steps, with the total class count and final
-cumulative rank held fixed (Section~\ref{sec:protocol-depth}), is not
-examined here and is a natural controlled extension of this work.
+\textbf{The scope of SimpleAvg distillation.} Within the rehearsal-free
+setting, alternative data-free or auxiliary-data distillation designs could
+constrain old-class predictions more directly than distillation on
+new-step images alone. Replay-aware variants would relax the rehearsal-free
+constraint and should be treated as a separate comparison.
 
-\textbf{A retention-schedule or plasticity-aware learning-rate policy for
-RankExt}, motivated directly by
-Section~\ref{sec:ch6-stability-plasticity}'s finding that a single fixed
-classifier-head learning rate does not suit every RankExt configuration
-equally --- a schedule sensitive to how many retention mechanisms are
-simultaneously active, rather than a single global multiplier, is a
-plausible, evidence-motivated next step.
-
-\textbf{Feature-space preservation as a complementary retention mechanism
-for RankExt}, distinct from both KD's output-space constraint and
-FactorOrth's weight-geometry constraint, is a plausible additional lever
-suggested by, but not tested in, this thesis's mechanistic diagnostics
-(Section~\ref{sec:ch6-rankext-struggles}'s representation-drift finding for
-non-KD arms).
+\textbf{Comparing feature-preservation mechanisms.} The thesis already uses
+two feature-space mechanisms in RankExt: a pretrained-feature anchor in the
+non-KD configurations and the projected feature-protection term in the
+KD-bearing ones. Comparing them directly, under matched configurations,
+would clarify how much each contributes to retention.
 
 \section{Final Conclusion}
 \label{sec:ch6-conclusion}
 
-Within the evaluated setting --- CIFAR-100, $5\times20$ class-incremental
-protocol, seed 42 --- this thesis's central empirical finding is an
-asymmetry between two structurally different approaches to continual LoRA
-adaptation. SimpleAvg, an architecturally simple strategy of independently
-training per-task specialists and merging them once at the end, is
-unexpectedly strong: it reaches 75.16\% without any auxiliary retention
-mechanism, and none of the auxiliary mechanisms tested in this thesis ---
-knowledge distillation, an orthogonality penalty, or their combination ---
-improves on that baseline in any way this thesis can distinguish from
-single-seed noise. RankExt, a persistent, incrementally-growing adapter
-architecture, requires explicit retention mechanisms to approach
-SimpleAvg's result at all: plain RankExt reaches only 34.99\%, and the
-combination of full-scope knowledge distillation, classifier-row feature
-protection, and a weight-geometry orthogonality penalty recovers most,
-though not all, of the resulting gap, reaching 70.76\% --- 4.45 percentage
-points below SimpleAvg's best result.
+This thesis compared two ways of integrating LoRA updates across the steps
+of a rehearsal-free class-incremental sequence. SimpleAvg trains an
+independent specialist at each step and averages the resulting dense
+updates once, at the end; RankExt maintains a single adapter state that
+grows by one frozen-and-retained rank block per step. In the evaluated
+setting --- CIFAR-100, $5\times20$, a CLIP ViT-B/16 backbone, and seed 42
+--- the two strategies behave very differently.
 
-The evidence in this chapter is consistent with this asymmetry being
-substantially structural rather than a matter of tuning either family
-further within the settings already tested. RankExt's single, persistent,
-shared classifier head exposes it to a cross-task, output-space
-competition effect that its restricted-accuracy evidence shows is not
-primarily a loss of underlying discriminative features; SimpleAvg's
-independent-specialist, classifier-stitching design largely avoids this
-competition by construction, at the cost of substantially higher
-training-time parameter volume and a final deployment form that discards
-its low-rank structure entirely. Auxiliary constraints that directly
-target RankExt's output-space competition --- full-scope KD and
-classifier-row protection --- recover the large majority of its deficit;
-auxiliary constraints layered onto SimpleAvg's already-effective
-architecture do not find an equivalent defect to repair, and in
-the case of SimpleAvg FactorOrth appear numerically inert at every coefficient tested.
-Cross-task score alignment remains a major, only partially resolved,
-residual issue for RankExt: post-hoc calibration evidence, diagnostic and
-not yet confirmed on the primary benchmark's own checkpoints, suggests a
-substantial further share of its remaining gap is a correctable
-scale-mismatch problem rather than additional representation damage.
+Plain SimpleAvg is a strong reference, reaching 75.16\%, and its KD variant
+reaches 75.21\%; however, no auxiliary SimpleAvg variant provides a clear
+all-seen improvement over the plain baseline in this single-seed
+experiment. Plain RankExt reaches only 34.99\%, and within the evaluated
+configurations only the KD+Protect-bearing variants approach the SimpleAvg
+results, the combination of FactorOrth, knowledge distillation, and
+projected feature protection reaching 70.76\%. In RankExt, these three
+mechanisms act at different levels --- knowledge distillation as an
+output-space constraint, the projected feature-protection term as a
+feature-space constraint, and FactorOrth as a weight-geometry constraint
+--- and their combination is associated with the largest recovery
+observed, although their individual contributions are not isolated.
 
-More generally, this thesis's parameter-efficiency and
-stability--plasticity evidence together indicate that parameter-efficient
-continual adaptation via LoRA involves a genuine trade-off, not a single
-dominant strategy, between independent-specialist merging and persistent,
-incremental growth: the former is inexpensive to deploy but expensive to
-train and architecturally blind to any notion of sequential state; the
-latter is inexpensive to train incrementally and retains an inspectable,
-persistent structure, but is exposed to cross-task interference that must
-be actively managed, and the correct degree of that management is itself
-sensitive to which other mechanisms are simultaneously active, as the
-head-learning-rate refinement's mixed result demonstrates directly. This
-thesis does not identify a universal winner between the two strategies
-beyond the settings evaluated here; it identifies, with evidence at
-multiple tiers, \emph{why} the two strategies fare differently under these
-settings, and what would be required --- multi-seed replication, a second
-dataset, and several specific, targeted follow-up experiments named in
-Section~\ref{sec:ch6-future-work} --- to extend these conclusions further.
+The evidence is consistent with structural differences between the two
+integration strategies playing an important role in the observed
+asymmetry, while the experiments do not exclude sensitivity to
+optimisation choices, protocol design, or other hyperparameters. The
+paired open/restricted evaluation makes one part of this picture
+particularly clear. RankExt's restricted accuracy stays above 91\% even
+where its open accuracy is low, so low task-agnostic accuracy cannot be
+interpreted only as a loss of within-step discriminative knowledge:
+competition between class groups in the shared classifier is an important
+part of the observed behaviour, although it is not shown to account for the
+whole gap. SimpleAvg's independent specialist training and classifier-row
+stitching appear to reduce the severity of this competition in the
+evaluated setting, although its final merged model is still evaluated with
+the same task-agnostic all-class decision rule.
+
+The two strategies also differ in parameter structure. SimpleAvg optimises
+a complete rank-80 specialist at each step and can deploy a fused model
+without a separate adapter; RankExt introduces one new low-rank block per
+step and retains a separable cumulative adapter. This is a
+parameter-structure and deployment trade-off, not a measured difference in
+computational cost.
+
+Overall, the experiments show that the way LoRA updates are integrated
+across incremental steps matters at least as much as the auxiliary
+retention objectives applied to them. The thesis contributes a controlled
+comparison of two integration strategies, an analysis of stabilisation
+within the persistent RankExt family, and a paired open/restricted
+diagnostic view of retention. These conclusions are specific to the
+evaluated setting; establishing how far they generalise requires repeated
+seeds, additional datasets, and a broader range of incremental partitions.

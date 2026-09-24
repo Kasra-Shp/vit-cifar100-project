@@ -324,28 +324,37 @@ isolation.
 \textbf{$R_{i,j}$ trajectories.} For a sequentially-trained, persistent
 model such as RankExt, this chapter additionally reports the full retention
 matrix $R_{i,j}$: the open (all-seen) accuracy on task $j$, evaluated after
-training has completed sequentially through task $i$ ($j \le i$). The four
-matrices are shown together in Figure~\ref{fig:ch5-rij-comparison}, which
-uses one shared 0--100\% colour scale across all four panels so the visual
-difference between configurations is directly comparable. Each row $i$ of
-$R_{i,j}$ is evaluated during training, immediately after task $i$ has been
-trained (from its best-validation checkpoint), before classifier rescaling,
-with predictions taken over the full 100-way classifier output; at $i=5$
-this coincides with evaluation over all seen classes. The final row of
-$R_{i,j}$ therefore describes the model before classifier rescaling, whereas
-the final accuracies reported in Table~\ref{tab:ch5-main-extended}
-describe the same weights after it. The two are not interchangeable: for plain
-RankExt, for example, task 1 reaches 6.40\% in the final row of $R_{i,j}$
-and 11.70\% after classifier rescaling.
+training has completed sequentially through task $i$ ($j \le i$). Each row
+$i$ of $R_{i,j}$ is evaluated during training, immediately after task $i$
+has been trained (from its best-validation checkpoint), before classifier
+rescaling, with predictions taken over the full 100-way classifier output;
+at $i=5$ this coincides with evaluation over all seen classes. The final
+row of $R_{i,j}$ therefore describes the model before classifier rescaling,
+whereas the final accuracies reported in Table~\ref{tab:ch5-main-extended}
+describe the same weights after it. The two are not interchangeable: for
+plain RankExt, for example, task 1 reaches 6.40\% in the final row of
+$R_{i,j}$ and 11.70\% after classifier rescaling.
+
+Figure~\ref{fig:ch5-rij-comparison} shows the four RankExt matrices together
+with the SimpleAvg family, on one shared 0--100\% colour scale. Beneath
+each RankExt matrix, a separate ``Final'' row gives the per-task open
+accuracy of the final model after classifier rescaling. SimpleAvg does not
+maintain a persistent merged model at intermediate steps, so it has no
+$R_{i,j}$ trajectory; its panels show only the corresponding ``Final'' row
+of the merged model, which is directly comparable to the ``Final'' rows of
+the RankExt panels.
 
 \begin{figure}[htbp]
 \centering
-\includegraphics[width=\textwidth]{figures/chapter5/cifar100_rankext_Rij_comparison.pdf}
-\caption[RankExt $R_{i,j}$ retention matrices]{$R_{i,j}$ retention matrices
-for all four RankExt configurations (open accuracy, shared 0--100\% colour
-scale): plain, FactorOrth, KD+Protect, and combined. $R_{i,j}$ = accuracy on
-task $j$ after training has completed through task $i$, evaluated before
-classifier rescaling.}
+\includegraphics[width=\textwidth]{figures/chapter5/cifar100_retention_rankext_Rij_simpleavg_final.pdf}
+\caption[Retention matrices and final per-task accuracy]{Open (all-seen)
+accuracy per task group, shared 0--100\% colour scale. Top row: for
+RankExt, the panels show the sequential $R_{i,j}$ trajectory (accuracy on
+task $j$ after training through task $i$, evaluated before classifier
+rescaling), followed by a separate ``Final'' row for the final model after
+classifier rescaling. Bottom row: because SimpleAvg does not maintain a
+persistent merged model at intermediate steps, the SimpleAvg panels report
+only final merged-model per-task accuracies, after classifier rescaling.}
 \label{fig:ch5-rij-comparison}
 \end{figure}
 
@@ -575,8 +584,7 @@ SimpleAvg (75.16\%, Table~\ref{tab:ch5-main-compact}). The FactorOrth+KD
 variant is 1.42 points higher at $\lambda=1$ than at $\lambda=20$. Lowering
 $\lambda$ therefore produced mixed effects and does not establish a superior
 setting; the primary benchmark retains $\lambda=20$. This chapter reports
-both deltas as observed, single-seed results; a mechanistic reading
-(drawing on independently-derived loss-magnitude evidence) is given in
+both deltas as observed, single-seed results; their interpretation is discussed in
 Chapter~\ref{ch:discussion-conclusion}.
 
 \textbf{RankExt classifier-head learning rate, $\times1$ vs.\ $\times2$.}

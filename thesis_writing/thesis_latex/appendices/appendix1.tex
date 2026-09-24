@@ -24,8 +24,8 @@ FactorOrth $\lambda$ & $\lambda=20$ (1-epoch warmup) & $\lambda=50$ (1-epoch war
 KD scope & Old-seen only, no replay & Full (100-way) \\
 KD temperature & 2 & 2 \\
 KD warmup & 1 epoch & None \\
-Classifier-row / feature protection & --- & Protect30 (weight 30, KD-bearing arms only) \\
-Epochs per task & \multicolumn{2}{l}{9} \\
+Projected feature-protection term & --- & Weight 30, KD-bearing RankExt arms only \\
+Epochs per step & \multicolumn{2}{l}{Maximum 9 (plain SimpleAvg: early stopping, 5--8)} \\
 Optimizer / scheduler & \multicolumn{2}{l}{AdamW, cosine schedule, 10\% warmup ratio} \\
 Replay & \multicolumn{2}{l}{None (rehearsal-free)} \\
 Calibration & \multicolumn{2}{l}{Confidence-weighted, regime-grouped row-norm calibration only} \\
@@ -42,7 +42,8 @@ reference for the primary benchmark.}
 
 Table~\ref{tab:appA-lr-probe} reports the reduced-scale local decision
 probe discussed in Section~\ref{sec:ch6-lr-probe}, which tested the
-combined RankExt configuration (FactorOrth + full KD + Protect30) at
+combined RankExt configuration (FactorOrth + full KD + projected feature
+protection) at
 2 tasks, 2 epochs per task, and 10--15 images per class, across two seeds
 (42 and 123). These figures are explicitly non-benchmark, reduced-scale
 diagnostic evidence, reported here in full only because
@@ -70,9 +71,13 @@ epochs/task, 10--15 images/class). Non-benchmark diagnostic evidence.}
 \label{sec:appA-rij}
 
 Tables~\ref{tab:appA-rij-plain}--\ref{tab:appA-rij-combined} give the exact
-open (all-seen) accuracy values underlying the four $R_{i,j}$ heatmaps of
-Figure~\ref{fig:ch5-rij-comparison}, for readers who want precise numbers
-rather than a colour scale. $R_{i,j}$ is the accuracy on task $j$ after
+open (all-seen) accuracy values underlying the four RankExt $R_{i,j}$
+trajectories shown in the top row of Figure~\ref{fig:ch5-rij-comparison},
+for readers who want precise numbers rather than a colour scale. These are
+in-training evaluations made before classifier rescaling. The ``Final''
+rows of that figure, and its SimpleAvg panels, correspond to the final
+per-task accuracies after classifier rescaling; SimpleAvg has no
+intermediate merged model and therefore no $R_{i,j}$ table. $R_{i,j}$ is the accuracy on task $j$ after
 training has completed through task $i$ ($j \le i$); empty cells are
 structurally undefined (a task cannot be evaluated before it is trained).
 

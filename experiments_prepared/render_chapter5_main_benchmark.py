@@ -563,13 +563,13 @@ def fig_rank_growth(param_df, dataset):
             label="SimpleAvg (fixed rank per independent specialist)")
     ax.plot(re_["task"], re_["active_rank"], linestyle="-", marker="o", color=FAMILY_COLORS["RankExt"],
             label="RankExt (cumulative active rank)")
-    ax.set_xlabel("Task")
+    ax.set_xlabel("Step")
     ax.set_ylabel("LoRA rank")
     ax.set_xticks(sorted(param_df["task"].unique()))
     ax.set_ylim(0, 90)
     ax.legend(frameon=False, loc="upper left", fontsize=9)
     ax.text(0.98, 0.04,
-            "SimpleAvg's rank-80 is a NEW, independent specialist at every task\n"
+            "SimpleAvg's rank-80 is a NEW, independent specialist at every step\n"
             "(not cumulative history in the same sense as RankExt's growing adapter).",
             transform=ax.transAxes, ha="right", va="bottom", fontsize=7.5, style="italic",
             color="#555555")
@@ -590,8 +590,8 @@ def fig_trainable_lora_params_per_task(param_df, dataset):
             color=FAMILY_COLORS["SimpleAvg"], label="SimpleAvg")
     ax.plot(re_["task"], re_["new_trainable_lora_params"] / 1e6, linestyle="-", marker="o",
             color=FAMILY_COLORS["RankExt"], label="RankExt")
-    ax.set_xlabel("Task")
-    ax.set_ylabel("NEW trainable LoRA parameters this task (millions)")
+    ax.set_xlabel("Step")
+    ax.set_ylabel("NEW trainable LoRA parameters this step (millions)")
     ax.set_xticks(sorted(param_df["task"].unique()))
     ax.set_ylim(0, max(sa["new_trainable_lora_params"].max(), re_["new_trainable_lora_params"].max()) / 1e6 * 1.2)
     ax.legend(frameon=False, loc="upper right")

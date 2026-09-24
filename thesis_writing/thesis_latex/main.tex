@@ -37,16 +37,14 @@
 \begin{document}
 
 % ---- Front matter order ----------------------------------------------------
-% Title page / blank / Declaration of Originality / blank / Abstract / blank
-% / Acknowledgements / Contents / List of Figures / List of Tables / Preface
-% / Chapter 1. Each \blankpage (DEIthesis.cls) is a single page with no
-% header, footer, or printed page number.
+% Title page / Abstract / blank / Acknowledgements / Contents / List of
+% Figures / List of Tables / Preface / Chapter 1. Each \blankpage
+% (DEIthesis.cls) is a single page with no header, footer, or printed page
+% number. The Declaration of Originality (frontmatter/declaration.tex) is
+% intentionally not included for now; its wording is pending the author's
+% decision.
 \frontmatter
 \maketitle
-\blankpage
-
-\input{frontmatter/declaration}
-\blankpage
 
 \input{frontmatter/abstract}
 \blankpage
@@ -61,12 +59,21 @@
 
 \mainmatter
 
+% Exactly one blank page (no header, footer, or page number) follows each
+% chapter. The class is oneside, so \cleardoublepage never adds a page of
+% its own and no double blank pages can arise.
 \input{chapters/chapter_1}
+\blankpage
 \input{chapters/chapter_2}
+\blankpage
 \input{chapters/chapter_3}
+\blankpage
 \input{chapters/chapter_4}
+\blankpage
 \input{chapters/chapter_5}
+\blankpage
 \input{chapters/chapter_6}
+\blankpage
 
 % \backmatter is redefined by DEIthesis.cls: it prints the bibliography, then
 % the acknowledgments (frontmatter/thanks.tex), then switches to \appendix.

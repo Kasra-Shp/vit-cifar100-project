@@ -33,8 +33,38 @@ Seed & \multicolumn{2}{l}{42} \\
 \bottomrule
 \end{tabularx}
 \caption[Hyperparameter reference]{Consolidated hyperparameter and protocol
-reference for the primary benchmark.}
+reference for the primary CIFAR-100 benchmark.}
 \label{tab:appA-hyperparams}
+\end{table}
+
+Table~\ref{tab:appA-datasets} lists the settings that differ between the
+CIFAR-100 primary benchmark and the CUB-200-2011 evaluation
+(Section~\ref{sec:ch4-datasets}); every setting not listed there is shared.
+
+\begin{table}[htbp]
+\centering
+\begin{tabularx}{\textwidth}{@{}l X X@{}}
+\toprule
+\textbf{Setting} & \textbf{CIFAR-100} & \textbf{CUB-200-2011} \\
+\midrule
+Classes & 100 & 200 \\
+Protocol & $5\times20$ (primary; $4\times25$ secondary diagnostic) & $5\times40$ \\
+Class order & Native label order & Fixed seed-42 permutation \\
+Classifier & $768\to100$ & $768\to200$ \\
+SimpleAvg rank & 80 & 80 \\
+RankExt schedule & $16{\to}32{\to}48{\to}64{\to}80$ & $16{\to}32{\to}48{\to}64{\to}80$ \\
+SimpleAvg head-LR multiplier & $\times10$ & $\times10$ \\
+RankExt head-LR multiplier & $\times1$ & $\times2$ \\
+Projected feature-protection term & Weight 30 (KD-bearing RankExt arms) & Weight 30 (KD-bearing RankExt arms) \\
+Validation & 25 images per class, from the training set & 5 images per class, from the official training split \\
+Evaluation split & CIFAR-100 test set & Official CUB-200-2011 test split \\
+Preprocessing & As in Table~\ref{tab:ch4-training-config} & Aspect-ratio-preserving CLIP resize; deterministic centre-crop evaluation \\
+Seed & 42 & 42 \\
+\bottomrule
+\end{tabularx}
+\caption[Dataset-specific settings]{Dataset-specific settings of the
+CIFAR-100 primary benchmark and the CUB-200-2011 evaluation.}
+\label{tab:appA-datasets}
 \end{table}
 
 \section{Local Head-Learning-Rate Decision Probe}

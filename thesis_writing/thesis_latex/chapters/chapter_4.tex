@@ -37,8 +37,8 @@ Chapter~\ref{ch:methodology} --- SimpleAvg (Section~\ref{sec:ch3-simpleavg})
 and RankExt (Section~\ref{sec:ch3-rankext}) --- together with the knowledge
 distillation and FactorOrth stabilisation mechanisms of
 Section~\ref{sec:ch3-stabilization}, were trained and evaluated. Three
-objectives structure the chapter: to fix, once, the dataset, protocol,
-backbone, and training configuration shared by every experiment reported in
+objectives structure the chapter: to fix, once, the datasets, protocols,
+backbone, and training configuration shared by the experiments reported in
 Chapter~\ref{ch:results}, so results are not repeatedly re-described; to
 state exactly which method variants and configuration differences exist
 across the experiments this thesis draws on, since more than one
@@ -52,12 +52,23 @@ interprets what those settings produced.
 \section{Datasets}
 \label{sec:ch4-datasets}
 
-At the time of writing, \textbf{CIFAR-100} \parencite{krizhevsky2009learning}
-is the dataset used for all completed experiments reported in this thesis:
-100 fine-grained object classes, 50,000 training images and 10,000 test
-images, loaded in its native (unshuffled) label order. Every
-dataset-specific setting in the remainder of this chapter is stated for
-CIFAR-100.
+Two datasets are used. \textbf{CIFAR-100} \parencite{krizhevsky2009learning}
+is the primary benchmark: 100 fine-grained object classes, 50,000 training
+images and 10,000 test images, loaded in its native (unshuffled) label
+order. Unless stated otherwise, every dataset-specific setting in this
+chapter refers to CIFAR-100.
+
+\textbf{CUB-200-2011} (Caltech-UCSD Birds-200-2011) provides a second-dataset
+supporting evaluation. It has 200 bird-species classes and is loaded through
+the dataset identifier \texttt{Donghyun99/\allowbreak CUB-200-2011}. The official split
+is retained: the 5,994 images of the official training split are the
+training source, and the 5,794 images of the official test split are used
+only for final evaluation. The validation set is carved from the official
+training split alone, with 5 images per class selected deterministically
+under the fixed seed; the test split is never used for validation. The
+classes are presented in a fixed seed-42 permutation rather than in the
+native class order; this permutation is stored once and shared by every
+method.
 
 \section{Class-Incremental Protocol}
 \label{sec:ch4-protocols}
@@ -74,12 +85,20 @@ $[40,59]$, $[60,79]$, $[80,99]$, and RankExt's cumulative rank schedule
 $[16,32,48,64,80]$ (Section~\ref{sec:ch4-backbone}). This is the setting
 used for the main, headline results in Chapter~\ref{ch:results}.
 
-Every main result in Chapter~\ref{ch:results} uses the primary
-$5\times20$ protocol. The only alternative partition reported is a
-secondary $4\times25$ diagnostic for the RankExt family
+Every main CIFAR-100 result in Chapter~\ref{ch:results} uses the primary
+$5\times20$ protocol. The only alternative CIFAR-100 partition reported is
+a secondary $4\times25$ diagnostic for the RankExt family
 (Section~\ref{sec:ch5-ablation}); a systematic study of protocol depth is
-left to future work (Section~\ref{sec:ch6-future-work}). No dataset-level accuracy number
-appears in this section; results under the primary protocol are reported in
+left to future work (Section~\ref{sec:ch6-future-work}).
+
+CUB-200-2011 is evaluated under a $5\times40$ protocol: the 200 permuted
+class indices are split into five steps of 40 classes each ($[0,39]$,
+$[40,79]$, $[80,119]$, $[120,159]$, $[160,199]$). RankExt uses the same
+cumulative rank schedule $[16,32,48,64,80]$ as on CIFAR-100, so each step
+still adds a rank-16 block and the final cumulative rank is again 80, while
+each step now introduces 40 rather than 20 classes; the schedule is
+therefore not matched per class across the two datasets. No accuracy
+number appears in this section; results are reported in
 Chapter~\ref{ch:results}.
 
 \section{Backbone and Adaptation Architecture}
@@ -89,8 +108,11 @@ The backbone is the vision encoder of CLIP ViT-B/16
 (\texttt{openai/clip-vit-base-patch16}; \parencite{radford2021learning}),
 used identically for both integration strategies and frozen throughout
 training (Section~\ref{sec:ch3-lora-framework}); CLIP's text encoder plays
-no role. The pooled representation feeds a single linear classifier,
-$\mathbb{R}^{768}\to\mathbb{R}^{100}$ (Section~\ref{sec:ch3-classifier-construction}).
+no role. The pooled representation feeds a single linear classifier
+whose output dimension equals the number of classes of the dataset:
+$\mathbb{R}^{768}\to\mathbb{R}^{100}$ for CIFAR-100 and
+$\mathbb{R}^{768}\to\mathbb{R}^{200}$ for CUB-200-2011
+(Section~\ref{sec:ch3-classifier-construction}).
 LoRA is injected into the query and value projection matrices
 (\texttt{q\_proj}, \texttt{v\_proj}) of every attention block --- the same
 two-module target set for both strategies; no alternative target-module set
@@ -111,6 +133,42 @@ scaling by construction (Section~\ref{sec:ch3-lora-framework}). A single
 persistent adaptation is carried across steps: at each step a new rank-16
 block is appended, while all previously learned blocks remain active in the
 forward pass and are hard-frozen (Section~\ref{sec:ch3-rankext}).
+
+The CUB-200-2011 experiment uses the same backbone, target modules, method
+definitions, and loss configuration as CIFAR-100
+(Sections~\ref{sec:ch4-training}--\ref{sec:ch4-rankext-auxiliary}), with
+the differences summarised in Table~\ref{tab:ch4-cub-config}. The most
+important one is the RankExt classifier-head learning-rate multiplier,
+which is $\times2$ in the refined CUB-200-2011 configuration and $\times1$
+in the canonical CIFAR-100 benchmark. The CUB-200-2011 experiment is
+therefore a second-dataset supporting evaluation of the same method
+families, not a strictly controlled dataset-only replication of the
+CIFAR-100 benchmark.
+
+\begin{table}[htbp]
+\centering
+\begin{tabularx}{\textwidth}{@{}l X X@{}}
+\toprule
+\textbf{Setting} & \textbf{CIFAR-100 (primary)} & \textbf{CUB-200-2011} \\
+\midrule
+Classes / protocol & 100 / $5\times20$ & 200 / $5\times40$ \\
+Class order & Native label order & Fixed seed-42 permutation \\
+Classifier & $768\to100$ & $768\to200$ \\
+Validation & 25 images per class, from the training set & 5 images per class, from the official training split \\
+Final evaluation & CIFAR-100 test set & Official CUB-200-2011 test split \\
+RankExt head-LR multiplier & $\times1$ & $\times2$ \\
+Preprocessing & Resize, random crop (padding 8), horizontal flip, colour jitter & Aspect-ratio-preserving CLIP resize, random crop (padding 8), horizontal flip, light colour jitter; evaluation with deterministic centre crop \\
+\bottomrule
+\end{tabularx}
+\caption[CIFAR-100 and CUB-200-2011 configuration differences]{Settings that
+differ between the CIFAR-100 primary benchmark and the CUB-200-2011
+evaluation. All other settings --- backbone, target modules, SimpleAvg rank
+80, RankExt schedule $[16,32,48,64,80]$, learning rates, SimpleAvg head-LR
+multiplier $\times10$, a maximum of 9 epochs per step, knowledge
+distillation, FactorOrth, and the projected feature-protection term --- are
+shared.}
+\label{tab:ch4-cub-config}
+\end{table}
 
 \section{Training Configuration}
 \label{sec:ch4-training}
@@ -182,8 +240,8 @@ with the $\tau^2$ scaling of Equation~\eqref{eq:ch3-kd}. Distillation is
 active from the second class-incremental step onward (a teacher requires at
 least one already-trained step) and is computed on the current step's own
 input batch only. Its scope and schedule are family-specific. For RankExt,
-it compares the full 100-way output distribution, which covers every class
-seen so far, and
+it compares the full output distribution over all classes of the
+classifier, which covers every class seen so far, and
 there is no distillation-specific warmup: $\tau$ and $\kappa$ are constant
 whenever distillation is active. For SimpleAvg, the comparison is
 restricted to the previously seen classes, and the distillation weight is
@@ -286,18 +344,18 @@ specific run was not independently recovered from a saved environment log
 during the preparation of this thesis and is not stated here rather than
 guessed.
 
-\textbf{Compute environment.} Training was performed on the University of
-Padova DEI computing cluster using one NVIDIA A40 GPU per job, with jobs
+\textbf{Compute environment.} The CIFAR-100 experiments were performed on
+the University of Padova DEI computing cluster using one NVIDIA A40 GPU per job, with jobs
 submitted through SLURM.
 
 \textbf{Seeds.} A single global seed drives every source of randomness
 (Python's \texttt{random}, NumPy, and PyTorch) at process start, with an
 additional per-method reseed inside the outer training loop so that no
 method's initialisation or dropout draws depend on how many other methods
-have already trained earlier in the same process. The default seed is 42,
-used for every primary $5\times20$ result reported in
-Chapter~\ref{ch:results}. Every primary $5\times20$ result is single-seed; no primary result is
-replicated across seeds.
+have already trained earlier in the same process. The seed is 42 for the
+CIFAR-100 primary benchmark and for the CUB-200-2011 evaluation, where it
+also determines the class permutation and the validation selection. Both
+are single-seed results; neither is replicated across seeds.
 
 \textbf{Checkpointing, logging, and result artifacts.} Each run writes, per
 method and per class-incremental step: the best-validation-CE snapshot of

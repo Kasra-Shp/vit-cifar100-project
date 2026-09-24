@@ -145,24 +145,23 @@ and a per-step class group $C_t$ of size $|C_t|$. Every method definition,
 training objective, evaluation protocol, and metric given in the remainder
 of this chapter is expressed in exactly these terms and does not itself
 depend on any concrete choice of $C$, $T$, or $|C_t|$. This subsection
-fixes the concrete instantiation used to obtain the results reported in
-this thesis; a future dataset or protocol would be added here, as an
-additional row of Table~\ref{tab:ch3-protocol-config}, without requiring
-any change to the general methodology in the rest of this chapter.
+fixes the concrete instantiations used to obtain the results reported in
+this thesis (Table~\ref{tab:ch3-protocol-config}); the general methodology
+in the rest of this chapter is not duplicated per dataset.
 
-The dataset used throughout this thesis is CIFAR-100, with $C=100$
-classes. The \emph{primary} protocol partitions these into five incremental
-steps of 20 classes each ($T=5$, $|C_t|=20$, $5\times20$); this is the
-canonical protocol against which every method in this chapter is defined
-and compared, and the one used for the main results reported in
+The \emph{primary benchmark} is CIFAR-100, with $C=100$ classes partitioned
+into five incremental steps of 20 classes each ($T=5$, $|C_t|=20$,
+$5\times20$); this is the protocol used for the main results reported in
 Chapter~\ref{ch:results}. Unless a passage explicitly notes otherwise,
-every concrete number stated elsewhere in this chapter --- a rank
-schedule, the classifier's dimensionality, and so on --- refers to this
-primary protocol.
+every concrete number stated elsewhere in this chapter --- a rank schedule,
+the classifier's dimensionality, and so on --- refers to this primary
+protocol. A \emph{secondary protocol diagnostic} partitions the same 100
+CIFAR-100 classes into four steps of 25 classes ($4\times25$,
+Section~\ref{sec:ch5-ablation}). A \emph{second-dataset supporting
+evaluation} uses CUB-200-2011, with $C=200$ classes in five steps of 40
+classes ($5\times40$, Section~\ref{sec:ch5-cub}).
 
-Holding $C=100$ fixed, the same class set could also be partitioned more
-coarsely or more finely. Apart from one secondary $4\times25$ diagnostic
-reported in Section~\ref{sec:ch5-ablation}, no alternative protocol depth
+Apart from the single $4\times25$ diagnostic, no alternative protocol depth
 is evaluated in this thesis; protocol depth is otherwise discussed only as
 literature background (Section~\ref{sec:protocol-depth}) and as a
 direction for future work (Section~\ref{sec:ch6-future-work}).
@@ -171,15 +170,15 @@ direction for future work (Section~\ref{sec:ch6-future-work}).
 \centering
 \begin{tabularx}{\textwidth}{@{}l c X@{}}
 \toprule
-\textbf{Dataset} & \textbf{Total classes ($C$)} & \textbf{Main protocol} \\
+\textbf{Dataset} & \textbf{Total classes ($C$)} & \textbf{Experimental protocol} \\
 \midrule
-CIFAR-100 & 100 & 5 incremental steps $\times$ 20 classes \\
+CIFAR-100 & 100 & Primary: $5\times20$; secondary protocol diagnostic: $4\times25$ \\
+CUB-200-2011 & 200 & $5\times40$ (second-dataset supporting evaluation) \\
 \bottomrule
 \end{tabularx}
-\caption[Dataset and protocol configuration]{Dataset and primary protocol
-configuration used in this thesis. A future dataset would extend this
-table with one additional row; no other part of this chapter's methodology
-depends on its contents.}
+\caption[Dataset and protocol configuration]{Datasets and class-incremental
+protocols used in this thesis. No other part of this chapter's methodology
+depends on the contents of this table.}
 \label{tab:ch3-protocol-config}
 \end{table}
 
@@ -466,7 +465,7 @@ implementation, distillation is computed only on the current step's own
 input batch --- no image or label from an earlier step is replayed for this
 purpose, consistent with the rehearsal-free constraint of Section~\ref{sec:ch3-problem-formulation} ---
 and its scope is family-specific. For RankExt, it is applied to the
-\textbf{full} 100-way output distribution, which covers every class seen
+\textbf{full} $C$-way output distribution, which covers every class seen
 so far, including the classes newly introduced at the current step. For SimpleAvg, it is
 restricted to the previously seen classes: teacher and student logits are
 both restricted to the classes introduced at earlier steps before the
@@ -633,8 +632,8 @@ parameters. This section defines both operations in turn.
 The classifier is a single linear layer that maps the shared pooled
 representation $h$ to logits $z$ through a weight matrix
 $W_{cls}\in\mathbb{R}^{C\times d}$ and a bias vector $b\in\mathbb{R}^{C}$,
-covering every class the model will ever see ($C=100$ in the CIFAR-100
-protocol of Section~\ref{sec:ch3-protocol-instantiation}). This is precisely the classifier component of the three-way
+covering every class the model will ever see ($C=100$ for CIFAR-100 and
+$C=200$ for CUB-200-2011, Section~\ref{sec:ch3-protocol-instantiation}). This is precisely the classifier component of the three-way
 parameter partition of $f_{\theta_t}$ introduced in Section~\ref{sec:ch3-problem-formulation}, alongside
 the frozen backbone and the adaptation parameters of Section~\ref{sec:ch3-integration-strategies}. All $C$
 rows of $W_{cls}$ and $b$ exist from the

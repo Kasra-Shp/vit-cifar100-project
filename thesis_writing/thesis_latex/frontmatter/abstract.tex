@@ -15,8 +15,10 @@ incremental sequence, adding a new rank block at each step while all earlier blo
 remain frozen but active, so that adaptation capacity is introduced
 incrementally rather than specialist by specialist. Both strategies are
 evaluated, with and without knowledge distillation and orthogonality-based
-stabilisation, under a common five-step/twenty-class-per-step
-class-incremental protocol on CIFAR-100, using paired task-agnostic (open)
+stabilisation, under a five-step/twenty-class-per-step class-incremental
+protocol on CIFAR-100 as the primary benchmark, with CUB-200-2011
+($5\times40$) as a second-dataset supporting evaluation, using paired
+task-agnostic (open)
 and task-oracle (restricted) evaluation to help distinguish what a model
 still discriminates from what it can still express under output-space
 competition with later steps.
@@ -33,10 +35,12 @@ stabilisation recovers most of RankExt's gap: combining knowledge
 distillation with projected feature protection and a factor-space
 orthogonality penalty brings its highest observed configuration to
 70.76\% all-seen accuracy, 4.45 percentage points below the highest observed
-SimpleAvg result. The
+SimpleAvg result (75.21\%). On CUB-200-2011 the same qualitative pattern
+appears: plain SimpleAvg reaches 69.47\%, and the highest observed RankExt
+configuration 63.43\%. The
 comparison is not framed as a single winner-take-all contest: the central
 question is how closely a persistent strategy that grows its adaptation
 capacity incrementally can approach a strong, independently-trained
 reference, and at what retention--plasticity cost. All reported results
-are single-seed; multi-seed replication is identified as a priority for
-confirming these findings.
+are single-seed observations; multi-seed replication is identified as a
+priority for confirming these findings.

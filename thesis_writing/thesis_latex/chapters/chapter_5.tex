@@ -19,9 +19,12 @@ generalisation -- is deferred to Chapter~\ref{ch:discussion-conclusion}.
 \section{Evaluation Protocol and Metrics}
 \label{sec:ch5-protocol}
 
-This chapter reports results on \textbf{CIFAR-100} under a \textbf{5-task,
-20-class-per-task} class-incremental protocol ($5\times20$), evaluated at
-\textbf{seed 42}. The backbone, LoRA configuration, method definitions, and
+The primary results of this chapter are obtained on \textbf{CIFAR-100}
+under a \textbf{5-task, 20-class-per-task} class-incremental protocol
+($5\times20$), evaluated at \textbf{seed 42}; a supporting second-dataset
+evaluation on CUB-200-2011 ($5\times40$, seed 42) is reported in
+Section~\ref{sec:ch5-cub}. The metric definitions below apply to both. The
+backbone, LoRA configuration, method definitions, and
 training procedure are fixed in Chapter~\ref{ch:experimental-setup} and are
 not restated here; this section recaps only the metric definitions needed to
 read the tables and figures that follow.
@@ -33,7 +36,8 @@ and including the current task. Unless stated otherwise, ``accuracy'' in
 this chapter means all-seen accuracy.
 
 \textbf{Restricted (task-oracle) accuracy} evaluates the same predictions
-against only the current task's own 20-class subset --- a diagnostic upper
+against only the current task's own class subset (20 classes on
+CIFAR-100, 40 on CUB-200-2011) --- a diagnostic upper
 bound on within-task discrimination, not a replacement headline metric.
 Restricted accuracy is never described in this chapter as a method's
 ``true'' or ``actual'' accuracy; it isolates one specific factor
@@ -109,8 +113,9 @@ The canonical Chapter-5 benchmark compares \textbf{eight} methods under the
 CIFAR-100 $5\times20$ protocol at seed 42. All KD-bearing configurations use
 a distillation temperature of $T=2$, as specified in
 Chapter~\ref{ch:experimental-setup}. No result from any other experiment is
-merged into this benchmark; the refinement and protocol-diagnostic
-experiments are reported separately in Section~\ref{sec:ch5-ablation}.
+merged into this benchmark; the CUB-200-2011 evaluation is reported
+separately in Section~\ref{sec:ch5-cub}, and the refinement and
+protocol-diagnostic experiments in Section~\ref{sec:ch5-ablation}.
 
 Table~\ref{tab:ch5-main-compact} reports all-seen and restricted accuracy
 for the eight canonical methods.
@@ -180,8 +185,113 @@ objectives reach substantially higher all-seen accuracy, up to 70.76\%. Sections
 examine each family in turn; the \emph{reasons} for this asymmetry are
 deferred to Chapter~\ref{ch:discussion-conclusion}.
 
+\section{CUB-200-2011 Cross-Dataset Evaluation}
+\label{sec:ch5-cub}
+
+The CUB-200-2011 experiment evaluates the same eight methods on a second
+dataset, under the $5\times40$ protocol with seed 42
+(Section~\ref{sec:ch4-datasets}). It is a supporting cross-dataset
+evaluation, not a second primary benchmark: in addition to the dataset
+itself, the class count, classes per step, classifier size, and
+preprocessing differ from CIFAR-100, and the refined CUB-200-2011
+configuration uses a RankExt classifier-head learning-rate multiplier of
+$\times2$ instead of the canonical $\times1$
+(Table~\ref{tab:ch4-cub-config}). Table~\ref{tab:ch5-cub-main} reports the
+results.
+
+\begin{table}[htbp]
+\centering
+\begin{tabularx}{\textwidth}{@{}X r r r r@{}}
+\toprule
+\textbf{Method} & \textbf{All-seen (\%)} & \textbf{Restricted (\%)} & \textbf{BWT} & \textbf{Forgetting} \\
+\midrule
+SimpleAvg & 69.47 & 91.25 & $-$0.241 & --- \\
+SimpleAvg + KD & 68.69 & 91.94 & $-$0.266 & --- \\
+SimpleAvg + FactorOrth & 68.33 & 91.05 & $-$0.259 & --- \\
+SimpleAvg + FactorOrth + KD & 67.24 & 91.74 & $-$0.288 & --- \\
+RankExt & 20.26 & 78.12 & $-$0.891 & 0.890 \\
+RankExt + KD + Protect & 45.27 & 87.78 & $-$0.547 & 0.589 \\
+RankExt + FactorOrth & 20.82 & 79.58 & $-$0.885 & 0.884 \\
+RankExt + FactorOrth + KD + Protect & 63.43 & 88.39 & $-$0.532 & 0.570 \\
+\bottomrule
+\end{tabularx}
+\caption[CUB-200-2011 8-method results]{CUB-200-2011 $5\times40$, seed 42:
+all-seen and restricted accuracy, BWT, and forgetting for the eight methods.
+BWT and forgetting follow the definitions and evaluation stages of
+Section~\ref{sec:ch5-protocol}; forgetting is reported for RankExt only.
+As on CIFAR-100, FactorOrth is applied to the reconstructed dense updates
+for SimpleAvg ($\lambda=20$) and in the low-rank factor space for RankExt
+($\lambda=50$).}
+\label{tab:ch5-cub-main}
+\end{table}
+
+\textbf{SimpleAvg.} In this single-seed CUB experiment, none of the
+auxiliary SimpleAvg configurations improves on the plain 69.47\% baseline:
+relative to plain SimpleAvg, KD changes all-seen accuracy by $-$0.78
+percentage points, FactorOrth by $-$1.14 points, and their combination by
+$-$2.23 points. Restricted accuracy stays between 91.05\% and 91.94\% for
+all four variants.
+
+\textbf{RankExt.} Plain RankExt reaches 20.26\%. FactorOrth alone has only a
+small observed effect ($+$0.55 percentage points, to 20.82\%). The
+KD+Protect configuration, which combines knowledge distillation with the
+projected feature-protection term, raises all-seen accuracy by 25.01 points
+to 45.27\%, and the combined FactorOrth + KD + Protect configuration
+produces the highest observed RankExt result on CUB-200-2011, 63.43\%
+($+$43.17 points over plain and $+$18.16 points over KD+Protect). As on
+CIFAR-100, the contributions of knowledge distillation and the projected
+feature-protection term are not isolated. The highest observed SimpleAvg
+result (69.47\%) and the highest observed RankExt result (63.43\%) show a
+6.04-percentage-point difference in this single-seed CUB experiment.
+Restricted accuracy for RankExt ranges from 78.12\% to 88.39\%, which is
+lower than both the CUB-200-2011 SimpleAvg values and the CIFAR-100 RankExt
+values (91.03\%--94.78\%).
+
+\begin{table}[htbp]
+\centering
+\begin{tabularx}{\textwidth}{@{}X r r@{}}
+\toprule
+\textbf{Method} & \shortstack[r]{\textbf{CIFAR-100 $5\times20$}\\\textbf{all-seen (\%)}} & \shortstack[r]{\textbf{CUB-200-2011 $5\times40$}\\\textbf{all-seen (\%)}} \\
+\midrule
+SimpleAvg & 75.16 & 69.47 \\
+SimpleAvg + KD & 75.21 & 68.69 \\
+SimpleAvg + FactorOrth & 74.02 & 68.33 \\
+SimpleAvg + FactorOrth + KD & 73.22 & 67.24 \\
+RankExt & 34.99 & 20.26 \\
+RankExt + KD + Protect & 65.01 & 45.27 \\
+RankExt + FactorOrth & 41.00 & 20.82 \\
+RankExt + FactorOrth + KD + Protect & 70.76 & 63.43 \\
+\bottomrule
+\end{tabularx}
+\caption[CIFAR-100 versus CUB-200-2011 all-seen accuracy]{All-seen accuracy
+on the CIFAR-100 primary benchmark and the CUB-200-2011 evaluation (single
+seed each). This is a descriptive comparison, not a controlled estimate of
+the dataset effect: the two runs also differ in class count, classes per
+step, classifier size, preprocessing, and the RankExt classifier-head
+learning-rate multiplier ($\times1$ on CIFAR-100, $\times2$ on
+CUB-200-2011).}
+\label{tab:ch5-cub-vs-cifar}
+\end{table}
+
+\textbf{Relation to CIFAR-100.} Table~\ref{tab:ch5-cub-vs-cifar} places the
+two datasets side by side. The CUB experiment reproduces the main
+qualitative family-level pattern observed on CIFAR-100, although the runs
+are not a strict dataset-only controlled comparison because the refined CUB
+configuration uses a $\times2$ RankExt classifier-head multiplier. On both
+datasets, SimpleAvg is strong without auxiliary objectives and none of its
+auxiliary variants clearly improves on the plain baseline; plain RankExt is
+substantially weaker; FactorOrth alone does not resolve that weakness; the
+KD+Protect-bearing configurations show much larger recovery; and the
+combined configuration is the highest observed RankExt result without
+reaching the highest observed SimpleAvg result. All-seen accuracy is
+lower on CUB-200-2011 for every method, and the differences between the two
+datasets are not attributed to dataset properties alone.
+
 \section{SimpleAvg Analysis}
 \label{sec:ch5-simpleavg}
+
+Sections~\ref{sec:ch5-simpleavg}--\ref{sec:ch5-ablation} return to the
+CIFAR-100 primary benchmark.
 
 This section examines whether any of the three auxiliary mechanisms
 available to SimpleAvg --- knowledge distillation (KD), FactorOrth, or their
@@ -715,14 +825,22 @@ sized final adapters through structurally different training and deployment
 paths. A controlled refinement of two hyperparameters
 (Section~\ref{sec:ch5-ablation}) improves three of the four RankExt
 configurations but not the strongest one, and has mixed effects on
-SimpleAvg's two FactorOrth variants.
+SimpleAvg's two FactorOrth variants. On CUB-200-2011
+(Section~\ref{sec:ch5-cub}), the same qualitative family-level pattern is
+observed: plain SimpleAvg (69.47\%) is not improved by any auxiliary
+configuration, while RankExt rises from 20.26\% to 63.43\% with the
+combined configuration.
 
 \textbf{Limitations.} Every result presented as primary in this chapter ---
 the eight-method benchmark of Section~\ref{sec:ch5-main-results}, the
 per-family analyses of Sections~\ref{sec:ch5-simpleavg}--\ref{sec:ch5-efficiency},
 and the refinement and protocol-diagnostic comparisons of
 Section~\ref{sec:ch5-ablation} --- is a \textbf{single-seed (seed 42)}
-result. The reported benchmark and refinement results are single-seed
+result, and so is the CUB-200-2011 evaluation of
+Section~\ref{sec:ch5-cub}. The CUB-200-2011 results add a second dataset
+but do not replace repeated-seed evidence, and because the CUB-200-2011
+configuration also changes the RankExt classifier-head learning rate, they
+support qualitative rather than controlled cross-dataset conclusions. The reported benchmark and refinement results are single-seed
 observations; no confidence intervals or statistical-significance claims
 are made. Differences reported here, including the 4.45-percentage-point
 SimpleAvg-vs-RankExt gap and the RankExt combined arm's $-$2.84-point change

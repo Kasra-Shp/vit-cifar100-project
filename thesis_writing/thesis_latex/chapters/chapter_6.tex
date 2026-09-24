@@ -23,6 +23,19 @@ KD+Protect-bearing configurations ($+$30.02 percentage points over plain
 RankExt), while FactorOrth adds a smaller increment ($+$6.01 points on its
 own and $+$5.75 points on top of KD+Protect).
 
+The CUB-200-2011 evaluation (Section~\ref{sec:ch5-cub}) shows the same
+broad family-level pattern on a second dataset: plain SimpleAvg (69.47\%)
+is not improved by any auxiliary configuration; plain RankExt (20.26\%) is
+much weaker; FactorOrth alone changes it only slightly ($+$0.55 points);
+the KD+Protect-bearing configurations recover much more; and the combined
+configuration (63.43\%) is the highest observed RankExt result, 6.04 points
+below plain SimpleAvg. Because the refined CUB-200-2011 configuration uses a
+$\times2$ RankExt classifier-head multiplier instead of the canonical
+$\times1$, this is evidence of qualitative consistency across datasets, not
+a controlled estimate of the dataset effect. CIFAR-100 remains the
+numerical reference for the discussion below; CUB-200-2011 is brought in
+where it strengthens or qualifies an interpretation.
+
 The discussion below asks why the two families respond so differently to
 auxiliary objectives that, at the level of the design in
 Chapter~\ref{ch:methodology}, address the same problem of retention under
@@ -38,7 +51,7 @@ from other runs or checkpoints are used, this is stated explicitly.
 Plain SimpleAvg reaches 75.16\% without any auxiliary mechanism
 (Section~\ref{sec:ch5-main-results}). This result is obtained under the
 same task-agnostic evaluation as RankExt: the final merged model has a
-single 100-way classifier and is evaluated with a plain argmax over all
+single all-class classifier and is evaluated with a plain argmax over all
 classes, without task-identity routing at inference.
 
 Several properties of the design are consistent with this strength, although
@@ -193,7 +206,7 @@ isolate their individual contributions.
 
 The two components act on different parts of the model. Knowledge
 distillation provides an output-space constraint: in RankExt, the teacher
-and student distributions span the full 100-way classifier output, which
+and student distributions span the full classifier output over all classes, which
 includes the classes introduced at the current step, so the distillation
 loss also constrains the relative scale of old-class and new-class logits
 --- the competition that the open/restricted evidence points to, and that
@@ -297,6 +310,17 @@ lose open accuracy through inter-step score misalignment at the same time.
 The open/restricted gap is diagnostic: it does not decompose the deficit of
 any configuration into causal shares attributable to these mechanisms.
 
+CUB-200-2011 qualifies this picture. There, SimpleAvg's restricted accuracy
+remains around 91\% (91.05\%--91.94\%), but RankExt's is materially lower,
+from 78.12\% to 88.39\% (Section~\ref{sec:ch5-cub}). The open/restricted
+diagnostic still points to substantial cross-step competition on both
+datasets --- plain RankExt's open accuracy on CUB-200-2011 (20.26\%) is far
+below its restricted accuracy (78.12\%) --- but on CUB-200-2011 RankExt also
+shows weaker within-step discrimination than on CIFAR-100. The CUB-200-2011
+deficit therefore cannot be reduced to score competition alone, and the
+CIFAR-100 observation that within-step discrimination remains high should
+not be assumed to carry over unchanged to other datasets.
+
 \section{Inter-Step Logit Rescaling as a Diagnostic}
 \label{sec:ch6-calibration}
 
@@ -381,9 +405,16 @@ as observed outcomes of the evaluated setting rather than as estimates of
 expected performance across repeated runs. This applies to the
 4.45-percentage-point gap between the two families, to the small
 differences among the SimpleAvg variants, and to the head-learning-rate and
-$\lambda$ refinements, which are also single-seed comparisons. The final
-benchmark presented in this thesis is limited to CIFAR-100, so
-cross-dataset generalisation is not established.
+$\lambda$ refinements, which are also single-seed comparisons. The study
+evaluates the method families on two visual benchmarks, CIFAR-100 and
+CUB-200-2011, but both principal comparisons are single-seed experiments.
+This provides stronger evidence than a single-dataset evaluation while
+remaining insufficient for broad claims of cross-dataset generalisation.
+The CUB-200-2011 run is also not a pure dataset-only replication, because
+RankExt uses a $\times2$ classifier-head learning-rate multiplier there
+rather than CIFAR-100's $\times1$; this limits causal attribution of the
+differences between the two datasets without invalidating the CUB-200-2011
+results themselves.
 
 Some mechanisms are also not separated from one another. In RankExt, the
 KD-bearing configurations always combine knowledge distillation with the
@@ -437,10 +468,12 @@ preliminary. Additional partitions of the same 100 classes should be tested
 while holding the total number of classes, the final RankExt capacity, the
 backbone, the training budget, and the evaluation protocol fixed.
 
-\textbf{An additional dataset.} Repeating the comparison on a further
-visual benchmark with different class granularity or domain
-characteristics would show whether the SimpleAvg--RankExt asymmetry is
-specific to CIFAR-100.
+\textbf{Additional datasets and controlled cross-dataset comparison.}
+Evaluation should be extended to additional datasets with different visual
+domains and class granularity. Rerunning CUB-200-2011 with the canonical
+$\times1$ RankExt classifier-head multiplier, or CIFAR-100 with $\times2$,
+would also turn the present qualitative cross-dataset comparison into a
+controlled one.
 
 \textbf{Inter-step logit rescaling on the primary checkpoints.} The
 validation-fitted logit-rescaling diagnostic of
@@ -474,9 +507,9 @@ This thesis compared two ways of integrating LoRA updates across the steps
 of a rehearsal-free class-incremental sequence. SimpleAvg trains an
 independent specialist at each step and averages the resulting dense
 updates once, at the end; RankExt maintains a single adapter state that
-grows by one frozen-and-retained rank block per step. In the evaluated
-setting --- CIFAR-100, $5\times20$, a CLIP ViT-B/16 backbone, and seed 42
---- the two strategies behave very differently.
+grows by one frozen-and-retained rank block per step. In the primary
+evaluated setting --- CIFAR-100, $5\times20$, a CLIP ViT-B/16 backbone, and
+seed 42 --- the two strategies behave very differently.
 
 Plain SimpleAvg is a strong reference, reaching 75.16\%, and its KD variant
 reaches 75.21\%; however, no auxiliary SimpleAvg variant provides a clear
@@ -491,17 +524,27 @@ feature-space constraint, and FactorOrth as a weight-geometry constraint
 --- and their combination is associated with the largest recovery
 observed, although their individual contributions are not isolated.
 
+The CUB-200-2011 experiment provides supporting cross-dataset evidence for
+the same broad asymmetry: plain SimpleAvg remains strong at 69.47\%,
+whereas plain RankExt reaches 20.26\% and the combined RankExt
+configuration recovers to 63.43\%. Because the CUB run uses a refined
+RankExt head-learning-rate setting, this comparison should be interpreted
+as evidence of qualitative consistency across datasets rather than as a
+controlled estimate of the dataset effect.
+
 The evidence is consistent with structural differences between the two
 integration strategies playing an important role in the observed
 asymmetry, while the experiments do not exclude sensitivity to
 optimisation choices, protocol design, or other hyperparameters. The
 paired open/restricted evaluation makes one part of this picture
-particularly clear. RankExt's restricted accuracy stays above 91\% even
-where its open accuracy is low, so low task-agnostic accuracy cannot be
-interpreted only as a loss of within-step discriminative knowledge:
-competition between class groups in the shared classifier is an important
-part of the observed behaviour, although it is not shown to account for the
-whole gap. SimpleAvg's independent specialist training and classifier-row
+particularly clear. On CIFAR-100, RankExt's restricted accuracy stays
+above 91\% even where its open accuracy is low, so low task-agnostic
+accuracy cannot be interpreted only as a loss of within-step discriminative
+knowledge: competition between class groups in the shared classifier is an
+important part of the observed behaviour, although it is not shown to
+account for the whole gap. On CUB-200-2011, the same competition is visible,
+but RankExt's lower restricted accuracy indicates that within-step
+discrimination is also weaker there. SimpleAvg's independent specialist training and classifier-row
 stitching appear to reduce the severity of this competition in the
 evaluated setting, although its final merged model is still evaluated with
 the same task-agnostic all-class decision rule.

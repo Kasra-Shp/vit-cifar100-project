@@ -6,15 +6,12 @@
 \chapter{Results}
 \label{ch:results}
 
-Every accuracy, restricted-accuracy, backward-transfer, and forgetting value
-in this chapter is read directly from the saved result artifacts of the
-underlying experiments and independently cross-checked for consistency.
-This chapter does not re-derive SimpleAvg, RankExt, knowledge distillation, FactorOrth, or the
-open/restricted evaluation protocol, all of which are defined in
-Chapter~\ref{ch:methodology}; nor does it restate the dataset, protocol, or
-training configuration fixed in Chapter~\ref{ch:experimental-setup}.
-Interpretation of \emph{why} the results below occur -- mechanism, cause,
-generalisation -- is deferred to Chapter~\ref{ch:discussion-conclusion}.
+This chapter reports the empirical results of the experiments defined in
+Chapter~\ref{ch:experimental-setup}, beginning with the primary CIFAR-100
+benchmark and the supporting CUB-200-2011 evaluation, followed by
+per-family analyses and the targeted refinement and diagnostic
+experiments. Chapter~\ref{ch:discussion-conclusion} interprets the
+mechanisms and broader implications of these results.
 
 \section{Evaluation Protocol and Metrics}
 \label{sec:ch5-protocol}
@@ -23,11 +20,10 @@ The primary results of this chapter are obtained on \textbf{CIFAR-100}
 under a \textbf{5-step, 20-class-per-step} class-incremental protocol
 ($5\times20$), evaluated at \textbf{seed 42}; a supporting second-dataset
 evaluation on CUB-200-2011 ($5\times40$, seed 42) is reported in
-Section~\ref{sec:ch5-cub}. The metric definitions below apply to both. The
-backbone, LoRA configuration, method definitions, and
-training procedure are fixed in Chapter~\ref{ch:experimental-setup} and are
-not restated here; this section recaps only the metric definitions needed to
-read the tables and figures that follow.
+Section~\ref{sec:ch5-cub}. The method definitions and training
+configuration are those of Chapters~\ref{ch:methodology}
+and~\ref{ch:experimental-setup}; this section recaps only the metric
+definitions, which apply to both datasets.
 
 \textbf{All-seen (open) accuracy} is the primary continual-learning metric
 throughout this chapter: accuracy on a step's own test images, evaluated
@@ -37,13 +33,10 @@ this chapter means all-seen accuracy.
 
 \textbf{Restricted (task-oracle) accuracy} evaluates the same predictions
 against only the current step's own class subset (20 classes on
-CIFAR-100, 40 on CUB-200-2011) --- a diagnostic upper
-bound on within-step discrimination, not a replacement headline metric.
-Restricted accuracy is never described in this chapter as a method's
-``true'' or ``actual'' accuracy; it isolates one specific factor
-(within-step discriminability) from the cross-step competition effects that
-all-seen accuracy also reflects, and the two are reported side by side
-precisely because they can diverge substantially (Section~\ref{sec:ch5-stability}).
+CIFAR-100, 40 on CUB-200-2011). Restricted accuracy is used as a
+diagnostic of within-step discrimination rather than as the headline
+metric; the two measures are reported side by side because they can
+diverge substantially (Section~\ref{sec:ch5-stability}).
 
 \textbf{Classifier rescaling.} After training is complete, the classifier
 weight rows associated with each step are rescaled by a positive
@@ -64,59 +57,40 @@ measured after the full five-step sequence has completed, and together
 they indicate whether a method's aggregate accuracy is limited by
 early-step retention, later-step acquisition, or both.
 
-\textbf{Backward transfer (BWT)} follows the standard definition
-\parencite{lopezpaz2017gradient}: the mean, over steps 1 through 4, of the
-difference between a step's accuracy at the end of the full sequence and its
-accuracy immediately after it was first learned. In the reported values,
-the end-of-sequence term is the step's open accuracy in the final model
-\emph{after} classifier rescaling, while the ``immediately after learning''
-term is evaluated during training, at the end of that step's own training
-(from its best-validation checkpoint), \emph{before} any classifier
-rescaling. A structural caveat applies
-specifically to this thesis's two method families and is stated once, here,
-rather than repeated at every table: \textbf{RankExt carries a single, persistent
-adapter state}, trained sequentially, so its BWT has the standard
-interpretation -- a genuine measurement of how later training affects
-earlier-learned steps in the same evolving adapter state. \textbf{SimpleAvg is not a single evolving model};
-each step is trained as an independent specialist and the five specialists
-are combined only once, at the end, by an arithmetic merge
-(Chapter~\ref{ch:methodology}). SimpleAvg's reported BWT therefore uses each
-specialist's own accuracy, immediately after its independent training, as
-the ``immediately after learning'' reference point --- a pre-merge
-specialist diagonal substitute, not a measurement of sequential interference
-in an evolving model. The two families' BWT values are reported in the same
-column for compactness but are \textbf{not structurally equivalent} and
-should not be read as directly comparable to one another.
+\textbf{Backward transfer (BWT)} \parencite{lopezpaz2017gradient} is the
+mean, over steps 1 through 4, of the difference between a step's accuracy at
+the end of the full sequence and its accuracy immediately after it was first
+learned. The end-of-sequence term is the step's open accuracy in the final
+model \emph{after} classifier rescaling; the reference term is evaluated at
+the end of that step's own training (from its best-validation checkpoint),
+\emph{before} classifier rescaling. For RankExt, which carries a single,
+persistent adapter state, this reference is a genuine sequential
+checkpoint. For SimpleAvg, whose specialists are trained independently and
+merged only once at the end (Chapter~\ref{ch:methodology}), it is each
+specialist's own accuracy before the merge. The BWT values of the two
+families are therefore \textbf{not structurally equivalent} and should not
+be compared directly.
 
-\textbf{Forgetting} \parencite{chaudhry2018riemannian} is reported only for
-RankExt, where it is well-defined (the mean, over steps 1--4, of each step's
-best-ever observed accuracy minus its accuracy at the end of the sequence).
-Unlike BWT, forgetting is computed entirely from the in-training
-evaluations made after each step, before classifier rescaling --- the same
-values that form the $R_{i,j}$ matrices of Section~\ref{sec:ch5-rankext}.
-It is structurally undefined for SimpleAvg, which has no sequential model to
-forget from, and is reported as ``---'' for every SimpleAvg row --- never as
-0, which would imply a measured absence of forgetting rather than a metric
-that does not apply.
+\textbf{Forgetting} \parencite{chaudhry2018riemannian} is the mean, over
+steps 1--4, of each step's best-ever observed accuracy minus its accuracy at
+the end of the sequence. Unlike BWT, it is computed entirely from the
+in-training evaluations made after each step, before classifier rescaling
+--- the values that form the $R_{i,j}$ matrices of
+Section~\ref{sec:ch5-rankext}. It is reported for RankExt only: SimpleAvg has
+no sequential merged-model trajectory, so the metric is not defined for it
+(``---'' in the tables).
 
-
-
-All results reported as primary in this chapter come from a \textbf{single
-production run at a single seed (42)}. No statistical significance test was
-performed anywhere in this chapter. Differences are described as ``observed
-in this run'' or ``at this seed,'' never as ``statistically significant,''
-``robust,'' or ``consistent'' across replications; this limitation is
-restated concisely in Section~\ref{sec:ch5-summary} rather than after every
-individual number.
+The primary CIFAR-100 benchmark and the CUB-200-2011 supporting evaluation
+are single-seed results (seed 42); no statistical significance testing is
+reported.
 
 \section{CIFAR-100 Main Results}
 \label{sec:ch5-main-results}
 
-The canonical Chapter-5 benchmark compares \textbf{eight} methods under the
-CIFAR-100 $5\times20$ protocol at seed 42. All KD-bearing configurations use
-a distillation temperature of $T=2$, as specified in
-Chapter~\ref{ch:experimental-setup}. No result from any other experiment is
-merged into this benchmark; the CUB-200-2011 evaluation is reported
+The primary benchmark compares \textbf{eight} methods under the CIFAR-100
+$5\times20$ protocol at seed 42. All KD-bearing configurations use a
+distillation temperature of $T=2$, as specified in
+Chapter~\ref{ch:experimental-setup}. The CUB-200-2011 evaluation is reported
 separately in Section~\ref{sec:ch5-cub}, and the refinement and
 protocol-diagnostic experiments in Section~\ref{sec:ch5-ablation}.
 
@@ -158,17 +132,14 @@ reporting first-step accuracy, later-steps accuracy, BWT, and
 forgetting for all eight methods, is given as
 Table~\ref{tab:ch5-main-extended} in Section~\ref{sec:ch5-summary}.
 
-Two patterns are immediately visible and structure the remainder of this
-chapter. The four SimpleAvg variants occupy a narrow band, from 73.22\% to
+Two patterns are immediately visible. The four SimpleAvg variants occupy a narrow band, from 73.22\% to
 75.21\% --- a 1.99-percentage-point range. The four RankExt variants span a
 much wider range, from 34.99\% to 70.76\% --- a 35.77-percentage-point
 range, roughly eighteen times larger than SimpleAvg's own spread. The
-highest observed SimpleAvg result in this run (SimpleAvg + KD, 75.21\%) and
-the highest observed RankExt result in this run (RankExt + FactorOrth + KD +
-Protect, 70.76\%) differ by \textbf{4.45 percentage points}, with SimpleAvg
-ahead (Figure~\ref{fig:ch5-best-per-family}).
-This single-seed gap is the cleanest one-number summary of this benchmark,
-but should not be read as a significance test.
+highest observed SimpleAvg result (SimpleAvg + KD, 75.21\%) and the highest
+observed RankExt result (RankExt + FactorOrth + KD + Protect, 70.76\%)
+differ by \textbf{4.45 percentage points}, with SimpleAvg ahead
+(Figure~\ref{fig:ch5-best-per-family}).
 
 \begin{figure}[htbp]
 \centering
@@ -176,18 +147,18 @@ but should not be read as a significance test.
 \caption[Highest observed result per family]{Highest observed all-seen
 accuracy per family in the primary run:
 SimpleAvg + KD (75.21\%) versus RankExt + FactorOrth + KD + Protect
-(70.76\%). A single-seed headline comparison, not a statistical significance
-test.}
+(70.76\%).}
 \label{fig:ch5-best-per-family}
 \end{figure}
 
-Read narratively: SimpleAvg establishes a strong baseline near 75\% without
-requiring any auxiliary objective, and its three auxiliary-loss variants do
-not move materially away from that baseline in either direction. RankExt's
-plain configuration is far weaker, and the configurations with auxiliary
-objectives reach substantially higher all-seen accuracy, up to 70.76\%. Sections~\ref{sec:ch5-simpleavg} and~\ref{sec:ch5-rankext}
-examine each family in turn; the \emph{reasons} for this asymmetry are
-deferred to Chapter~\ref{ch:discussion-conclusion}.
+SimpleAvg establishes a strong baseline near 75\% without requiring any
+auxiliary objective, and its three auxiliary-loss variants do not move
+materially away from that baseline in either direction. RankExt's plain
+configuration is far weaker, and the configurations with auxiliary
+objectives reach substantially higher all-seen accuracy, up to 70.76\%.
+Sections~\ref{sec:ch5-simpleavg} and~\ref{sec:ch5-rankext} examine each
+family in turn, and Chapter~\ref{ch:discussion-conclusion} discusses the
+reasons for this asymmetry.
 
 \section{CUB-200-2011 Cross-Dataset Evaluation}
 \label{sec:ch5-cub}
@@ -229,7 +200,7 @@ for SimpleAvg ($\lambda=20$) and in the low-rank factor space for RankExt
 \label{tab:ch5-cub-main}
 \end{table}
 
-\textbf{SimpleAvg.} In this single-seed CUB experiment, none of the
+\textbf{SimpleAvg.} In the CUB experiment, none of the
 auxiliary SimpleAvg configurations improves on the plain 69.47\% baseline:
 relative to plain SimpleAvg, KD changes all-seen accuracy by $-$0.78
 percentage points, FactorOrth by $-$1.14 points, and their combination by
@@ -246,7 +217,7 @@ produces the highest observed RankExt result on CUB-200-2011, 63.43\%
 CIFAR-100, the contributions of knowledge distillation and the projected
 feature-protection term are not isolated. The highest observed SimpleAvg
 result (69.47\%) and the highest observed RankExt result (63.43\%) show a
-6.04-percentage-point difference in this single-seed CUB experiment.
+6.04-percentage-point difference in the CUB experiment.
 Restricted accuracy for RankExt ranges from 78.12\% to 88.39\%, which is
 lower than both the CUB-200-2011 SimpleAvg values and the CIFAR-100 RankExt
 values (91.03\%--94.78\%).
@@ -352,11 +323,10 @@ points below plain), later-steps accuracy 77.14\% (the highest later-steps value
 among the four SimpleAvg variants), restricted accuracy 92.96\% (also the
 highest of the four). SimpleAvg + FactorOrth alone, without KD, does not show
 this redistribution: its first-step accuracy (76.60\%) and later-steps accuracy
-(73.38\%) both stay close to plain's. This chapter reports the
-redistribution as a factual pattern --- accuracy moves from the first step
-toward later steps whenever KD is present, roughly in proportion to how it
-is combined --- without attributing a cause to it;
-Chapter~\ref{ch:discussion-conclusion} addresses why.
+(73.38\%) both stay close to plain's. Both KD-bearing variants therefore
+shift accuracy from the first step toward later steps, with the larger
+redistribution occurring when KD is combined with FactorOrth; the mechanism
+behind this pattern is discussed in Chapter~\ref{ch:discussion-conclusion}.
 
 \begin{figure}[htbp]
 \centering
@@ -387,9 +357,9 @@ step-level detail.
 \section{RankExt Analysis}
 \label{sec:ch5-rankext}
 
-This section reports how RankExt's four variants perform relative to plain
-RankExt, and presents the per-step retention trajectory underlying
-the aggregate numbers.
+This section compares RankExt's four variants with plain RankExt and
+presents the per-step retention trajectory underlying the aggregate
+numbers.
 
 Table~\ref{tab:ch5-rankext} reports each RankExt variant's all-seen accuracy
 and its recovery over plain RankExt (34.99\%).
@@ -419,25 +389,23 @@ enhanced RankExt variant over plain RankExt (34.99\%).}
 \label{fig:ch5-rankext-recovery}
 \end{figure}
 
-Every auxiliary configuration improves on plain RankExt, and the
-improvements are far from equal in size. The FactorOrth-only configuration
-recovers 6.01 percentage points. The KD+Protect configuration combines
-knowledge distillation with the projected feature-protection term; these
-two components are not isolated from one another by a separate arm in this
-benchmark. It recovers 30.02 percentage points. The combined configuration
-(FactorOrth together with KD+Protect) reaches the highest observed RankExt
-result in this run, 70.76\%, 35.77 percentage points above plain and 5.75
-points above the KD+Protect configuration alone. BWT and forgetting improve
-monotonically in the same order, consistent with the all-seen ranking. The
-largest observed improvement within RankExt is therefore associated with
-the KD+Protect-bearing configurations; because knowledge distillation and
+Every auxiliary configuration improves on plain RankExt, but by very
+different amounts. The FactorOrth-only configuration recovers 6.01
+percentage points. The KD+Protect configuration, which combines knowledge
+distillation with the projected feature-protection term, recovers 30.02
+percentage points. The combined configuration (FactorOrth together with
+KD+Protect) reaches the highest observed RankExt result, 70.76\%, 35.77
+percentage points above plain and 5.75 points above the KD+Protect
+configuration alone. BWT and forgetting improve monotonically in the same
+order, consistent with the all-seen ranking. The largest observed
+improvement within RankExt is therefore associated with the
+KD+Protect-bearing configurations; because knowledge distillation and
 projected feature protection are always active together in this benchmark,
-this chapter does not attribute the improvement to either component in
-isolation.
+the improvement is not attributed to either component in isolation.
 
 \textbf{$R_{i,j}$ trajectories.} For a sequentially trained method with a
-persistent adapter state, such as RankExt, this chapter additionally reports the full retention
-matrix $R_{i,j}$: the open (all-seen) accuracy on step $j$, evaluated after
+persistent adapter state, such as RankExt, the full retention matrix
+$R_{i,j}$ is also reported: the open (all-seen) accuracy on step $j$, evaluated after
 training has completed sequentially through step $i$ ($j \le i$). Each row
 $i$ of $R_{i,j}$ is evaluated during training, immediately after step $i$
 has been trained (from its best-validation checkpoint), before classifier
@@ -485,16 +453,14 @@ position. The KD+Protect configuration's matrix (step 1 at 60.10\% after
 step 5) and the FactorOrth-only configuration's matrix (step 1 at 1.95\%
 after step 5, the lowest value observed at that matrix position among the
 four configurations) sit, respectively, close to and below the combined
-configuration's retention level. These are reported here as factual
-trajectory observations; a mechanistic account of what specifically differs
-between the four configurations' retention behaviour is given in
-Chapter~\ref{ch:discussion-conclusion}.
+configuration's retention level. The mechanistic interpretation of these
+differences is discussed in Chapter~\ref{ch:discussion-conclusion}.
 
 \section{Stability, Plasticity, and Open-vs-Restricted Performance}
 \label{sec:ch5-stability}
 
-This section reports the aggregate open-versus-restricted comparison across
-all eight methods.
+This section compares open and restricted accuracy across all eight
+methods.
 
 \begin{figure}[htbp]
 \centering
@@ -534,13 +500,11 @@ include KD+Protect show substantially smaller gaps: RankExt + KD + Protect
 $-$ 70.76\% = 24.02 points).
 
 The gap indicates that within-step discrimination is substantially stronger
-than task-agnostic discrimination across all seen classes, for every
-RankExt configuration measured in this benchmark, and most severely for the
-two configurations without KD+Protect. This is reported here as an observed
-pattern. Restricted evaluation removes cross-step class competitors from the
-decision rule and therefore provides a diagnostic view of within-step
-discrimination; it does not identify the cause of the open-accuracy
-shortfall, possible readings of which are examined in
+than task-agnostic discrimination across all seen classes for every RankExt
+configuration, most severely for the two configurations without
+KD+Protect. The open--restricted gap is used here as a diagnostic of
+cross-step competition; it does not isolate a unique causal source of
+error, and possible readings are examined in
 Chapter~\ref{ch:discussion-conclusion}.
 
 \begin{figure}[htbp]
@@ -565,11 +529,8 @@ not first-step accuracy (9.85\% vs.\ 11.70\%)
 \section{Parameter and Rank Efficiency}
 \label{sec:ch5-efficiency}
 
-This thesis is specifically concerned with LoRA-based merging and rank
-extension; this section reports the structural parameter cost of each
-family alongside the accuracy results of Sections~\ref{sec:ch5-main-results},
-\ref{sec:ch5-simpleavg}, and~\ref{sec:ch5-rankext}, so that Chapter 5's
-headline comparison is not accuracy-only.
+This section complements the accuracy results with the structural
+parameter cost of each family.
 
 Both families target the same 24 LoRA modules (\texttt{q\_proj} and
 \texttt{v\_proj} in each of the 12 CLIP ViT-B/16 vision-encoder layers,
@@ -623,40 +584,22 @@ parameters introduced at each step, both families.}
 \label{fig:ch5-trainable-params}
 \end{figure}
 
-At every step, RankExt trains fewer new parameters than SimpleAvg (589{,}824
-vs.\ 2{,}949{,}120, both constant across steps,
-Figure~\ref{fig:ch5-trainable-params}). Summed across the training
-sequence, RankExt's cumulative adapter reaches 2{,}949{,}120 parameters by
-the final step, exactly matching its own final active rank (80), because
-each of its five blocks is trained exactly once and never retrained.
-SimpleAvg's five specialists, trained independently, together comprise
-14{,}745{,}600 LoRA parameters over the training sequence; this is a
-training-time quantity only, since the specialists are not retained
-separately at deployment.
-
-The two families also differ in \emph{how} their final adaptation is
-deployed, not only in how many parameters it touches during training. In
-the evaluated implementation, SimpleAvg is fused into the base weights,
-whereas RankExt is retained in its low-rank additive form. SimpleAvg's merge
-step averages each of its five specialists' dense
-per-module weight updates and adds the averaged update directly into a copy
-of the pretrained base model's own weight tensors; no separate low-rank
-adapter object survives this step. If this averaged update is fused
-directly into the base weights, the deployed model requires no additional
-adapter parameters beyond its new 76{,}900-parameter classifier; if the
-dense update is instead stored separately from an unmodified base
-checkpoint (for example, for reproducibility or versioning), it occupies
-14{,}155{,}776 values --- larger than the 2{,}949{,}120-parameter low-rank
-form it was derived from, since the averaging step operates on dense, not
-low-rank, matrices. RankExt's cumulative adapter, by contrast, is kept in
-low-rank, additive form at every step, including the final one: in the
-evaluated implementation its 2{,}949{,}120 parameters are not fused into the
-base model's weights and remain separable from them. This chapter
-reports both quantities and both deployment forms without concluding that
-either family is more parameter-efficient in general; the two represent
-different trade-offs between training-time parameter volume and
-deployed-model structure, examined further in
-Chapter~\ref{ch:discussion-conclusion}.
+RankExt introduces fewer new trainable parameters than SimpleAvg at every
+step (Figure~\ref{fig:ch5-trainable-params}); because each of its blocks is
+trained once and never retrained, its cumulative adapter matches its final
+active rank of 80, whereas SimpleAvg's five independently trained
+specialists are a training-time quantity that is not retained at
+deployment. The deployment forms also differ. In the evaluated
+implementation, SimpleAvg's averaged dense update is fused into the base
+weights, so no separate low-rank adapter survives the merge; stored
+separately, the dense update would occupy the larger figure in
+Table~\ref{tab:ch5-param-efficiency}, because averaging operates on dense
+rather than low-rank matrices. RankExt's cumulative adapter is instead
+retained in low-rank, additive form and remains separable from the base
+weights. These are structural parameter counts, not wall-clock or FLOP
+measurements, and they describe different trade-offs between training-time
+parameter volume and deployed-model structure rather than a single
+efficiency ranking (Chapter~\ref{ch:discussion-conclusion}).
 
 \section{Ablation and Refinement Results}
 \label{sec:ch5-ablation}
@@ -670,8 +613,8 @@ lowered from 20 to 1; RankExt's classifier-head learning-rate multiplier is
 raised from $\times1$ to $\times2$. Every other setting is unchanged. The
 two changes are family-specific and are evaluated separately against their
 corresponding primary-benchmark configurations. Both comparisons below are
-single-seed, controlled, two-run comparisons --- not a replication of the
-primary benchmark itself.
+controlled two-run comparisons, not a replication of the primary benchmark
+itself.
 
 \textbf{SimpleAvg FactorOrth, $\lambda=20$ vs.\ $\lambda=1$.}
 
@@ -697,9 +640,8 @@ $\lambda=1$ than at $\lambda=20$, and both values remain below plain
 SimpleAvg (75.16\%, Table~\ref{tab:ch5-main-compact}). The FactorOrth+KD
 variant is 1.42 points higher at $\lambda=1$ than at $\lambda=20$. Lowering
 $\lambda$ therefore produced mixed effects and does not establish a superior
-setting; the primary benchmark retains $\lambda=20$. This chapter reports
-both deltas as observed, single-seed results; their interpretation is discussed in
-Chapter~\ref{ch:discussion-conclusion}.
+setting; the primary benchmark retains $\lambda=20$. Their interpretation is
+discussed in Chapter~\ref{ch:discussion-conclusion}.
 
 \textbf{RankExt classifier-head learning rate, $\times1$ vs.\ $\times2$.}
 
@@ -725,15 +667,13 @@ $\times1$ to $\times2$ improves three of the four RankExt variants relative
 to their primary-benchmark counterparts (+2.40 to +7.03 percentage points). The
 fourth --- the combined configuration, the strongest RankExt result in the
 primary benchmark (Table~\ref{tab:ch5-rankext}) --- decreases, from 70.76\%
-to 67.92\%, a change of $-$2.84 percentage points. This is reported here as
-an observed, single-seed result, not as evidence that the $\times2$ setting
-is worse in general: the combined configuration's other metrics move in
-mixed directions at $\times2$ (first-step accuracy rises from 60.70\% to
-67.75\%; BWT improves from $-$0.1584 to $-$0.0532; forgetting improves from
-0.2474 to 0.1289; later-steps accuracy falls from 73.28\% to 67.96\%),
-a pattern reported factually here and interpreted in
-Chapter~\ref{ch:discussion-conclusion}. This chapter does not claim that a
-classifier-head learning-rate multiplier of $\times2$ is globally better
+to 67.92\%, a change of $-$2.84 percentage points. This does not show that
+the $\times2$ setting is worse in general: the combined configuration's
+other metrics move in mixed directions at $\times2$ (first-step accuracy
+rises from 60.70\% to 67.75\%; BWT improves from $-$0.1584 to $-$0.0532;
+forgetting improves from 0.2474 to 0.1289; later-steps accuracy falls from
+73.28\% to 67.96\%), a pattern interpreted in
+Chapter~\ref{ch:discussion-conclusion}. Nor is $\times2$ globally better
 than $\times1$ for RankExt; the evidence is mixed across the four
 configurations tested.
 
@@ -811,22 +751,22 @@ evaluation stage (before or after classifier rescaling) of each term.}
 \label{tab:ch5-main-extended}
 \end{table}
 
-\textbf{Ranking, restated concisely.} SimpleAvg's four variants cluster
+\textbf{Ranking.} SimpleAvg's four variants cluster
 within a 1.99 percentage-point band (73.22\%--75.21\%), with no auxiliary
 configuration producing a clear all-seen improvement over the plain baseline
 (Section~\ref{sec:ch5-simpleavg}). RankExt's four variants span a
 35.77-point band (34.99\%--70.76\%); the largest observed improvement within
 RankExt is associated with the KD+Protect-bearing configurations, and the
-combined configuration reaches the highest observed RankExt result in this
-run (70.76\%), 4.45 percentage points below the highest observed SimpleAvg
-result in this run (75.21\%). RankExt's restricted accuracy remains high
+combined configuration reaches the highest observed RankExt result
+(70.76\%), 4.45 percentage points below the highest observed SimpleAvg
+result (75.21\%). RankExt's restricted accuracy remains high
 (91.03\%--94.78\%) across all four configurations even where all-seen
 accuracy is low, indicating that within-step discrimination is retained
 more consistently than task-agnostic discrimination
 (Section~\ref{sec:ch5-stability}). Parameter-efficiency accounting
-(Section~\ref{sec:ch5-efficiency}) shows the two families reach comparably
-sized final adapters through structurally different training and deployment
-paths. A controlled refinement of two hyperparameters
+(Section~\ref{sec:ch5-efficiency}) shows that RankExt's final adapter
+matches one SimpleAvg specialist in parameter count, while the two families
+follow structurally different training and deployment paths. A controlled refinement of two hyperparameters
 (Section~\ref{sec:ch5-ablation}) improves three of the four RankExt
 configurations but not the strongest one, and has mixed effects on
 SimpleAvg's two FactorOrth variants. On CUB-200-2011
@@ -835,20 +775,20 @@ observed: plain SimpleAvg (69.47\%) is not improved by any auxiliary
 configuration, while RankExt rises from 20.26\% to 63.43\% with the
 combined configuration.
 
-\textbf{Limitations.} Every result presented as primary in this chapter ---
-the eight-method benchmark of Section~\ref{sec:ch5-main-results}, the
-per-family analyses of Sections~\ref{sec:ch5-simpleavg}--\ref{sec:ch5-efficiency},
-and the refinement and protocol-diagnostic comparisons of
-Section~\ref{sec:ch5-ablation} --- is a \textbf{single-seed (seed 42)}
-result, and so is the CUB-200-2011 evaluation of
-Section~\ref{sec:ch5-cub}. The CUB-200-2011 results add a second dataset
-but do not replace repeated-seed evidence, and because the CUB-200-2011
-configuration also changes the RankExt classifier-head learning rate, they
-support qualitative rather than controlled cross-dataset conclusions. The reported benchmark and refinement results are single-seed
+\textbf{Limitations.} All results in this chapter --- the eight-method
+benchmark and per-family analyses of
+Sections~\ref{sec:ch5-main-results}--\ref{sec:ch5-efficiency}, the
+refinement and protocol-diagnostic comparisons of
+Section~\ref{sec:ch5-ablation}, and the CUB-200-2011 evaluation of
+Section~\ref{sec:ch5-cub} --- are \textbf{single-seed (seed 42)}
 observations; no confidence intervals or statistical-significance claims
-are made. Differences reported here, including the 4.45-percentage-point
+are made. Differences such as the 4.45-percentage-point
 SimpleAvg-vs-RankExt gap and the RankExt combined arm's $-$2.84-point change
-under the head-learning-rate refinement, are this run's observed outcome.
+under the head-learning-rate refinement are the observed outcomes of these
+runs. The CUB-200-2011 results add a second dataset but do not replace
+repeated-seed evidence, and because the CUB-200-2011 configuration also
+changes the RankExt classifier-head learning rate, they support qualitative
+rather than controlled cross-dataset conclusions.
 Best-epoch selection (by validation cross-entropy, per method and per step)
 means that ``final'' accuracy in this chapter is not uniformly the literal
 last-epoch checkpoint for every method. The forgetting values are

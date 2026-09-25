@@ -241,6 +241,7 @@ import random
 import math
 import inspect
 from datetime import datetime
+from time import perf_counter
 from pathlib import Path
 
 _REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -262,6 +263,7 @@ from torchvision import transforms
 
 from tools.imagenet100_common import IMAGENET100_SYNSETS, load_prepared_datasets, task_split
 from tools.imagenet100_shared import load_shared_imagenet1k_datasets, selected_train_stats, write_source_manifest
+from tools.imagenet100_index_cache import ImageNetTaskIndexCache, select_dataset
 
 IMAGENET100_ROOT = os.environ.get("IMAGENET100_ROOT")
 if not IMAGENET100_ROOT:
@@ -3241,6 +3243,7 @@ _shared_imagenet1k_mode = (
     and os.path.isdir(os.path.join(IMAGENET100_ROOT, "val"))
 )
 _shared_source_report = None
+_dataset_index_load_started = perf_counter()
 if _shared_imagenet1k_mode:
     dataset, _shared_source_report = load_shared_imagenet1k_datasets(IMAGENET100_ROOT, seed=SEED)
     print("SOURCE MODE: SHARED_IMAGENET1K_FILTERED")
@@ -3262,6 +3265,7 @@ if _shared_imagenet1k_mode:
     print("SOURCE MANIFEST: logs/shared_imagenet1k_source_manifest.jsonl")
 else:
     dataset = load_prepared_datasets(IMAGENET100_ROOT)
+print(f"DATASET INDEX LOAD: {perf_counter() - _dataset_index_load_started:.3f}s")
 
 LABEL_COL = "label" if "label" in dataset["train"].column_names else (
     "fine_label" if "fine_label" in dataset["train"].column_names else "labels"
@@ -3387,6 +3391,36 @@ first_step_classes = class_splits[0]
 later_step_classes = [c for split in class_splits[1:] for c in split]
 all_classes = [c for split in class_splits for c in split]
 
+# The label column is the only column touched by this cache build.  In
+# particular, extracting it does not decode or inspect any image examples.
+_label_extraction_started = perf_counter()
+_dataset_labels = {
+    split_name: np.asarray(split_ds[LABEL_COL], dtype=np.int64)
+    for split_name, split_ds in dataset.items()
+}
+print(
+    "LABEL EXTRACTION: "
+    f"{perf_counter() - _label_extraction_started:.3f}s "
+    f"(train={_dataset_labels['train'].size}, "
+    f"calibration={_dataset_labels['calibration'].size}, "
+    f"test={_dataset_labels['test'].size})"
+)
+
+_task_index_build_started = perf_counter()
+_dataset_index_caches = {
+    split_name: ImageNetTaskIndexCache.build(labels, class_splits)
+    for split_name, labels in _dataset_labels.items()
+}
+_index_cache_by_dataset_id = {
+    id(dataset[split_name]): cache
+    for split_name, cache in _dataset_index_caches.items()
+}
+print(f"TASK-INDEX CONSTRUCTION: {perf_counter() - _task_index_build_started:.3f}s")
+print("TASK INDICES PRECOMPUTED ONCE: YES")
+print("REUSED BY ALL 8 METHODS: YES")
+print(f"TRAIN SAMPLE COUNT: {len(dataset['train'])}")
+print("FULL TRAIN HF FILTER CALLS BEFORE TRAINING: 0")
+
 # --- Sanity checks (task brief Section 12) ---------------------------------
 assert len(set(all_classes)) == 100, "exactly 100 benchmark classes required"
 assert len(class_splits) == 5, "exactly 5 tasks required"
@@ -3431,15 +3465,34 @@ def old_seen_class_ids(step_idx):
         ids.extend(classes_for_step(old_step))
     return ids
 
+def _index_cache_for_dataset(ds):
+    try:
+        return _index_cache_by_dataset_id[id(ds)]
+    except KeyError as exc:
+        raise ValueError(
+            "ImageNet production selection received an uncached Dataset; "
+            "build its label/index cache before selecting rows."
+        ) from exc
+
+
 def filter_by_classes(ds, class_ids):
-    class_ids = set(class_ids)
-    return ds.filter(lambda x: int(x[LABEL_COL]) in class_ids)
+    """Compatibility name for callers; implementation is Dataset.select only."""
+    cache = _index_cache_for_dataset(ds)
+    return select_dataset(ds, cache.indices_for_classes(class_ids))
 
 print("Dataset columns:", dataset["train"].column_names)
 print("Label column:", LABEL_COL)
 print("Image column:", IMAGE_COL)
 for i, cls in enumerate(class_splits, start=1):
     print(f"Step {i}: {cls[0]}-{cls[-1]}")
+
+_task1_selection_started = perf_counter()
+_task1_selection_probe = filter_by_classes(dataset["train"], class_splits[0])
+print(
+    f"TASK 1 DATASET SELECTION: {perf_counter() - _task1_selection_started:.3f}s "
+    f"({len(_task1_selection_probe)} samples)"
+)
+del _task1_selection_probe
 
 
 # In[ ]:
@@ -3520,13 +3573,27 @@ def preprocess_val(ex):
     ex["labels"] = [int(y) for y in ex[LABEL_COL]]
     return ex
 
+_startup_dataloader_timing_reported = False
+_startup_first_batch_timing_reported = False
+_startup_first_cuda_forward_timing_reported = False
+
+
 def collate_fn(examples):
+    global _startup_first_batch_timing_reported
+    _collate_started = perf_counter()
     pixel_values = torch.stack([e["pixel_values"] for e in examples])
     labels = torch.tensor([int(e["labels"]) for e in examples], dtype=torch.long)
-    return {
+    batch = {
         "pixel_values": pixel_values,
         "labels": labels,
     }
+    if not _startup_first_batch_timing_reported:
+        _startup_first_batch_timing_reported = True
+        print(
+            f"FIRST BATCH LOAD: PASS ({perf_counter() - _collate_started:.3f}s collate, "
+            f"batch={len(examples)})"
+        )
+    return batch
 
 def compute_metrics(eval_pred):
     logits, labels = eval_pred
@@ -3599,6 +3666,10 @@ class CLIPVisionForCIFAR100(nn.Module):
         return_dict=True,
         **kwargs,
     ):
+        global _startup_first_cuda_forward_timing_reported
+        _cuda_forward_started = perf_counter()
+        if torch.cuda.is_available() and not _startup_first_cuda_forward_timing_reported:
+            torch.cuda.synchronize()
         outputs = self.vision_model(
             pixel_values=pixel_values,
             output_attentions=output_attentions,
@@ -3608,6 +3679,15 @@ class CLIPVisionForCIFAR100(nn.Module):
 
         pooled_output = outputs.pooler_output
         logits = self.classifier(pooled_output)
+
+        if (
+            torch.cuda.is_available()
+            and not _startup_first_cuda_forward_timing_reported
+            and logits.is_cuda
+        ):
+            torch.cuda.synchronize(logits.device)
+            _startup_first_cuda_forward_timing_reported = True
+            print(f"FIRST CUDA FORWARD: PASS ({perf_counter() - _cuda_forward_started:.3f}s)")
 
         loss = None
         if labels is not None:
@@ -3624,10 +3704,15 @@ def fresh_pretrained_model():
     """
     Fresh CLIP-ViT vision model with a CIFAR-100 classifier.
     """
-    return CLIPVisionForCIFAR100(
+    _model_started = perf_counter()
+    model = CLIPVisionForCIFAR100(
         checkpoint=MODEL_CHECKPOINT,
         num_labels=NUM_CLASSES,
     )
+    if not getattr(fresh_pretrained_model, "_timing_reported", False):
+        fresh_pretrained_model._timing_reported = True
+        print(f"MODEL CONSTRUCTION: {perf_counter() - _model_started:.3f}s")
+    return model
 
 def disable_incompatible_torchao_for_peft():
     """
@@ -3707,12 +3792,13 @@ print("Combined SimpleAvg+FactorOrth+KD orth warmup enabled:", COMBINED_ORTH_WAR
 
 
 def build_classwise_train_val_splits(train_ds, val_per_class):
+    index_cache = _index_cache_for_dataset(train_ds)
     train_parts = []
     val_parts = []
     rows = []
 
     for cls in all_classes:
-        cls_ds = filter_by_classes(train_ds, [cls]).shuffle(seed=SEED + int(cls))
+        cls_ds = select_dataset(train_ds, index_cache.class_indices[int(cls)]).shuffle(seed=SEED + int(cls))
         if len(cls_ds) <= 1:
             raise ValueError(f"Need at least 2 examples for class {cls}, got {len(cls_ds)}")
 
@@ -3742,8 +3828,8 @@ val_source = dataset["calibration"]
 train_val_split_df = pd.DataFrame([
     {
         "class_id": int(cls),
-        "train_count": int(train_source.filter(lambda row, c=cls: int(row[LABEL_COL]) == c).num_rows),
-        "val_count": int(val_source.filter(lambda row, c=cls: int(row[LABEL_COL]) == c).num_rows),
+        "train_count": _dataset_index_caches["train"].count_for_class(cls),
+        "val_count": _dataset_index_caches["calibration"].count_for_class(cls),
     }
     for cls in all_classes
 ])
@@ -4254,6 +4340,7 @@ def train_with_trainer(
     rankext_new_block_warmup_diagnostic_records=None,
     **trainer_kwargs,
 ):
+    global _startup_dataloader_timing_reported
     args = get_training_args(
         output_dir=output_dir,
         epochs=epochs,
@@ -4263,6 +4350,19 @@ def train_with_trainer(
         train_dataset_len=len(train_ds),
         eval_strategy="epoch",
     )
+
+    if not _startup_dataloader_timing_reported:
+        _dataloader_started = perf_counter()
+        _startup_loader_probe = torch.utils.data.DataLoader(
+            train_ds,
+            batch_size=batch_size,
+            shuffle=True,
+            num_workers=int(getattr(args, "dataloader_num_workers", 0)),
+            collate_fn=collate_fn,
+        )
+        _startup_dataloader_timing_reported = True
+        print(f"DATALOADER CONSTRUCTION: {perf_counter() - _dataloader_started:.3f}s")
+        del _startup_loader_probe
 
     trainer = trainer_cls(
         model=model,

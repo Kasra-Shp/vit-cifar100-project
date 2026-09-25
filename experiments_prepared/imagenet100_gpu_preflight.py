@@ -10,6 +10,7 @@ production benchmark.
 from __future__ import annotations
 
 import json
+import io
 import os
 import sys
 from pathlib import Path
@@ -18,9 +19,7 @@ from time import perf_counter
 import numpy as np
 import torch
 from PIL import Image
-from datasets import Dataset
 from torchvision import transforms
-from transformers import CLIPImageProcessor, CLIPVisionModel
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
@@ -43,11 +42,19 @@ def to_pil(value):
     if isinstance(value, dict):
         if "array" in value:
             value = value["array"]
-        elif "bytes" in value:
-            import io
+        elif value.get("path"):
+            return Image.open(value["path"]).convert("RGB")
+        elif value.get("bytes") is not None:
             return Image.open(io.BytesIO(value["bytes"])).convert("RGB")
-    if isinstance(value, list):
-        value = np.asarray(value, dtype=np.uint8)
+        else:
+            raise TypeError(f"unsupported HF image dictionary keys: {sorted(value)}")
+    if isinstance(value, (str, os.PathLike)):
+        return Image.open(value).convert("RGB")
+    if isinstance(value, (list, tuple)):
+        raise TypeError(
+            "to_pil() received a list/tuple; pass one image at a time. "
+            "The HuggingFace batch must be unpacked by preprocess_batch()."
+        )
     if isinstance(value, np.ndarray):
         array = np.squeeze(value).astype(np.uint8)
         if array.ndim == 2:
@@ -56,8 +63,28 @@ def to_pil(value):
             array = np.transpose(array, (1, 2, 0))
         if array.ndim == 3 and array.shape[-1] == 1:
             array = np.repeat(array, 3, axis=-1)
+        if array.ndim not in (2, 3):
+            raise TypeError(f"unsupported NumPy image shape: {array.shape}")
         return Image.fromarray(array).convert("RGB")
-    return value
+    raise TypeError(f"unsupported image representation: {type(value).__name__}")
+
+
+def preprocess_batch(batch, train_transform, original_to_new):
+    """Transform one HuggingFace *batch*, matching production semantics."""
+    images = batch.get("image")
+    labels = batch.get("label")
+    if not isinstance(images, (list, tuple)):
+        raise TypeError(
+            "preprocess_batch() expected batch['image'] to be a list/tuple; "
+            f"got {type(images).__name__}"
+        )
+    if not isinstance(labels, (list, tuple)) or len(images) != len(labels):
+        raise TypeError("preprocess_batch() expected equally-sized image and label batches")
+    return {
+        **batch,
+        "pixel_values": [train_transform(to_pil(image)) for image in images],
+        "labels": [int(original_to_new[int(label)]) for label in labels],
+    }
 
 
 def main() -> int:
@@ -95,6 +122,8 @@ def main() -> int:
     task1 = select_dataset(datasets["train"], caches["train"].task_indices[0])
     print(f"TASK1 SELECT: {perf_counter() - select_started:.3f}s ({len(task1)} samples)")
 
+    from transformers import CLIPImageProcessor, CLIPVisionModel
+
     processor = CLIPImageProcessor.from_pretrained(CHECKPOINT, local_files_only=True)
     if processor.crop_size is not None:
         height = int(processor.crop_size.get("height", 224))
@@ -111,13 +140,9 @@ def main() -> int:
         transforms.Normalize(mean=processor.image_mean, std=processor.image_std),
     ])
 
-    def preprocess(example):
-        return {
-            "pixel_values": train_transform(to_pil(example["image"])),
-            "labels": int(original_to_new[int(example["label"])]),
-        }
-
-    task1 = task1.with_transform(preprocess)
+    task1 = task1.with_transform(
+        lambda batch: preprocess_batch(batch, train_transform, original_to_new)
+    )
 
     def collate(examples):
         return {

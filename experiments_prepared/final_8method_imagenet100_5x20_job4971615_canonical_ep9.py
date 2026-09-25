@@ -3540,12 +3540,20 @@ def to_pil(x):
     if isinstance(x, dict):
         if "array" in x:
             x = x["array"]
-        elif "bytes" in x:
+        elif x.get("path"):
+            return Image.open(x["path"]).convert("RGB")
+        elif x.get("bytes") is not None:
             import io
             return Image.open(io.BytesIO(x["bytes"])).convert("RGB")
 
-    if isinstance(x, list):
-        x = np.array(x, dtype=np.uint8)
+    if isinstance(x, (str, os.PathLike)):
+        return Image.open(x).convert("RGB")
+
+    if isinstance(x, (list, tuple)):
+        raise TypeError(
+            "to_pil() received a list/tuple; expected one image. "
+            "The HuggingFace batch must be unpacked by preprocess_train/preprocess_val."
+        )
 
     if isinstance(x, np.ndarray):
         arr = np.squeeze(x).astype(np.uint8)
@@ -3559,9 +3567,12 @@ def to_pil(x):
         if arr.ndim == 3 and arr.shape[-1] == 1:
             arr = np.repeat(arr, 3, axis=-1)
 
+        if arr.ndim not in (2, 3):
+            raise TypeError(f"unsupported NumPy image shape: {arr.shape}")
+
         return Image.fromarray(arr).convert("RGB")
 
-    return x
+    raise TypeError(f"unsupported image representation: {type(x).__name__}")
 
 def preprocess_train(ex):
     ex["pixel_values"] = [train_transform(to_pil(img)) for img in ex[IMAGE_COL]]

@@ -2536,15 +2536,22 @@ assert TARGET_MODULES_BY_FAMILY["simple_avg"] == ["q_proj", "v_proj"], (
 )
 assert TARGET_MODULES_BY_FAMILY["rank_extension"] == ["q_proj", "v_proj"]
 
-# --- calibration: current, consistent across BOTH families -----------------
-assert CALIBRATION_MODE_BY_FAMILY["simple_avg"] == "confidence_weighted_regime_grouped", (
-    "SimpleAvg must use confidence_weighted_regime_grouped, NOT job 4904629's obsolete "
-    f"'global' mode, got {CALIBRATION_MODE_BY_FAMILY['simple_avg']!r}"
+# --- calibration: validate only families active in this launcher ------------
+_ACTIVE_FAMILIES = {ACTIVE_METHOD_MAP[m]["family"] for m in ACTIVE_METHOD_NAMES}
+assert _ACTIVE_FAMILIES == {"rank_extension"}, (
+    f"Continuation must activate only RankExt, got active families={_ACTIVE_FAMILIES}"
 )
+if "simple_avg" in _ACTIVE_FAMILIES:
+    assert CALIBRATION_MODE_BY_FAMILY["simple_avg"] == "confidence_weighted_regime_grouped", (
+        "SimpleAvg must use confidence_weighted_regime_grouped, NOT job 4904629's obsolete "
+        f"'global' mode, got {CALIBRATION_MODE_BY_FAMILY['simple_avg']!r}"
+    )
 assert CALIBRATION_MODE_BY_FAMILY["rank_extension"] == "confidence_weighted_regime_grouped", (
     f"got {CALIBRATION_MODE_BY_FAMILY['rank_extension']!r}"
 )
-assert CALIBRATION_ENABLED_FAMILIES["simple_avg"] is True and CALIBRATION_ENABLED_FAMILIES["rank_extension"] is True
+assert all(CALIBRATION_ENABLED_FAMILIES[family] is True for family in _ACTIVE_FAMILIES), (
+    f"Calibration must be enabled for active families only: {_ACTIVE_FAMILIES}"
+)
 
 # --- KD: family-specific weights, T, T-squared, old-seen scope -------------
 # FINAL 8-ARM SCRIPT: the module-global KD_WEIGHT/KD_TEMPERATURES constants
@@ -2563,13 +2570,13 @@ assert KD_WEIGHT == 1.0 and KD_TEMPERATURES == [2.0], (
 # --- KD scope assertions (task brief Section 22): SimpleAvg KD arms must be
 # old-seen-only; RankExt KD arms must be full-100-way. Prevents accidental
 # cross-routing between the two families' KD mechanisms.
-_SA_KD_ARMS = (
+_SA_KD_ARMS = tuple(arm for arm in (
     "simple_avg_kd_oldseen_T2_warmup",
     # JOB4971615-COMPATIBLE 8-METHOD SCRIPT: "simple_avg_kd_oldseen_T4_warmup"
     # removed -- T4 is disabled (METHODS_TO_RUN), so it is absent from
     # ACTIVE_METHOD_MAP and must not be looked up below.
     "simple_avg_dense_orth_lam20_kd_oldseen_T2_warmup",
-)
+) if arm in ACTIVE_METHOD_MAP)
 _RE_KD_ARMS = (
     "rank_extension_fullkd_T2_protect30",
     "rank_extension_factor_orth_lam50_fullkd_T2_protect30",
@@ -2610,11 +2617,13 @@ for _re_kd_arm in _RE_KD_ARMS:
     )
 
 # --- temperature assertions (task brief Section 23) -------------------------
-assert float(ACTIVE_METHOD_MAP["simple_avg_kd_oldseen_T2_warmup"]["kd_temperature"]) == 2.0
+if "simple_avg_kd_oldseen_T2_warmup" in ACTIVE_METHOD_MAP:
+    assert float(ACTIVE_METHOD_MAP["simple_avg_kd_oldseen_T2_warmup"]["kd_temperature"]) == 2.0
 # JOB4971615-COMPATIBLE 8-METHOD SCRIPT: the T4 temperature assertion is
 # removed here -- "simple_avg_kd_oldseen_T4_warmup" is disabled and absent
 # from ACTIVE_METHOD_MAP (see _SA_KD_ARMS's own comment above).
-assert float(ACTIVE_METHOD_MAP["simple_avg_dense_orth_lam20_kd_oldseen_T2_warmup"]["kd_temperature"]) == 2.0
+if "simple_avg_dense_orth_lam20_kd_oldseen_T2_warmup" in ACTIVE_METHOD_MAP:
+    assert float(ACTIVE_METHOD_MAP["simple_avg_dense_orth_lam20_kd_oldseen_T2_warmup"]["kd_temperature"]) == 2.0
 assert float(ACTIVE_METHOD_MAP["rank_extension_fullkd_T2_protect30"]["kd_temperature"]) == 2.0
 assert float(ACTIVE_METHOD_MAP["rank_extension_factor_orth_lam50_fullkd_T2_protect30"]["kd_temperature"]) == 2.0
 # T-squared scaling is a structural property of IndependentLoraOrthTrainer/
@@ -2628,7 +2637,10 @@ assert float(ACTIVE_METHOD_MAP["rank_extension_factor_orth_lam50_fullkd_T2_prote
 # FactorOrth50 for RankExt -- never mixed. ---------------------------------
 assert LAMBDA_ORTH == 50.0, f"FactorOrth lambda must stay canonical (50), got {LAMBDA_ORTH}"
 assert DENSE_ORTH_LAMBDA == 20.0, f"DenseOrth lambda must stay canonical (20), got {DENSE_ORTH_LAMBDA}"
-_SA_DENSE_ORTH_ARMS = ("simple_avg_dense_orth_lam20", "simple_avg_dense_orth_lam20_kd_oldseen_T2_warmup")
+_SA_DENSE_ORTH_ARMS = tuple(
+    arm for arm in ("simple_avg_dense_orth_lam20", "simple_avg_dense_orth_lam20_kd_oldseen_T2_warmup")
+    if arm in ACTIVE_METHOD_MAP
+)
 _RE_FACTOR_ORTH_ARMS = ("rank_extension_factor_orth_lam50", "rank_extension_factor_orth_lam50_fullkd_T2_protect30")
 for _dense_orth_arm in _SA_DENSE_ORTH_ARMS:
     assert ACTIVE_METHOD_MAP[_dense_orth_arm]["uses_dense_orth"] is True, f"{_dense_orth_arm} must have uses_dense_orth=True"
@@ -2657,13 +2669,17 @@ assert not any(ACTIVE_METHOD_MAP[m]["uses_factor_orth"] for m in ACTIVE_METHOD_N
     "No SimpleAvg arm may use FactorOrth in this script -- SimpleAvg's orthogonality is DenseOrth-only"
 )
 
-# --- method set: exact 8-name match, not just the family-flag set ----------
-# (job4971615-compatible: task brief Section 6 example minus the T4 arm)
-EXPECTED_METHODS = {
+# --- method set: exact continuation match, not just the family-flag set -----
+EXPECTED_CONTINUATION_METHODS = {
     "rank_extension_fullkd_T2_protect30",
     "rank_extension_factor_orth_lam50",
     "rank_extension_factor_orth_lam50_fullkd_T2_protect30",
 }
+assert set(ACTIVE_METHOD_NAMES) == EXPECTED_CONTINUATION_METHODS, (
+    "Continuation active methods changed: "
+    f"{set(ACTIVE_METHOD_NAMES)} != {EXPECTED_CONTINUATION_METHODS}"
+)
+EXPECTED_METHODS = EXPECTED_CONTINUATION_METHODS
 _EXPECTED_SINGLEJOB_METHOD_NAMES = EXPECTED_METHODS  # alias: preserved name used by the reporting section below
 active_methods = list(ACTIVE_METHOD_NAMES)
 assert set(active_methods) == EXPECTED_METHODS, (
@@ -9934,8 +9950,8 @@ print("=" * 80)
 print("FINAL 8-METHOD JOB4971615-COMPATIBLE IMAGENET-100 EXPERIMENT -- REPORTING SECTION START")
 print("=" * 80)
 
-EXPECTED_8_METHODS = sorted(EXPECTED_METHODS)
-print(f"Expected 8 methods: {EXPECTED_8_METHODS}")
+EXPECTED_CONTINUATION_METHODS_SORTED = sorted(EXPECTED_METHODS)
+print(f"Expected continuation methods: {EXPECTED_CONTINUATION_METHODS_SORTED}")
 
 # ------------------------------------------------------------------------
 # 1) Granular per-batch loss log for ALL 9 arms.
@@ -10067,9 +10083,9 @@ print(
 # which runs BEFORE the table is written to disk.
 # ------------------------------------------------------------------------
 final9_training_merge_df = pd.DataFrame(training_merge_summary_rows)
-assert set(final9_training_merge_df["training_method"].unique()) == set(EXPECTED_8_METHODS), (
+assert set(final9_training_merge_df["training_method"].unique()) == set(EXPECTED_CONTINUATION_METHODS_SORTED), (
     "STOP CONDITION: the result table is missing at least one of the 9 expected arms -- "
-    f"got {sorted(final9_training_merge_df['training_method'].unique())}, expected {EXPECTED_8_METHODS}"
+    f"got {sorted(final9_training_merge_df['training_method'].unique())}, expected {EXPECTED_CONTINUATION_METHODS_SORTED}"
 )
 
 # validation_CE: mean of best-epoch-selected validation CE across the 5 CL
@@ -10085,7 +10101,7 @@ else:
 _PERCENTAGE_COLUMNS = ["all_seen", "restricted_mean", "first_step", "later_steps_mean", "old_new_gap"]
 
 _summary_rows = []
-for _method in EXPECTED_8_METHODS:
+for _method in EXPECTED_CONTINUATION_METHODS_SORTED:
     _cfg = ACTIVE_METHOD_MAP[_method]
     _row = final9_training_merge_df[final9_training_merge_df["training_method"] == _method].iloc[0]
     _orth_type = (
@@ -10241,14 +10257,14 @@ print(final9_cross_run_df.to_string(index=False))
 # 10) Output checklist.
 # ------------------------------------------------------------------------
 _overall_pass = (
-    set(final9_training_merge_df["training_method"].unique()) == set(EXPECTED_8_METHODS)
+    set(final9_training_merge_df["training_method"].unique()) == set(EXPECTED_CONTINUATION_METHODS_SORTED)
     and len(_methods_in_batch_log) >= 3
     and len(final9_classifier_restoration_df) > 0
     and len(final9_cl_trajectory_df) > 0
 )
 _checklist_lines = [
     "OVERALL PASS" if _overall_pass else "OVERALL FAIL -- see details below",
-    f"3 expected methods present in results table: {set(final9_training_merge_df['training_method'].unique()) == set(EXPECTED_8_METHODS)}",
+    f"3 expected methods present in results table: {set(final9_training_merge_df['training_method'].unique()) == set(EXPECTED_CONTINUATION_METHODS_SORTED)}",
     f"Methods with granular per-batch logging: {sorted(_methods_in_batch_log)} ({len(_methods_in_batch_log)}/3)",
     f"Classifier restoration diagnostics rows: {len(final9_classifier_restoration_df)}",
     f"CL retention/plasticity trajectory rows (RankExt): {len(final9_cl_trajectory_df)}",

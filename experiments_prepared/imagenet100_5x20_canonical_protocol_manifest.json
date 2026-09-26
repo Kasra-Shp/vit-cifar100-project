@@ -1,0 +1,19 @@
+{
+  "dataset_identifier": "ImageNet-100/PODNet-DER-DyTox-first100-sorted-wnids",
+  "wnid_split_sha256": "797b0e35a11a7e6991565b91af6eb4a8299f91fb21ad8ffa3c9a1c1a5a669008",
+  "seed": 42,
+  "num_classes": 100,
+  "num_tasks": 5,
+  "classes_per_task": 20,
+  "epochs": 9,
+  "preprocessing": "CLIPImageProcessor openai/clip-vit-base-patch16 + canonical train/val transforms",
+  "rank_schedule": [16, 32, 48, 64, 80],
+  "lr_rankext": 0.0001,
+  "head_lr_multiplier_rankext": 10.0,
+  "kd_temperature": 2.0,
+  "kd_weight": 1.0,
+  "protect_weight": 30.0,
+  "factor_orth_lambda": 50.0,
+  "classifier_restoration": "canonical protected-row restoration",
+  "evaluation": "canonical open/restricted per-task + all-seen/BWT/forgetting"
+}

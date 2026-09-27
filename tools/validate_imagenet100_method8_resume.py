@@ -21,8 +21,12 @@ try:
         load_torch_payload,
         save_torch_payload_atomic,
     )
+    from tools.imagenet100_shared import task_wnids
+    from tools.imagenet100_common import IMAGENET100_SYNSETS
 except ModuleNotFoundError:  # direct ``python tools/<script>.py`` invocation
     from imagenet100_continuation_checkpoint import load_torch_payload, save_torch_payload_atomic
+    from imagenet100_shared import task_wnids
+    from imagenet100_common import IMAGENET100_SYNSETS
 
 
 METHOD = "rank_extension_factor_orth_lam50_fullkd_T2_protect30"
@@ -50,7 +54,10 @@ def _literal_assignment(tree: ast.AST, name: str):
 
 
 def validate_launcher_and_protocol(
-    source_path: Path, dataset_root: Path, require_dataset: bool = True
+    source_path: Path,
+    dataset_root: Path,
+    runtime_manifest_path: Path | None = None,
+    require_dataset: bool = True,
 ) -> dict[str, object]:
     if not source_path.is_file():
         raise FileNotFoundError(f"resume launcher is missing: {source_path.resolve()}")
@@ -101,6 +108,43 @@ def validate_launcher_and_protocol(
     for key, expected in expected_manifest.items():
         if manifest.get(key) != expected:
             raise AssertionError(f"protocol manifest mismatch for {key}: {manifest.get(key)!r} != {expected!r}")
+
+    class_order = json.loads(CLASS_ORDER.read_text(encoding="utf-8"))
+    artifact_task_wnids = [
+        [
+            class_order_task_wnid
+            for class_order_task_wnid in task.get("synsets", [])
+        ]
+        for task in class_order.get("tasks", [])
+    ]
+    if not artifact_task_wnids or not all(artifact_task_wnids):
+        # The checked-in artifact's schema-1 form stores original IDs rather
+        # than WNIDs. Resolve those IDs through the same canonical helper used
+        # by the training launcher, without changing the artifact.
+        artifact_task_wnids = [
+            [IMAGENET100_SYNSETS[int(original_id)] for original_id in task["original_class_ids"]]
+            for task in class_order["tasks"]
+        ]
+    expected_task_wnids = task_wnids(42)
+    if artifact_task_wnids != expected_task_wnids:
+        raise AssertionError("ordered 5x20 task WNIDs differ from the canonical seed-42 task split")
+
+    if runtime_manifest_path is None and require_dataset:
+        raise AssertionError("cluster validation requires --runtime-manifest from job 4994352")
+    runtime_hash = None
+    if runtime_manifest_path is not None:
+        if not runtime_manifest_path.is_file():
+            raise FileNotFoundError(f"job 4994352 runtime protocol manifest is missing: {runtime_manifest_path}")
+        runtime = json.loads(runtime_manifest_path.read_text(encoding="utf-8"))
+        runtime_hash = runtime.get("wnid_split_sha256")
+        if runtime_hash != class_order_hash:
+            raise AssertionError(
+                "runtime manifest hash does not equal the raw split-file hash: "
+                f"runtime={runtime_hash!r}, raw={class_order_hash!r}"
+            )
+        for key in ("seed", "num_tasks", "classes_per_task", "epochs", "rank_schedule"):
+            if runtime.get(key) != expected_manifest[key]:
+                raise AssertionError(f"runtime manifest mismatch for {key}: {runtime.get(key)!r}")
     if dataset_root != DEFAULT_DATASET_ROOT:
         raise AssertionError(f"dataset root must be exactly {DEFAULT_DATASET_ROOT}, got {dataset_root}")
     if require_dataset and (
@@ -117,6 +161,9 @@ def validate_launcher_and_protocol(
         "protocol": "5 tasks x 20 classes, 9 epochs/task",
         "rank_schedule": schedule,
         "wnid_split_sha256": class_order_hash,
+        "runtime_manifest_hash": runtime_hash or "not supplied in synthetic mode",
+        "task_wnids_identical": "YES",
+        "task_wnids_by_task": artifact_task_wnids,
         "dataset_root": str(dataset_root),
         "task4_behavior": "restart from epoch 0; no mid-epoch cursor/optimizer state accepted",
         "done_marker": "absent before recovery",
@@ -223,10 +270,17 @@ def main() -> int:
     parser.add_argument("--checkpoint", type=Path, default=DEFAULT_CHECKPOINT)
     parser.add_argument("--source", type=Path, default=DEFAULT_SOURCE)
     parser.add_argument("--dataset-root", type=Path, default=DEFAULT_DATASET_ROOT)
+    parser.add_argument(
+        "--runtime-manifest", type=Path,
+        help="configs/protocol_manifest.json emitted by job 4994352",
+    )
     parser.add_argument("--synthetic", action="store_true", help="validate an in-memory task-boundary payload")
     args = parser.parse_args()
     report = validate_launcher_and_protocol(
-        args.source, args.dataset_root, require_dataset=not args.synthetic
+        args.source,
+        args.dataset_root,
+        runtime_manifest_path=args.runtime_manifest,
+        require_dataset=not args.synthetic,
     )
     if args.synthetic:
         with tempfile.TemporaryDirectory() as tmp:

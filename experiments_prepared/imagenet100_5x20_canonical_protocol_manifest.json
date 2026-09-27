@@ -1,6 +1,6 @@
 {
   "dataset_identifier": "ImageNet-100/PODNet-DER-DyTox-first100-sorted-wnids",
-  "wnid_split_sha256": "797b0e35a11a7e6991565b91af6eb4a8299f91fb21ad8ffa3c9a1c1a5a669008",
+  "wnid_split_sha256": "accd6228af18c4d886583010d636aae375dfd588310f4f349d030f4727efc238",
   "seed": 42,
   "num_classes": 100,
   "num_tasks": 5,

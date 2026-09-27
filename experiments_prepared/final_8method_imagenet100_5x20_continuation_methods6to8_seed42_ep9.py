@@ -276,6 +276,7 @@ from tools.imagenet100_continuation_checkpoint import (
     save_torch_payload_atomic,
     write_done_marker_atomic,
 )
+from tools.imagenet100_method_guards import assert_active_method_contract
 
 IMAGENET100_ROOT = os.environ.get("IMAGENET100_ROOT")
 if not IMAGENET100_ROOT:
@@ -2817,8 +2818,19 @@ print(f"RANKEXT FINAL RANK: {active_rankext_rank_schedule()[-1]}")
 print(f"RANKEXT SCALING: {RANKEXT_ALPHA_PER_RANK}")
 print("=" * 80)
 assert LORA_EPOCHS == 9 and RANKEXT_EPOCHS == 9
-assert len(_sa_arms) == 0 and len(_re_arms) == 3 and len(ACTIVE_METHOD_NAMES) == 3
-assert _expected_final_configs == 3, f"Expected 3 continuation configurations, computed {_expected_final_configs}"
+assert_active_method_contract(
+    ACTIVE_METHOD_NAMES,
+    ACTIVE_METHOD_MAP,
+    recovery_mode=METHOD8_ONLY_RESUME,
+    method8_name=METHOD8_NAME,
+)
+if METHOD8_ONLY_RESUME:
+    assert _expected_final_configs == 1, (
+        f"Expected 1 Method-8 recovery configuration, computed {_expected_final_configs}"
+    )
+else:
+    assert len(_sa_arms) == 0 and len(_re_arms) == 3 and len(ACTIVE_METHOD_NAMES) == 3
+    assert _expected_final_configs == 3, f"Expected 3 continuation configurations, computed {_expected_final_configs}"
 assert LORA_R == 80 and LORA_ALPHA == 160 and float(LORA_ALPHA) / float(LORA_R) == 2.0
 assert active_rankext_rank_schedule() == [16, 32, 48, 64, 80]
 assert active_rankext_rank_schedule()[-1] == 80

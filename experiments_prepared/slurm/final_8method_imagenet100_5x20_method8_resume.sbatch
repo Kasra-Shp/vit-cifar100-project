@@ -27,7 +27,13 @@ cd "$PROJECT_ROOT"
 [ -d "$IMAGENET100_ROOT/train" ]
 [ -d "$IMAGENET100_ROOT/val" ]
 
-"$PYTHON" tools/validate_imagenet100_method8_resume.py
+RUNTIME_MANIFEST=results/imagenet100_5x20_final_8method_canonical_continuation_methods6to8_seed42_ep9_EPOCH9_MAIN_20260927_012329/configs/protocol_manifest.json
+VALIDATION_OUTPUT=$("$PYTHON" tools/validate_imagenet100_method8_resume.py \
+  --checkpoint "results/imagenet100_5x20_final_8method_canonical_continuation_methods6to8_seed42_ep9_checkpoints/rank_extension_factor_orth_lam50_fullkd_T2_protect30__rankext_state.pt" \
+  --runtime-manifest "$RUNTIME_MANIFEST")
+printf '%s\n' "$VALIDATION_OUTPUT"
+printf '%s\n' "$VALIDATION_OUTPUT" | grep -Fqx "CHECKPOINT VALID: YES"
+echo "Method-8 checkpoint validation passed; training may proceed."
 "$PYTHON" "$VERIFIER" --data-root "$IMAGENET100_ROOT" --source-mode shared_imagenet1k --max-readable-checks 24
 unset FAST_RUN_DEBUG || true
 unset REPLICATION_SEED || true

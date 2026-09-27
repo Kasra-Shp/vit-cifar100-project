@@ -28,5 +28,11 @@ def write_done_marker_atomic(path: str | os.PathLike[str]) -> None:
 
 
 def load_torch_payload(path: str | os.PathLike[str]) -> Any:
-    """Load a continuation payload onto CPU for safe reconstruction."""
-    return torch.load(path, map_location="cpu")
+    """Load a trusted project-generated continuation payload onto CPU.
+
+    PyTorch 2.6 defaults ``torch.load`` to ``weights_only=True``.  These
+    internal continuation checkpoints intentionally contain trusted Python
+    RNG metadata and other project-generated state in addition to tensors, so
+    this narrowly scoped loader must explicitly use ``weights_only=False``.
+    """
+    return torch.load(path, map_location="cpu", weights_only=False)

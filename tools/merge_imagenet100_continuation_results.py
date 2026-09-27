@@ -2,7 +2,10 @@
 
 The command is intentionally conservative: it discovers existing summary
 tables, requires exact method coverage, compares protocol manifests, and
-never creates a row for a missing method.
+never creates a row for a missing method.  A completed methods-6/7
+continuation and a separately resumed Method-8 result may be supplied as two
+inputs; the legacy single-result form remains supported for a complete 6-8
+continuation.
 """
 
 from __future__ import annotations
@@ -27,6 +30,11 @@ CONTINUATION_METHODS = {
     "rank_extension_factor_orth_lam50",
     "rank_extension_factor_orth_lam50_fullkd_T2_protect30",
 }
+CONTINUATION_METHODS_6_7 = {
+    "rank_extension_fullkd_T2_protect30",
+    "rank_extension_factor_orth_lam50",
+}
+RESUMED_METHOD_8 = {"rank_extension_factor_orth_lam50_fullkd_T2_protect30"}
 PROTOCOL_KEYS = {
     "dataset_identifier", "wnid_split_sha256", "seed", "num_classes",
     "num_tasks", "classes_per_task", "epochs", "preprocessing",
@@ -104,7 +112,13 @@ def _verify_protocol(original: dict, continuation: dict) -> None:
         raise ValueError("epoch or RankExt schedule mismatch")
 
 
-def merge(original_root: Path, continuation_root: Path, output: Path, original_manifest: Path | None) -> None:
+def merge(
+    original_root: Path,
+    continuation_root: Path,
+    output: Path,
+    original_manifest: Path | None,
+    resumed_method8_root: Path | None = None,
+) -> None:
     original_summary = pd.read_csv(_find_summary(original_root))
     continuation_summary = pd.read_csv(_find_summary(continuation_root))
     if "method" not in original_summary or "method" not in continuation_summary:
@@ -113,18 +127,37 @@ def merge(original_root: Path, continuation_root: Path, output: Path, original_m
     continuation_names = set(continuation_summary["method"].dropna())
     if original_names != COMPLETED_METHODS:
         raise ValueError(f"original table coverage mismatch: {sorted(original_names)}")
-    if continuation_names != CONTINUATION_METHODS:
-        raise ValueError(f"continuation table coverage mismatch: {sorted(continuation_names)}")
-    if original_names & continuation_names:
+    if resumed_method8_root is None:
+        if continuation_names != CONTINUATION_METHODS:
+            raise ValueError(f"continuation table coverage mismatch: {sorted(continuation_names)}")
+        continuation_parts = [continuation_summary]
+    else:
+        resumed_summary = pd.read_csv(_find_summary(resumed_method8_root))
+        if "method" not in resumed_summary:
+            raise ValueError("resumed Method-8 summary must contain a method column")
+        resumed_names = set(resumed_summary["method"].dropna())
+        if continuation_names != CONTINUATION_METHODS_6_7:
+            raise ValueError(
+                "methods-6/7 continuation coverage mismatch: "
+                f"{sorted(continuation_names)}"
+            )
+        if resumed_names != RESUMED_METHOD_8:
+            raise ValueError(f"resumed Method-8 coverage mismatch: {sorted(resumed_names)}")
+        continuation_parts = [continuation_summary, resumed_summary]
+        resumed_protocol = _load_manifest(_manifest_path(resumed_method8_root, None))
+        continuation_protocol = _load_manifest(_manifest_path(continuation_root, None))
+        _verify_protocol(continuation_protocol, resumed_protocol)
+    all_continuation_names = set().union(*(set(part["method"].dropna()) for part in continuation_parts))
+    if original_names & all_continuation_names:
         raise ValueError("duplicate method rows would be overwritten")
 
     original_protocol = _load_manifest(_manifest_path(original_root, original_manifest))
     continuation_protocol = _load_manifest(_manifest_path(continuation_root, None))
     _verify_protocol(original_protocol, continuation_protocol)
 
-    if list(original_summary.columns) != list(continuation_summary.columns):
+    if any(list(original_summary.columns) != list(part.columns) for part in continuation_parts):
         raise ValueError("summary schemas differ; refusing to silently reshape metrics")
-    merged = pd.concat([original_summary, continuation_summary], ignore_index=True)
+    merged = pd.concat([original_summary, *continuation_parts], ignore_index=True)
     if len(merged) != 8 or set(merged["method"]) != COMPLETED_METHODS | CONTINUATION_METHODS:
         raise AssertionError("merged table does not contain exactly the audited 8 methods")
     output.parent.mkdir(parents=True, exist_ok=True)
@@ -138,8 +171,15 @@ def main() -> None:
     parser.add_argument("--continuation-result", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--original-protocol-manifest", type=Path)
+    parser.add_argument(
+        "--resumed-method8-result", type=Path,
+        help="separate final Method-8 result root; continuation-result must then contain only methods 6-7",
+    )
     args = parser.parse_args()
-    merge(args.original_result, args.continuation_result, args.output, args.original_protocol_manifest)
+    merge(
+        args.original_result, args.continuation_result, args.output,
+        args.original_protocol_manifest, args.resumed_method8_result,
+    )
 
 
 if __name__ == "__main__":

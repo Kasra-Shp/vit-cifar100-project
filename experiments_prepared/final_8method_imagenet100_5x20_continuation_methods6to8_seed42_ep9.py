@@ -346,6 +346,18 @@ random.seed(SEED)
 np.random.seed(SEED)
 torch.manual_seed(SEED)
 
+# Safe recovery mode is deliberately opt-in and is only set by the dedicated
+# Method-8 launcher.  It is a hard execution-selection guard: the scientific
+# implementation below remains shared with the audited continuation, but the
+# recovery process cannot accidentally train methods 6/7.
+METHOD8_ONLY_RESUME = os.environ.get("IMAGENET100_METHOD8_ONLY_RESUME") == "1"
+METHOD8_NAME = "rank_extension_factor_orth_lam50_fullkd_T2_protect30"
+METHOD8_RESUME_CHECKPOINT = os.environ.get("IMAGENET100_RESUME_CHECKPOINT", "")
+METHOD8_RESUME_TASK = 3
+if METHOD8_ONLY_RESUME:
+    assert SEED == 42, "Method-8 recovery is pinned to seed 42"
+    assert METHOD8_RESUME_CHECKPOINT, "Method-8 recovery requires the exact checkpoint path"
+
 # JOINT PACK ADDITION -- GPU SAME-JOB PREFLIGHT: FAST_RUN is now genuinely
 # functional (was a dead flag, naming-only, in Exp1/the earlier packs),
 # gated behind an environment variable that defaults OFF (real config,
@@ -2114,6 +2126,19 @@ METHODS_TO_RUN = {
 }
 
 
+if METHOD8_ONLY_RESUME:
+    # The two completed continuation arms are intentionally disabled before
+    # ACTIVE_METHOD_CONFIGS is constructed.  This prevents either arm from
+    # being trained, resumed, evaluated, or included in this recovery run.
+    METHODS_TO_RUN["rank_extension_fullkd_T2_protect30"] = False
+    METHODS_TO_RUN["rank_extension_factor_orth_lam50_new"] = False
+    METHODS_TO_RUN["rank_extension_factor_orth_lam50_fullkd_T2_protect30"] = True
+    assert [name for name, enabled in METHODS_TO_RUN.items() if enabled] == [METHOD8_NAME], (
+        "Method-8 recovery selection drifted: only the combined FactorOrth+full-KD "
+        f"arm may be enabled, got {[name for name, enabled in METHODS_TO_RUN.items() if enabled]}"
+    )
+
+
 def kd_temperature_tag(temp):
     temp = float(temp)
     if temp.is_integer():
@@ -2426,11 +2451,15 @@ ENABLED_METHOD_FAMILIES = [name for name, enabled in METHODS_TO_RUN.items() if e
 # FINAL 8-ARM SCRIPT: updated to this script's actual 8 enabled base_method
 # keys (4 SimpleAvg + 4 RankExt) -- see METHODS_TO_RUN above for the full
 # True/False dict this is checked against.
-EXPECTED_ENABLED_METHOD_FAMILIES = {
-    "rank_extension_fullkd_T2_protect30",
-    "rank_extension_factor_orth_lam50_new",
-    "rank_extension_factor_orth_lam50_fullkd_T2_protect30",
-}
+EXPECTED_ENABLED_METHOD_FAMILIES = (
+    {METHOD8_NAME}
+    if METHOD8_ONLY_RESUME
+    else {
+        "rank_extension_fullkd_T2_protect30",
+        "rank_extension_factor_orth_lam50_new",
+        "rank_extension_factor_orth_lam50_fullkd_T2_protect30",
+    }
+)
 
 # FINAL THESIS COMPARISON: back to the settled KD_WEIGHT=1.0 (the KDw=0.75
 # single-point treatment above is closed -- see KD_WEIGHT definition above).
@@ -2581,6 +2610,7 @@ _RE_KD_ARMS = (
     "rank_extension_fullkd_T2_protect30",
     "rank_extension_factor_orth_lam50_fullkd_T2_protect30",
 )
+_RE_KD_ARMS = tuple(arm for arm in _RE_KD_ARMS if arm in ACTIVE_METHOD_MAP)
 for _sa_kd_arm in _SA_KD_ARMS:
     assert ACTIVE_METHOD_MAP[_sa_kd_arm]["uses_kd"] is True, f"{_sa_kd_arm} must have uses_kd=True"
     assert ACTIVE_METHOD_MAP[_sa_kd_arm]["kd_class_scope"] == "old_seen", (
@@ -2624,8 +2654,8 @@ if "simple_avg_kd_oldseen_T2_warmup" in ACTIVE_METHOD_MAP:
 # from ACTIVE_METHOD_MAP (see _SA_KD_ARMS's own comment above).
 if "simple_avg_dense_orth_lam20_kd_oldseen_T2_warmup" in ACTIVE_METHOD_MAP:
     assert float(ACTIVE_METHOD_MAP["simple_avg_dense_orth_lam20_kd_oldseen_T2_warmup"]["kd_temperature"]) == 2.0
-assert float(ACTIVE_METHOD_MAP["rank_extension_fullkd_T2_protect30"]["kd_temperature"]) == 2.0
-assert float(ACTIVE_METHOD_MAP["rank_extension_factor_orth_lam50_fullkd_T2_protect30"]["kd_temperature"]) == 2.0
+for _re_kd_arm in _RE_KD_ARMS:
+    assert float(ACTIVE_METHOD_MAP[_re_kd_arm]["kd_temperature"]) == 2.0
 # T-squared scaling is a structural property of IndependentLoraOrthTrainer/
 # DeltaOrthRankExtensionTrainer's compute_loss (`kd_loss = F.kl_div(...) *
 # (self.kd_temperature ** 2)`, unconditional and generic -- never a
@@ -2641,7 +2671,10 @@ _SA_DENSE_ORTH_ARMS = tuple(
     arm for arm in ("simple_avg_dense_orth_lam20", "simple_avg_dense_orth_lam20_kd_oldseen_T2_warmup")
     if arm in ACTIVE_METHOD_MAP
 )
-_RE_FACTOR_ORTH_ARMS = ("rank_extension_factor_orth_lam50", "rank_extension_factor_orth_lam50_fullkd_T2_protect30")
+_RE_FACTOR_ORTH_ARMS = tuple(
+    arm for arm in ("rank_extension_factor_orth_lam50", "rank_extension_factor_orth_lam50_fullkd_T2_protect30")
+    if arm in ACTIVE_METHOD_MAP
+)
 for _dense_orth_arm in _SA_DENSE_ORTH_ARMS:
     assert ACTIVE_METHOD_MAP[_dense_orth_arm]["uses_dense_orth"] is True, f"{_dense_orth_arm} must have uses_dense_orth=True"
     assert float(ACTIVE_METHOD_MAP[_dense_orth_arm]["lambda_orth"]) == float(DENSE_ORTH_LAMBDA), (
@@ -2670,11 +2703,15 @@ assert not any(ACTIVE_METHOD_MAP[m]["uses_factor_orth"] for m in ACTIVE_METHOD_N
 )
 
 # --- method set: exact continuation match, not just the family-flag set -----
-EXPECTED_CONTINUATION_METHODS = {
-    "rank_extension_fullkd_T2_protect30",
-    "rank_extension_factor_orth_lam50",
-    "rank_extension_factor_orth_lam50_fullkd_T2_protect30",
-}
+EXPECTED_CONTINUATION_METHODS = (
+    {METHOD8_NAME}
+    if METHOD8_ONLY_RESUME
+    else {
+        "rank_extension_fullkd_T2_protect30",
+        "rank_extension_factor_orth_lam50",
+        "rank_extension_factor_orth_lam50_fullkd_T2_protect30",
+    }
+)
 assert set(ACTIVE_METHOD_NAMES) == EXPECTED_CONTINUATION_METHODS, (
     "Continuation active methods changed: "
     f"{set(ACTIVE_METHOD_NAMES)} != {EXPECTED_CONTINUATION_METHODS}"
@@ -2686,12 +2723,12 @@ assert set(active_methods) == EXPECTED_METHODS, (
     "This continuation must run exactly the three unfinished RankExt arms -- mismatch: "
     f"{set(active_methods)} != {EXPECTED_METHODS}"
 )
-assert len(active_methods) == 3, f"Must be exactly 3 active methods, got {len(active_methods)}"
+assert len(active_methods) == len(EXPECTED_METHODS), f"Unexpected active method count: {len(active_methods)}"
 assert sum(1 for m in ACTIVE_METHOD_NAMES if ACTIVE_METHOD_MAP[m]["family"] == "simple_avg") == 0, (
     "Continuation must not activate SimpleAvg arms"
 )
-assert sum(1 for m in ACTIVE_METHOD_NAMES if ACTIVE_METHOD_MAP[m]["family"] == "rank_extension") == 3, (
-    "Continuation must activate exactly 3 RankExt arms"
+assert sum(1 for m in ACTIVE_METHOD_NAMES if ACTIVE_METHOD_MAP[m]["family"] == "rank_extension") == len(EXPECTED_METHODS), (
+    "Continuation must activate exactly the expected RankExt arms"
 )
 # --- no-replay assertion (task brief Section 7) -----------------------------
 assert all(not ACTIVE_METHOD_MAP[m].get("uses_replay", False) for m in ACTIVE_METHOD_NAMES), (
@@ -2713,7 +2750,9 @@ assert active_rankext_rank_schedule() == [16, 32, 48, 64, 80], (
     f"RankExt must use the canonical [16,32,48,64,80] schedule, not Exp2's [32,64,96,128,160], "
     f"got {active_rankext_rank_schedule()}"
 )
-assert len(ACTIVE_METHOD_NAMES) == 3, f"Expected 3 total training arms, got {len(ACTIVE_METHOD_NAMES)}"
+assert len(ACTIVE_METHOD_NAMES) == len(EXPECTED_METHODS), (
+    f"Expected {len(EXPECTED_METHODS)} total training arms, got {len(ACTIVE_METHOD_NAMES)}"
+)
 assert set(ENABLED_METHOD_FAMILIES) == EXPECTED_ENABLED_METHOD_FAMILIES
 
 print("=" * 80)
@@ -9422,6 +9461,76 @@ def _restore_rankext_rng_state(state):
         torch.cuda.set_rng_state_all(state["cuda"])
 
 
+def validate_method8_resume_payload(payload, checkpoint_path):
+    """Fail closed unless the recovery payload is the completed Task-3 state.
+
+    This intentionally rejects a generic ``completed_task_index`` value: the
+    dedicated recovery job must start Task 4 from exactly the requested
+    last-completed-task boundary and never infer a mid-epoch continuation.
+    """
+    if not METHOD8_ONLY_RESUME:
+        return
+    expected_path = Path(METHOD8_RESUME_CHECKPOINT).resolve()
+    actual_path = Path(checkpoint_path).resolve()
+    assert actual_path == expected_path, (
+        f"Method-8 recovery loaded an unexpected checkpoint: {actual_path} != {expected_path}"
+    )
+    assert payload.get("method_name") == METHOD8_NAME
+    assert int(payload.get("completed_task_index", -1)) == METHOD8_RESUME_TASK, (
+        "Method-8 recovery requires a completed Task-3 boundary checkpoint; "
+        f"got completed_task_index={payload.get('completed_task_index')!r}"
+    )
+    required = {
+        "previous_rank_state", "stepwise_task_accuracies", "forward_transfer_probe",
+        "rng_state", "rankext_state_fingerprint", "config_fingerprint",
+    }
+    assert required.issubset(payload), f"Checkpoint missing required keys: {sorted(required - set(payload))}"
+    # A task-boundary payload has no resumable epoch/step cursor.  If a future
+    # producer adds one, refuse it here rather than accidentally doing
+    # mid-epoch recovery with an unverified optimizer/data-loader state.
+    for key in ("current_task_index", "current_epoch", "epoch", "batch_index", "optimizer_state"):
+        assert key not in payload, f"Refusing unverified mid-task checkpoint metadata: {key}"
+
+    state = payload["previous_rank_state"]
+    assert set(("lora", "classifier_weight", "classifier_bias")).issubset(state)
+    classifier_weight = state["classifier_weight"]
+    classifier_bias = state["classifier_bias"]
+    assert tuple(classifier_weight.shape) == (NUM_CLASSES, 768), (
+        f"Unexpected classifier/head weight state: {tuple(classifier_weight.shape)}"
+    )
+    assert tuple(classifier_bias.shape) == (NUM_CLASSES,), (
+        f"Unexpected classifier/head bias state: {tuple(classifier_bias.shape)}"
+    )
+    assert torch.isfinite(classifier_weight).all() and torch.isfinite(classifier_bias).all()
+
+    lora_state = state["lora"]
+    assert len(lora_state) == 24, f"Expected 12 CLIP layers x q/v persistent LoRA state, got {len(lora_state)}"
+    for module_name, entry in lora_state.items():
+        assert module_name.endswith(("q_proj", "v_proj")), f"Unexpected RankExt module in checkpoint: {module_name}"
+        assert {"A", "B", "frozen_rank", "new_rank", "total_rank"}.issubset(entry), (
+            f"Incomplete persistent RankExt entry for {module_name}"
+        )
+        assert int(entry["total_rank"]) == 48 and int(entry["frozen_rank"]) == 32 and int(entry["new_rank"]) == 16, (
+            f"Task-3 rank structure mismatch for {module_name}: "
+            f"total={entry.get('total_rank')}, frozen={entry.get('frozen_rank')}, new={entry.get('new_rank')}"
+        )
+        assert tuple(entry["A"].shape) == (48, 768)
+        assert tuple(entry["B"].shape) == (768, 48)
+        assert torch.isfinite(entry["A"]).all() and torch.isfinite(entry["B"]).all()
+
+    assert set(payload["stepwise_task_accuracies"]) == {0, 1, 2}, "Taskwise accuracy state must cover Tasks 1-3 only"
+    assert set(payload["forward_transfer_probe"]) == {1, 2}, "Forward-transfer state must cover Tasks 2-3 only"
+    assert {"python", "numpy", "torch"}.issubset(payload["rng_state"]), "RNG state is incomplete"
+    cfg = ACTIVE_METHOD_MAP[METHOD8_NAME]
+    assert cfg["uses_kd"] and cfg["kd_class_scope"] == "full"
+    assert float(cfg["kd_temperature"]) == 2.0 and float(cfg["kd_weight"]) == 1.0
+    assert cfg["uses_factor_orth"] and float(cfg["lambda_orth"]) == 50.0
+    assert METHOD8_NAME in RANKEXT_PROJECTED_PROTECT_METHODS
+    assert float(RANKEXT_PROJECTED_FEATURE_PROTECT_WEIGHT) == 30.0
+    assert METHOD8_NAME in RANKEXT_NEW_BLOCK_WARMUP_DISABLED_METHODS
+    print("CHECKPOINT VALID: Method 8 completed Tasks 1-3; safe restart is Task 4 epoch 0")
+
+
 def save_rankext_checkpoint_atomic(
     method_name, previous_rank_state, stepwise_task_accuracies, forward_transfer_probe,
     completed_task_index, final=False, diagnostic_state=None,
@@ -9461,8 +9570,14 @@ def mark_rankext_done(method_name):
 
 def load_rankext_checkpoint_if_present(method_name):
     ckpt_path, marker_path = _rankext_checkpoint_paths(method_name)
+    if METHOD8_ONLY_RESUME and method_name == METHOD8_NAME:
+        assert Path(ckpt_path).resolve() == Path(METHOD8_RESUME_CHECKPOINT).resolve(), (
+            f"Method-8 recovery checkpoint path drifted: {ckpt_path} != {METHOD8_RESUME_CHECKPOINT}"
+        )
+        assert os.path.isfile(ckpt_path), f"Required Method-8 checkpoint is missing: {ckpt_path}"
     if os.path.exists(ckpt_path):
         payload = load_torch_payload(ckpt_path)
+        validate_method8_resume_payload(payload, ckpt_path)
         assert payload.get("method_name") == method_name
         completed_task_index = int(payload.get("completed_task_index", 0))
         assert 0 <= completed_task_index <= NUM_STEPS
@@ -9486,6 +9601,8 @@ def load_rankext_checkpoint_if_present(method_name):
             )
             return None
         if os.path.exists(marker_path):
+            if METHOD8_ONLY_RESUME and method_name == METHOD8_NAME:
+                raise AssertionError("Method-8 recovery expected an incomplete checkpoint, but DONE.marker exists")
             assert completed_task_index == NUM_STEPS, (
                 f"DONE marker for {method_name} requires completed_task_index={NUM_STEPS}, "
                 f"got {completed_task_index}"
@@ -9526,6 +9643,10 @@ def train_rank_extension_arm(
     set_seed(SEED)
     if resume_payload is not None:
         _restore_rankext_rng_state(resume_payload.get("rng_state"))
+    if METHOD8_ONLY_RESUME:
+        assert method_name == METHOD8_NAME, "Method-8 recovery cannot train another method"
+        assert resume_payload is not None, "Method-8 recovery cannot start without the requested checkpoint"
+        assert int(resume_payload.get("completed_task_index", -1)) == METHOD8_RESUME_TASK
     previous_rank_state = None if resume_payload is None else resume_payload["previous_rank_state"]
     stepwise_task_accuracies = {} if resume_payload is None else dict(resume_payload["stepwise_task_accuracies"])
     forward_transfer_probe = {} if resume_payload is None else dict(resume_payload["forward_transfer_probe"])
@@ -9550,6 +9671,9 @@ def train_rank_extension_arm(
             p.requires_grad = False
         assert not any(p.requires_grad for p in pretrained_anchor_model.parameters())
 
+    if METHOD8_ONLY_RESUME:
+        assert completed_task_index == 3, f"Method-8 recovery must restart at Task 4, got boundary {completed_task_index}"
+        print("METHOD 8 ONLY: resuming from completed Task 3; Task 4 restarts at epoch 0, then Task 5")
     for step_idx in range(completed_task_index, NUM_STEPS):
         current_classes = classes_for_step(step_idx)
         trainable_classifier_classes = rank_extension_trainable_classifier_classes(
@@ -9862,6 +9986,10 @@ classifier_restoration_rows = []
 cl_trajectory_rows = []
 
 rank_extension_execution_order = [cfg["method"] for cfg in ACTIVE_METHOD_CONFIGS if cfg["family"] == "rank_extension"]
+if METHOD8_ONLY_RESUME:
+    assert rank_extension_execution_order == [METHOD8_NAME], (
+        f"Method-8 recovery execution order must contain only {METHOD8_NAME}, got {rank_extension_execution_order}"
+    )
 for method_name in rank_extension_execution_order:
     method_cfg = ACTIVE_METHOD_MAP[method_name]
     base_method = method_cfg["base_method"]
